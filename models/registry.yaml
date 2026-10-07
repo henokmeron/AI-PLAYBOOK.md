@@ -1,0 +1,74 @@
+# Model registry
+# This file tracks candidate, approved, production and retired models.
+# Large model weights are NEVER stored in GitHub.
+
+schema_version: 1
+
+production: null
+
+candidates:
+  - id: gemma-4-31b
+    family: google-gemma-4
+    source: https://huggingface.co/google/gemma-4-31B
+    provider: Google DeepMind
+    origin: Western
+    status: prototype-baseline
+    license: Apache-2.0
+    modalities:
+      - text
+      - image
+    notes: "First practical open-weight baseline for the platform."
+    weight_storage: external
+    evaluation_status: pending
+
+  - id: mistral-large-4
+    family: mistral-large-4
+    source: https://mistral.ai/news/mistral-large-4/
+    provider: Mistral AI
+    origin: France / EU
+    status: awaiting-public-weights
+    license: pending-verification-at-weight-release
+    modalities:
+      - text
+      - image
+    notes: "Leading candidate to evaluate when public weights are released."
+    weight_storage: external
+    evaluation_status: not-started
+
+  - id: llama-4
+    family: meta-llama-4
+    source: https://huggingface.co/meta-llama
+    provider: Meta
+    origin: US / EU
+    status: benchmark-candidate
+    license: Llama-4-Community-License
+    modalities:
+      - text
+      - image
+    notes: "Keep as a comparison model; licence is not Apache/MIT and must be reviewed before commercial distribution."
+    weight_storage: external
+    evaluation_status: not-started
+
+selection_policy:
+  prefer:
+    - strong general reasoning
+    - coding
+    - tool/function calling
+    - multimodal capability
+    - long context
+    - commercial usability
+    - documented model provenance
+    - strong security posture
+    - practical inference cost
+  do_not_select_only_on:
+    - benchmark scores
+    - parameter count
+    - popularity
+  required_checks:
+    - license
+    - provenance
+    - model security
+    - dependency security
+    - intended-use restrictions
+    - UK/EU commercial deployment implications
+    - evaluation against our own tests
