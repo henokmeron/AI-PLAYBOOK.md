@@ -7,9 +7,9 @@ schema_version: 1
 production: null
 
 candidates:
-  - id: gemma-4-31b
+  - id: gemma-4-31b-it
     family: google-gemma-4
-    source: https://huggingface.co/google/gemma-4-31B
+    source: https://huggingface.co/google/gemma-4-31B-it
     provider: Google DeepMind
     origin: Western
     status: prototype-baseline
