@@ -264,3 +264,10 @@ Phase 7 — Advanced model customisation
 - Established continuous model evaluation and controlled upgrading.
 - Established long-term goal of general-purpose business AI capabilities.
 - Established this playbook as a living document that will be updated throughout development.
+
+### 2026-10-08 — Working baseline selected
+- Chose Google Gemma 4 31B-it as the first practical working baseline so development can start now.
+- This is a prototype baseline, not a permanent choice of foundation model.
+- The Hugging Face repository currently lists the model under Apache-2.0 and provides the weights through Hugging Face storage.
+- The full 31B repository is approximately 62.6 GB, so model files will not be stored on the developer PC or in GitHub.
+- Mistral Large 4 remains a future candidate to evaluate when its public weights are released.
