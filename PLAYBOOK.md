@@ -296,3 +296,11 @@ Phase 7 — Advanced model customisation
 - Security note: do not put the Hugging Face token or SSH private key in GitHub or share them in chat.
 - Current status: model files are on the temporary VM data disk only. They have not yet been verified in Azure Blob Storage. Keep the VM and data disk until the Blob copy has been verified; delete temporary resources only afterward.
 - Next step: securely transfer the model directory into the private Azure Blob container `models`, verify the remote files, then clean up temporary compute and disk resources.
+
+
+### 2026-10-09 — Download verification
+- Verified the model directory with `du -sh`: 59G on the Linux VM disk.
+- Verified both weight shards exist: `model-00001-of-00002.safetensors` (~47G as displayed by `ls -lh`) and `model-00002-of-00002.safetensors` (~12G).
+- Verified the mounted data disk is 125G total with 61G available (50% used).
+- The earlier Hugging Face dry-run reported 62.6 GB in decimal units; the local Linux tools display sizes using their own units/rounding. The completed download and both shard files are present.
+- Next: enable a system-assigned managed identity on the temporary VM, grant it the minimum required Blob data role, upload to the private `models` container, verify the remote copy, then clean up the temporary VM/disk.
