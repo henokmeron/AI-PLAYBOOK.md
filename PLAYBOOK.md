@@ -277,3 +277,10 @@ Phase 7 — Advanced model customisation
 - Azure Pay-As-You-Go subscription/storage is now available for the prototype.
 - Storage will be used for model weights; GitHub will remain the code/control hub.
 - No GPU compute has been created yet.
+
+
+### 2026-10-08 — Model container created
+- Created a private Azure Blob container named `models`.
+- Purpose: dedicated private storage area for large model files.
+- Important architecture lesson: the container stores the model; it does not run the model.
+- The next task is a controlled transfer of the Gemma 4 31B-it files from Hugging Face into this container without downloading them onto the developer PC.
