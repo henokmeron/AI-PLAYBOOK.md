@@ -488,3 +488,10 @@ Safety and quality requirements:
 - In the RunPod Pod's Volumes tab, the attached Volume Disk is explicitly shown as 100 GB and mounted at `/workspace`; usage is 0 bytes before model download.
 - `df -h /workspace` inside the container reports a large `mfs#...runpod.net` backing filesystem. Treat RunPod's Pod Volumes UI (100 GB allocation for this attached volume) as the applicable user allocation rather than interpreting the shared filesystem's displayed 873T total as capacity dedicated to this Pod.
 - Next: download the public `google/gemma-4-31B-it` repo directly into `/workspace/gemma-4-31B-it` with Hugging Face Hub CLI, keeping HF caches on `/workspace`. Avoid sending Azure access tokens or storage keys to RunPod.
+
+
+### 2026-10-09 — Hugging Face CLI ready on RunPod
+- In the RunPod H100 NVL Web Terminal, confirmed Python 3.12.3 and pip 25.2.
+- Installed `huggingface_hub` using `python3 -m pip install --upgrade huggingface_hub`; verified the `hf` CLI help displays correctly.
+- The 100 GB RunPod Volume Disk is mounted at `/workspace`, as confirmed in the RunPod Volumes UI. GPU `nvidia-smi` check succeeded and showed H100 NVL with ~94 GB VRAM and 0 MiB used before loading any model.
+- Next: use `hf download google/gemma-4-31B-it --local-dir /workspace/gemma-4-31B-it` to fetch the original unquantized BF16 repo to the 100 GB volume. Keep the Pod running during download; do not change or delete the original Blob Storage copy.
