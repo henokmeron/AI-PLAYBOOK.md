@@ -428,3 +428,12 @@ Safety and quality requirements:
 - User reports the two temporary `gemma-transfer-vm-...` virtual machines have been deleted after the Gemma Blob upload was verified.
 - Remaining cleanup must be based on a fresh Azure resource inventory: check for orphaned managed disks (including `gemma-transfer-data` and OS disks), network interfaces, public IPs, and the unused SSH public-key resource `gemma-transfer-vm_key`.
 - Preserve the `llmplatform` storage account, private `models` container, and `models/gemma-4-31B-it` Blob prefix. Do not delete the entire resource group.
+
+
+### 2026-10-09 — Next milestone: first inference test (planned, not started)
+- Model weights are safely stored in Azure Blob Storage; no inference server is running yet.
+- Goal of the next phase: load Gemma 4 31B-it into GPU memory, expose a local OpenAI-compatible API using vLLM, send a test prompt, record output/latency and then tear down temporary compute.
+- Current vLLM Gemma 4 deployment guidance lists the 31B-it BF16 model as requiring at least one 80 GB NVIDIA GPU. Do not assume the existing storage-only setup can run the model; the model has to be loaded into suitable compute memory.
+- Candidate Azure test size: Standard_NC24ads_A100_v4 (one 80 GB NVIDIA A100), if available and quota permits in UK South. Third-party price listings recently showed an indicative Linux pay-as-you-go rate around USD 4.59/hour in UK South; pricing is variable and excludes storage/networking/tax. Verify in the Azure Pricing Calculator/portal before creation.
+- Cost-control rule: create GPU compute only for a short, scheduled test; stop/deallocate and verify billing state immediately afterward. Do not leave GPU compute running unattended or make a long-term commitment at this stage.
+- Alternative if this is too expensive: pause large-model inference and build the platform API, evaluation harness, connector framework, website-intelligence pipeline and security controls using mocks/smaller hosted or smaller open models until a suitable inference budget is agreed.
