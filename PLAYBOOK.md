@@ -322,3 +322,14 @@ Phase 7 — Advanced model customisation
 - AzCopy job `efc27ac6-a333-7c45-4dc0-c2ac25533fa7` reported 39 file transfers completed, 0 failed, 0 skipped, 62,578,689,665 bytes transferred, final job status Completed.
 - Current status: upload job completed, but a separate read-back listing of the Blob destination is still required before declaring the remote copy fully verified.
 - Keep the temporary VM and attached 128 GiB data disk until destination listing confirms both safetensors shards and expected configuration/tokenizer files. Then consider cleanup of temporary compute/disk resources while retaining the Blob copy.
+
+
+### 2026-10-09 — Blob destination verified
+- Ran `azcopy list 'https://llmplatform.blob.core.windows.net/models/gemma-4-31B-it' --machine-readable --running-tally`.
+- Destination listing returned 39 files totalling exactly 62,578,689,665 bytes, matching the successful upload job.
+- Confirmed both model weight shards are present:
+  - `model-00001-of-00002.safetensors`: 49,784,788,364 bytes
+  - `model-00002-of-00002.safetensors`: 12,761,549,884 bytes
+- Confirmed supporting files include `config.json`, `generation_config.json`, `model.safetensors.index.json`, `processor_config.json`, `tokenizer.json`, and `tokenizer_config.json`.
+- The 39 files include small Hugging Face cache metadata/lock files copied by the recursive transfer in addition to the 12 repository files shown in the dry run. These files are extra metadata and do not prevent using the model.
+- The model copy is verified in Blob Storage. The temporary transfer VM and attached 128 GiB data disk can now be cleaned up after confirming the correct temporary resources in Azure Portal. Preserve the storage account `llmplatform`, its private `models` container and the `models/gemma-4-31B-it` blobs.
