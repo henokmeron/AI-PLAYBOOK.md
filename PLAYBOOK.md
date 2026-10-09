@@ -333,3 +333,92 @@ Phase 7 — Advanced model customisation
 - Confirmed supporting files include `config.json`, `generation_config.json`, `model.safetensors.index.json`, `processor_config.json`, `tokenizer.json`, and `tokenizer_config.json`.
 - The 39 files include small Hugging Face cache metadata/lock files copied by the recursive transfer in addition to the 12 repository files shown in the dry run. These files are extra metadata and do not prevent using the model.
 - The model copy is verified in Blob Storage. The temporary transfer VM and attached 128 GiB data disk can now be cleaned up after confirming the correct temporary resources in Azure Portal. Preserve the storage account `llmplatform`, its private `models` container and the `models/gemma-4-31B-it` blobs.
+
+
+## 14. Expanded product vision: broad integrations, website intelligence and defensive cybersecurity
+
+These requirements are part of the long-term product direction. They do not mean every capability must be implemented in the first prototype. Build them as modular services behind a model-independent platform, with permissions, evaluation and auditability from the beginning.
+
+### 14.1 Defensive AI cybersecurity ("AI versus AI")
+
+Goal: provide a commercial defensive-security capability that helps businesses detect, investigate and reduce cyber risk, including attacks assisted by AI agents. Use AI to help defend systems; do not promise that any system can prevent every attack.
+
+Planned capability areas:
+- Asset inventory and attack-surface visibility for customer-owned or explicitly authorised systems.
+- Continuous monitoring of approved telemetry from security tools, cloud platforms, identity providers, endpoints, firewalls, DNS, web application firewalls (WAFs), application logs and audit systems.
+- Detection and triage of suspicious activity, including unusual agent/tool behaviour, anomalous API use, credential misuse, prompt-injection attempts against business agents, suspicious privilege changes and possible data exfiltration.
+- Defensive agents for alert enrichment, log correlation, investigation summaries, prioritisation, incident timelines, recommendations and evidence collection.
+- Controlled security testing and configuration checks only within a written, approved scope; safe validation of discovered weaknesses; integration with existing scanners rather than uncontrolled internet-wide scanning.
+- Response orchestration for approved actions, such as opening a ticket, isolating an endpoint through an authorised tool, disabling a token, blocking an indicator, or applying a WAF rule. Start in recommendation/dry-run mode; require human approval for high-impact actions until safety and reliability are established.
+- An auditable incident workflow with evidence, confidence/uncertainty, timestamps, rationale, recommended actions, approvals, outcomes and rollback instructions.
+- Security testing of our own AI platform and its agents: least-privilege tools, tool allowlists, input/output checks, sandboxed execution, secret protection, tenant isolation, prompt-injection resistance, exfiltration controls, rate limits and monitoring.
+- Benchmark the capability against realistic defensive test cases, including false positives, false negatives, time to detect, time to investigate, unsafe action rate and recovery/rollback success.
+
+Architecture principles:
+- AI adds analysis and automation; it does not replace foundational security controls such as patching, MFA, least privilege, backups, network segmentation, secure configuration and incident-response procedures.
+- Use multiple layers: deterministic controls and established security products, telemetry/rules, anomaly detection, AI-assisted investigation, policy-based approvals and human incident command.
+- Separate read-only monitoring permissions from response permissions. Grant the minimum permissions required for each connector and customer.
+- Tenant data and credentials must be isolated. Secrets belong in a managed secrets store, never in prompts, source code or logs.
+- All active testing must be authorised by the asset owner, restricted to an explicit scope and time window, rate-limited, logged and stoppable. Do not scan or test government, third-party or arbitrary public systems without explicit written authorisation.
+- Treat AI-generated security findings as hypotheses until supported by evidence. Include confidence levels and clear verification steps.
+- Never claim "complete protection" or guarantee that no AI agent can hack a system. Position the product as layered prevention, detection, response and risk reduction.
+
+### 14.2 Broad business and developer integrations
+
+Do not hard-code the product to a short list such as Xero, QuickBooks or Sage. Create a connector framework that can expand across categories, including:
+- Finance, accounting, payroll, ERP, procurement and billing
+- Microsoft 365, Google Workspace, email, calendars, chat and collaboration
+- CRM, customer support, ticketing, project management and HR
+- Cloud providers, identity systems, endpoint/security tools, SIEM/SOAR, WAF/CDN and monitoring platforms
+- Websites, content-management systems, e-commerce, booking systems and analytics
+- Social media and publishing platforms where official APIs and the customer's permissions allow it
+- Databases, data warehouses, object storage, internal APIs, webhooks and custom line-of-business software.
+
+Connector design requirements:
+- Prefer official APIs, vendor-supported OAuth and scoped access tokens. Use webhooks or event streams where available.
+- Provide a documented connector SDK/interface so new integrations can be added without changing the core agent.
+- Define each connector's capabilities, required permissions, data types, rate limits, retention behaviour and supported actions.
+- Separate read/search actions from write/send/delete/admin actions. Sensitive actions should use narrow scopes and approval policies.
+- Include retries, pagination, rate-limit handling, idempotency where possible, audit trails, health checks, revocation and graceful failure.
+- Respect each vendor's terms, technical limits, privacy obligations and customer authorisation. Do not bypass access controls or scrape authenticated systems without permission.
+- Design for least privilege, per-customer credential separation and connector-specific tests.
+
+### 14.3 Website scanning and business knowledge ingestion
+
+Product concept/name for planning: **Website Intelligence / Business Knowledge Onboarding**. The final market-facing name can be decided later.
+
+Goal: let an authorised customer connect a business website and build a searchable, source-linked snapshot of the information it publishes, so its AI assistant can answer business-specific questions without requiring the customer to upload every page manually.
+
+Planned workflow:
+1. Customer verifies ownership or explicitly confirms authorisation and defines the permitted domains/subdomains and scan boundaries.
+2. Discover allowed pages through sitemaps, links and configured URL seeds; respect robots directives, access controls, rate limits and the site's terms.
+3. Crawl permitted public content. Authenticated or private content is included only through a specifically authorised integration and credentials with appropriate scope.
+4. Extract clean text and useful structure from HTML and supported document types; preserve page URLs, titles, headings, timestamps and provenance.
+5. Deduplicate, chunk and index the content; create embeddings where useful and store retrievable source references. Keep website content distinct from trusted system instructions because pages may contain malicious prompt-injection text.
+6. Produce a business knowledge summary with source links and clear coverage metadata. Summarise areas such as products/services, pricing when published, locations, opening hours, policies, support information, contact details and other facts actually present on the site.
+7. Make the indexed information available to the customer's agent through retrieval-augmented generation (RAG), with citations to the pages used.
+8. Support rescans, scheduled refresh, change detection, deletion, exclusions and administrator review. Show scan date, crawl coverage, failed URLs and likely gaps.
+9. Allow customers to add other authorised sources—files, knowledge bases, APIs, CRM, support systems and internal documents—because a public website rarely contains the full internal truth about a business.
+
+Safety and quality requirements:
+- A website scan must not imply that the AI knows everything about the company. Clearly distinguish public website facts, connected internal sources, inferred information and unknowns.
+- Never treat retrieved website content as trusted instructions for the agent. Defend against prompt injection, malicious links, hidden content and attempts to exfiltrate customer data.
+- Prevent crawling outside the configured scope; handle redirects safely; block access to private/internal IP ranges and cloud metadata endpoints to reduce SSRF risk.
+- Limit crawl depth, page count, file size, concurrency and frequency; apply content-type checks, malware scanning where appropriate and robust parser isolation.
+- Keep tenant indexes separate, apply access controls at retrieval time, preserve source citations and support deletion/refresh when content changes.
+- Do not crawl private or third-party areas without permission. Respect authentication, robots directives, copyright, privacy and applicable terms/law.
+
+### 14.4 Build and rollout strategy
+
+- Build shared primitives first: identity, tenant isolation, audit logging, secret management, connector interface, queues/jobs, policy engine, source metadata, retrieval and evaluations.
+- Prototype website intelligence with customer-authorised public websites and source-cited summaries.
+- Prototype read-only integrations before allowing the agent to perform write actions.
+- Add defensive cybersecurity as a separate, strongly permissioned product module; begin with read-only ingestion and AI-assisted investigation, then add gated response actions after testing.
+- Use capability-based permissions, not a single all-powerful agent. Each specialised agent receives only the data and tools required for its task.
+- Measure value and safety before enabling automation in production; keep a human override and emergency stop.
+
+### 2026-10-09 — Product vision expanded
+- Added defensive AI cybersecurity as a potential commercial module, focused on authorised monitoring, detection, investigation and carefully gated response.
+- Added a broad connector framework covering business software, websites, social platforms, cloud/security products, APIs and custom integrations rather than limiting integrations to a few accounting tools.
+- Added Website Intelligence / Business Knowledge Onboarding: authorised crawling, parsing, source-linked summaries, RAG indexing, scheduled refresh and scope/safety controls.
+- Recorded explicit limitations: no guarantee of complete cyber prevention; no unauthorised scanning; website content is untrusted input; sensitive agent actions require least privilege, audit logs and approval policies.
