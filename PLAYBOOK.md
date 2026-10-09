@@ -456,3 +456,11 @@ Safety and quality requirements:
 - The original BF16 weights are too large for a 24 GB GPU. Google publishes an official Gemma 4 31B Q4_0/GGUF quantized checkpoint family and lists about 17.5 GB for the quantized static weights; additional memory is needed for runtime and KV cache/context. A short-context single-request test may fit 24 GB, but this must be validated with the runtime and available VRAM rather than assumed.
 - Proposed route, pending user selection/availability check: search for `Standard_NV36ads_A10_v5` and verify the portal's price estimate first. If available within the intended short-test spend, use an official Gemma 4 31B Q4_0 GGUF checkpoint with llama.cpp/CUDA and a conservative context length. This is a quantized variant; keep the original BF16 artifact unchanged in Blob Storage.
 - If the A10 size is unavailable or the final estimate exceeds the agreed limit, pause large-model deployment and test the software stack with a smaller Gemma model on lower-cost compute rather than silently proceeding with an H100 at higher cost.
+
+
+### 2026-10-09 — User confirms no quantization for first Gemma inference test
+- User explicitly wants to run the original unquantized Gemma 4 31B-it weights stored in Blob Storage, rather than switch to a Q4/GGUF version.
+- Terminology clarification: the downloaded Hugging Face repository is BF16, not FP32. We will preserve and run the unquantized BF16 checkpoint; do not replace it with a quantized artifact for this initial test.
+- Preferred Azure GPU candidate is `Standard_NC40ads_H100_v5`, one H100 NVL GPU with 94 GiB GPU memory. vLLM's Gemma 4 guide lists 80 GB as the minimum NVIDIA GPU memory for Gemma 4 31B IT BF16.
+- Indicative third-party UK South pricing found 2026-10-09: Spot about US$1.6124/hour and on-demand about US$8.725/hour; pricing and quota/capacity must be checked in the Azure portal before creation. Two hours on-demand is about US$17.45 before ancillary costs, exceeding the earlier ~US$10 target. Spot could reduce cost but may be evicted; only use it if the portal confirms a rate acceptable to the user.
+- Next action: search for `Standard_NC40ads_H100_v5` in VM size picker and inspect both on-demand and Spot price/options, without creating VM until user confirms the actual price/approach.
