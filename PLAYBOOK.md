@@ -422,3 +422,9 @@ Safety and quality requirements:
 - Added a broad connector framework covering business software, websites, social platforms, cloud/security products, APIs and custom integrations rather than limiting integrations to a few accounting tools.
 - Added Website Intelligence / Business Knowledge Onboarding: authorised crawling, parsing, source-linked summaries, RAG indexing, scheduled refresh and scope/safety controls.
 - Recorded explicit limitations: no guarantee of complete cyber prevention; no unauthorised scanning; website content is untrusted input; sensitive agent actions require least privilege, audit logs and approval policies.
+
+
+### 2026-10-09 — Temporary VM cleanup in progress
+- User reports the two temporary `gemma-transfer-vm-...` virtual machines have been deleted after the Gemma Blob upload was verified.
+- Remaining cleanup must be based on a fresh Azure resource inventory: check for orphaned managed disks (including `gemma-transfer-data` and OS disks), network interfaces, public IPs, and the unused SSH public-key resource `gemma-transfer-vm_key`.
+- Preserve the `llmplatform` storage account, private `models` container, and `models/gemma-4-31B-it` Blob prefix. Do not delete the entire resource group.
