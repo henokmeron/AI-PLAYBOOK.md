@@ -482,3 +482,9 @@ Safety and quality requirements:
 - Successfully ran `nvidia-smi` in RunPod Web Terminal: GPU 0 reports NVIDIA H100 NVL, approximately 94 GiB VRAM, 0 MiB used and no running processes. This confirms the GPU is visible in the container.
 - A container message `groups: cannot find name for group ID 109` appeared before `nvidia-smi`; it did not prevent GPU reporting and is likely a container identity/group lookup warning.
 - Next: run `df -h` and inspect mounts; then download the original BF16 Gemma 4 31B-it model onto the mounted 100 GB volume, configure vLLM with a supported Gemma 4 version and conservative context, perform one inference test, capture outcome, then terminate the Pod and its volume only after keeping the Azure Blob copy intact.
+
+
+### 2026-10-09 — RunPod volume verified
+- In the RunPod Pod's Volumes tab, the attached Volume Disk is explicitly shown as 100 GB and mounted at `/workspace`; usage is 0 bytes before model download.
+- `df -h /workspace` inside the container reports a large `mfs#...runpod.net` backing filesystem. Treat RunPod's Pod Volumes UI (100 GB allocation for this attached volume) as the applicable user allocation rather than interpreting the shared filesystem's displayed 873T total as capacity dedicated to this Pod.
+- Next: download the public `google/gemma-4-31B-it` repo directly into `/workspace/gemma-4-31B-it` with Hugging Face Hub CLI, keeping HF caches on `/workspace`. Avoid sending Azure access tokens or storage keys to RunPod.
