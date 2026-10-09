@@ -464,3 +464,12 @@ Safety and quality requirements:
 - Preferred Azure GPU candidate is `Standard_NC40ads_H100_v5`, one H100 NVL GPU with 94 GiB GPU memory. vLLM's Gemma 4 guide lists 80 GB as the minimum NVIDIA GPU memory for Gemma 4 31B IT BF16.
 - Indicative third-party UK South pricing found 2026-10-09: Spot about US$1.6124/hour and on-demand about US$8.725/hour; pricing and quota/capacity must be checked in the Azure portal before creation. Two hours on-demand is about US$17.45 before ancillary costs, exceeding the earlier ~US$10 target. Spot could reduce cost but may be evicted; only use it if the portal confirms a rate acceptable to the user.
 - Next action: search for `Standard_NC40ads_H100_v5` in VM size picker and inspect both on-demand and Spot price/options, without creating VM until user confirms the actual price/approach.
+
+
+### 2026-10-09 — Stop Azure GPU SKU search; use temporary external GPU for first inference test
+- User explicitly asked to stop spending time on Azure GPU sizes and to proceed with any available suitable machine for a one-off short test.
+- Azure portal showed `Standard_NC24ads_A100_v4` and `Standard_NC40ads_H100_v5` as unavailable in the tried regions/configurations. Do not continue cycling Azure regions or SKUs for this initial experiment.
+- Recommended temporary GPU host: RunPod on-demand Pod using one H100 NVL with 94 GB VRAM, if available. RunPod's official pricing page, updated 2026-09-27, lists H100 NVL at about US$3.19/hour; two hours is about US$6.38 of GPU compute before volume, network, taxes or other charges. H100 PCIe 80GB is listed around US$2.89/hour, but the 94GB NVL leaves more room above vLLM's stated 80GB minimum for Gemma 4 31B IT BF16.
+- Use on-demand hourly compute, no long-term commitment; verify exact displayed price, GPU memory, storage charges and shutdown behaviour before deploying.
+- Use the existing unquantized BF16 model. It is acceptable to fetch from the public Hugging Face model repository for this short test, while the verified private copy remains in Azure Blob Storage; alternatively copy from Blob if convenient. Do not expose Azure credentials to RunPod. For this initial test use only non-sensitive prompts/data, since the runtime is on a separate provider.
+- Keep model in Azure Blob Storage as durable copy. After a one-off test, terminate/delete the temporary Pod and its attached volume if no longer needed; confirm billing stops. No Azure GPU VM has been created during the availability checks.
