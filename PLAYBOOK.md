@@ -473,3 +473,12 @@ Safety and quality requirements:
 - Use on-demand hourly compute, no long-term commitment; verify exact displayed price, GPU memory, storage charges and shutdown behaviour before deploying.
 - Use the existing unquantized BF16 model. It is acceptable to fetch from the public Hugging Face model repository for this short test, while the verified private copy remains in Azure Blob Storage; alternatively copy from Blob if convenient. Do not expose Azure credentials to RunPod. For this initial test use only non-sensitive prompts/data, since the runtime is on a separate provider.
 - Keep model in Azure Blob Storage as durable copy. After a one-off test, terminate/delete the temporary Pod and its attached volume if no longer needed; confirm billing stops. No Azure GPU VM has been created during the availability checks.
+
+
+### 2026-10-09 — RunPod GPU provisioned and verified
+- User deployed an on-demand RunPod PyTorch 2.8.0 Pod with 1x H100 NVL, 94 GB VRAM, 251 GB RAM and 18 vCPU.
+- Displayed price at creation: US$3.19/hour for GPU, plus container disk/volume storage charges.
+- Configured 30 GB container disk and 100 GB Volume Disk. Need verify exact mount point and available disk space in the Web Terminal before downloading weights.
+- Successfully ran `nvidia-smi` in RunPod Web Terminal: GPU 0 reports NVIDIA H100 NVL, approximately 94 GiB VRAM, 0 MiB used and no running processes. This confirms the GPU is visible in the container.
+- A container message `groups: cannot find name for group ID 109` appeared before `nvidia-smi`; it did not prevent GPU reporting and is likely a container identity/group lookup warning.
+- Next: run `df -h` and inspect mounts; then download the original BF16 Gemma 4 31B-it model onto the mounted 100 GB volume, configure vLLM with a supported Gemma 4 version and conservative context, perform one inference test, capture outcome, then terminate the Pod and its volume only after keeping the Azure Blob copy intact.
