@@ -495,3 +495,11 @@ Safety and quality requirements:
 - Installed `huggingface_hub` using `python3 -m pip install --upgrade huggingface_hub`; verified the `hf` CLI help displays correctly.
 - The 100 GB RunPod Volume Disk is mounted at `/workspace`, as confirmed in the RunPod Volumes UI. GPU `nvidia-smi` check succeeded and showed H100 NVL with ~94 GB VRAM and 0 MiB used before loading any model.
 - Next: use `hf download google/gemma-4-31B-it --local-dir /workspace/gemma-4-31B-it` to fetch the original unquantized BF16 repo to the 100 GB volume. Keep the Pod running during download; do not change or delete the original Blob Storage copy.
+
+
+### 2026-10-10 — Azure Blob to RunPod transfer completed
+- The Hugging Face download on RunPod stalled while waiting on a model-shard lock; incomplete shard downloads stopped growing. The partial local Hugging Face download was not relied on for the final copy.
+- Installed AzCopy 10.32.8 on the RunPod H100 NVL container and used a temporary read/list SAS token for the private Azure `models` container. The SAS token was inadvertently shared in ChatGPT; treat it as exposed and let it expire or revoke it if supported. Do not reuse it.
+- Copied from `https://llmplatform.blob.core.windows.net/models/gemma-4-31B-it` to `/workspace/gemma-4-31B-it` on RunPod with AzCopy recursive copy and overwrite enabled.
+- AzCopy job `30b09493-8616-9b4a-d650-3fb75a6d0a5d` reported: 39 transfers total, 39 completed, 0 failed, 0 skipped, 62,578,689,665 bytes transferred, final status Completed.
+- Next: verify locally that both safetensors shards match expected byte counts and the supporting config/tokenizer files exist. Then start vLLM serving the BF16 checkpoint with an appropriately limited context for the first test, test one prompt, and stop/terminate the H100 Pod after testing.
