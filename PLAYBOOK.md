@@ -545,3 +545,53 @@ Safety and quality requirements:
 - Architecture: add a dedicated Cybersecurity Services module connected through the same model-independent agent/tool framework, but separated by tenant, permissions, security policy and audit controls.
 - Build sequence: (1) threat model and safe-scope contract; (2) authorised website inventory and passive checks; (3) evidence-based reporting and remediation tickets; (4) connector framework and tenant isolation; (5) cloud/M365/identity integrations; (6) AI-agent behaviour monitoring; (7) gated response automation; (8) managed-service operations and independent assurance.
 - Keep this roadmap alongside, not instead of, the general business-agent roadmap. Reuse the platform's RAG, tools, memory/planning and evaluation foundations, but cybersecurity actions require stricter permissions and safety gates.
+
+
+## Architecture Principle: Dynamic, Evolvable Platform (added 2026-10-10)
+
+### Non-negotiable objective
+Design the whole product as a long-lived, modular, model-independent AI platform that can evolve as leading models, tools, infrastructure, business applications, and security practices change. Do not optimise architecture solely for the current Gemma prototype or a single small feature. Every implementation decision must be checked against this target architecture, documented, and justified. The prototype is a test of the architecture, not the architecture's permanent shape.
+
+### Architecture decision test
+Before choosing or implementing a component, answer and record:
+1. Does it solve the immediate need without locking the platform to one model, cloud, vendor, database, or business application?
+2. Can it be replaced or upgraded behind a stable interface without rewriting unrelated modules?
+3. Does it support tenant isolation, permission boundaries, security policy, privacy, auditability, and UK/EU/other target-market requirements?
+4. Can it scale from prototype to multiple customers, workloads, regions, and deployment patterns without assuming unlimited budget?
+5. Can it be tested, observed, evaluated, rolled back, and operated reliably?
+6. Does it create avoidable vendor lock-in, duplicated logic, hidden coupling, or unnecessary complexity? If yes, record the trade-off and a migration path.
+7. Is the capability genuinely needed now, or should its interface be designed now and implementation deferred until validated? Avoid both premature overbuilding and short-term hacks that block expansion.
+
+### Reference architecture boundaries
+- **Experience/API layer:** web app, customer/admin console, SDKs and public API; stable versioned APIs and clear authentication/authorisation.
+- **Identity, tenant and policy plane:** tenant isolation, user/service identities, roles/attributes, consent, quotas, customer-specific policies, approvals and audit records. This layer controls access independently of model output.
+- **AI orchestration plane:** task routing, workflow/agent state machines, planning, bounded retries, timeouts, cancellation, scheduling, queues and human handoffs. Use explicit workflows for critical processes rather than relying on unconstrained agent loops.
+- **Model gateway:** one provider-neutral interface for hosted APIs and self-hosted open-weight models; model registry, capability metadata, routing, version pinning, fallbacks, token/context limits, cost/latency tracking and safe rollout/rollback. Treat model replacement as configuration plus evaluation where possible, not a platform rewrite.
+- **Knowledge and data plane:** connectors/ingestion, parsing, chunking, metadata, hybrid retrieval, vector and keyword indexes, tenant-aware access filters, citations/provenance, freshness, deletion and retention. Keep source systems authoritative and maintain data lineage.
+- **Tools and integration plane:** standard connector contracts for business software, websites, cloud services and security products; OAuth/least-privilege credentials, schema validation, rate limits, idempotency, retries, versioning and health monitoring. Separate read operations from write/action operations.
+- **Execution plane:** isolated and ephemeral sandboxes for code and tools; restricted network egress, resource limits, filesystem boundaries, no direct model access to host/root secrets, and policy checks before external side effects.
+- **Memory and state:** separate conversational/session state, durable user/customer preferences, task/workflow state and approved organisational knowledge. Define ownership, scope, expiry, correction and deletion semantics; do not silently turn arbitrary retrieved data into trusted memory.
+- **Evaluation and observability:** model/task evaluations, regression suites, red-team tests, tracing, structured logs, metrics, feedback, cost/latency/error budgets, security alerts and audit trails. Production changes require measurable acceptance criteria.
+- **Security services:** a separately governed defensive cybersecurity module for authorised asset discovery, website checks, vulnerability intake, alert correlation, AI-agent behaviour monitoring, remediation tracking and gated response. It shares platform foundations but has stricter permissions, isolation, evidence requirements and approval gates.
+- **Operations/deployment plane:** environment separation (development, test, staging, production), infrastructure-as-code, CI/CD, secrets management, backups/recovery, health checks, deployment strategies, data residency choices and incident response.
+
+### Modularity and evolution rules
+- Prefer small modules with explicit responsibilities and versioned contracts; avoid a single giant application with tangled dependencies. Start as a well-structured modular monolith when that is the simplest reliable option; split into services only when scaling, isolation, reliability, ownership, or deployment needs justify the operational cost.
+- Use provider-neutral interfaces for models, embeddings/rerankers, vector stores, object storage, telemetry, queues, identity, and business connectors. Keep vendor-specific code inside adapters and document capabilities that cannot be made portable.
+- Define schemas and contracts for model requests/responses, tool calls/results, connector events, documents/chunks, findings, policies, approvals, audit events and evaluation results. Version them and test backward compatibility.
+- Keep configuration separate from code; use feature flags, tenant-level capability settings, model routing policies and controlled rollouts. Never silently change production model behaviour because a newer model appeared.
+- New models and tools enter through a lifecycle: discover → licence/security review → sandbox → benchmark/evaluate → compare cost/quality/safety/latency → approve → staged rollout → monitor → rollback if needed.
+- Support portability through containers and infrastructure-as-code where practical, while acknowledging that GPUs, cloud identity, managed databases and model formats have provider-specific constraints.
+- Design for multi-tenancy and data boundaries from the beginning, even before serving multiple customers. Tenant identity must flow through retrieval, tools, logs, memory, jobs, caches and outputs.
+- Do not use GitHub for large model weights, secrets, customer data, or generated production data. GitHub holds code, configs/templates without secrets, tests, architecture decisions and the reproducible playbook; object storage holds model artifacts and other large assets under controlled access.
+
+### Decision records and architecture governance
+- For any decision that affects core architecture, record: problem, options considered, chosen approach, reasons, rejected alternatives, security/privacy impact, cost/operational impact, reversibility, and what evidence would cause reconsideration. Keep short Architecture Decision Records (ADRs) under `docs/architecture/decisions/`.
+- Every meaningful feature must identify which architecture boundary it belongs to, the interfaces it uses, data/permission flows, failure modes, tests, monitoring and rollback strategy. If it does not fit the reference architecture, pause and either adapt the design or deliberately amend the architecture record before proceeding.
+- Review architecture at milestones and when new models, customer requirements, regulations, major integrations, or threat intelligence materially change assumptions. Architecture should evolve deliberately, not through accidental coupling.
+- Build for capability and quality, not a claim that one architecture automatically makes the product as capable as every leading AI system. Performance depends on models, data, tools, evaluation, infrastructure, user experience and operational execution together.
+
+### Current prototype implications
+- Gemma 4 31B-it on RunPod is only a temporary inference experiment; it is not a commitment to a specific production model, provider or GPU host.
+- The model gateway and evaluation process should eventually allow comparing Gemma against other eligible open-weight and hosted models on the same business tasks, with the best model selected per task when useful.
+- Do not build the full distributed architecture before proving core flows. First implement stable interfaces and a simple deployment, then scale/split modules when evidence supports it. Preserve long-term boundaries without paying the full operational cost of an enterprise microservice estate prematurely.
