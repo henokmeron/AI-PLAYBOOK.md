@@ -21,10 +21,14 @@ if ! command -v findmnt >/dev/null 2>&1; then
   echo "ERROR: findmnt not available; refusing to assume /workspace is persistent." >&2
   exit 2
 fi
-MOUNT_INFO="$(findmnt -T "$GLOBAL" -n -o FSTYPE,SOURCE 2>/dev/null || true)"
-if [[ "$MOUNT_INFO" != *"fuse.geeseefs"* ]]; then
+# Read filesystem type and source separately. Exact type comparison is more
+# reliable than matching a combined FSTYPE,SOURCE string on this FUSE mount.
+MOUNT_TYPE="$(findmnt -T "$GLOBAL" -n -o FSTYPE 2>/dev/null | head -n 1 | tr -d '[:space:]' || true)"
+MOUNT_SOURCE="$(findmnt -T "$GLOBAL" -n -o SOURCE 2>/dev/null | head -n 1 | tr -d '\\r' || true)"
+MOUNT_INFO="$MOUNT_TYPE $MOUNT_SOURCE"
+if [[ "$MOUNT_TYPE" != "fuse.geeseefs" ]]; then
   echo "ERROR: /workspace does not look like the expected mounted Global Volume." >&2
-  echo "Detected mount: ${MOUNT_INFO:-none}" >&2
+  echo "Detected filesystem: ${MOUNT_TYPE:-none}; source: ${MOUNT_SOURCE:-none}" >&2
   echo "Nothing was copied. Confirm the Global Volume is mounted at /workspace." >&2
   exit 3
 fi
