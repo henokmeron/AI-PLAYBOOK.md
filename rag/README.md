@@ -209,3 +209,10 @@ curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/api/
 ```
 
 This test starts and then cleans up only its temporary gateway and sample files; it does not change the running gateway on 8010 or the vLLM service on 8000. Keep both listeners loopback-only.
+
+
+## PDF-enabled parser tests passed — 2026-10-11
+
+After running the isolated PDF setup and using `PYTHONPATH=/tmp/rag-deps`, the user ran the expanded `rag/tests/test_document_loaders.py` suite: **12 tests ran in 0.064 seconds, all OK**. This confirms the sample PDF text extraction and page-marker tests pass, the no-text/scanned-PDF case is explicitly rejected pending OCR, malformed PDFs are rejected, and PDF source names survive retrieval. Detailed record: [document-loader-tests-with-pdf-2026-10-11.md](results/document-loader-tests-with-pdf-2026-10-11.md).
+
+The live gateway still needs the guarded upgrade, then the CSV/DOCX/PDF HTTP integration script should be run before PDF support is marked end-to-end verified.
