@@ -665,3 +665,12 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Detailed report: `evaluation/results/gemma-4-31b-smoke-2026-10-11.md`.
 - Keep Gemma 4 31B-it as `prototype-baseline`; this small smoke test does not approve it for production.
 - Next product capability: implement a minimal document Q&A/RAG prototype using approved local documents and source references. Build and test retrieval separately before asking the model to answer, so we can detect missing evidence and reduce unsupported answers.
+
+
+### 2026-10-11 — First evaluation baseline and RAG prototype started
+- Ran `evaluation/run_chat_eval.py` against the current vLLM API. All four checks passed: exact instruction following, 17 × 19 arithmetic, supplied-info recall, and JSON output.
+- Per-request times shown in the one run were 0.06 s, 0.12 s, 2.84 s and 0.27 s; these are single-run observations, not throughput benchmarks. Detailed result: `evaluation/results/gemma-4-31b-smoke-2026-10-11.md`.
+- Kept Gemma 4 31B-it at prototype-baseline; this short smoke suite is not approval for production.
+- Started a minimal document Q&A/RAG proof of concept under `rag/`. It uses plain-text/Markdown documents, overlapping text chunks, BM25 lexical retrieval and the OpenAI-compatible vLLM chat API, with source labels and a basic untrusted-document instruction.
+- The initial RAG prototype deliberately avoids new Python dependencies and avoids writing an index database to the FUSE-backed Global Volume. It is not production-ready: no authentication, ACL enforcement, tenant isolation, PDF/Office parsing, semantic vector search, audit logging, or comprehensive prompt-injection defence.
+- Next: run the documented test question against fictional sample documents; inspect source retrieval and answer citations, then extend evaluation to measure whether each answer is supported by retrieved evidence.
