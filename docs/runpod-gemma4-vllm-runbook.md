@@ -231,3 +231,6 @@ Command `sha256sum -c SHA256SUMS && zstd -t vllm-clean-env.tar.zst` succeeded. A
 ### Restore safety rule
 
 Do not restore over an existing `/tmp/vllm-clean-env` while the model server is running. First check if the target path already exists and check local disk space. For a proper recovery test, use a fresh compatible Pod/container with the Global Volume attached, verify the checksum, extract to `/tmp/vllm-clean-env`, then test `vllm --version`, PyTorch CUDA/GPU detection, and an actual chat completion. Until that test passes, label the archive integrity-verified but not restore-verified.
+
+
+A guarded restore script is committed in GitHub at `scripts/restore-vllm-environment.sh`. It verifies checksum/archive integrity, refuses to overwrite an existing `/tmp/vllm-clean-env`, requires 12 GiB free on local storage, extracts to the original path, then tests vLLM and PyTorch/GPU detection. Use this on a fresh compatible Pod/container with the Global Volume mounted at `/workspace`; it is intentionally not designed to run against the currently working environment because that path already exists. The script's existence is not a restore-test result; perform and document the actual fresh-Pod restore test separately.
