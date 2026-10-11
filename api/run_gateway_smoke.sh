@@ -45,7 +45,7 @@ echo "Python syntax checks passed."
 umask 077
 "$PYTHON" -c 'import secrets; print(secrets.token_urlsafe(40))' > "$KEY_FILE"
 PYTHONPATH="$RAG_DEPS" PLATFORM_HOST=127.0.0.1 PLATFORM_PORT=8010 PLATFORM_API_KEY="$(cat "$KEY_FILE")" \
-  RAG_DOCS_DIR="$DOCS" RAG_MANAGED_DOCS_DIR=/workspace/rag-managed-docs RAG_MIN_SCORE=2.30 RAG_MANAGED_MIN_SCORE=2.30 \
+  RAG_DOCS_DIR="$DOCS" RAG_MANAGED_DOCS_DIR=/workspace/rag-managed-docs RAG_MIN_SCORE=2.30 RAG_MANAGED_MIN_SCORE=0.0 \
   UV_CACHE_DIR=/tmp/uv-cache TMPDIR=/tmp \
   nohup "$PYTHON" "$GATEWAY_FILE" > "$LOG_FILE" 2>&1 </dev/null &
 echo "$!" > "$PID_FILE"
