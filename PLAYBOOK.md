@@ -862,3 +862,10 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Detailed record: `rag/results/document-loader-tests-with-pdf-2026-10-11.md`.
 - The PDF parser dependency remains separate from the working vLLM environment and its wheel is saved with checksum on the Global Volume.
 - Next: run the guarded gateway upgrade; after it passes, run the temporary isolated CSV/DOCX/PDF HTTP integration test. Until that passes, mark PDF parsing as unit-tested, not end-to-end verified.
+
+
+### 2026-10-11 — Gateway passed after PDF dependency upgrade
+- After parser unit tests passed 12/12, user ran the guarded gateway upgrade. Screenshot confirms gateway health, unauthenticated request rejected, correct source-cited 10-business-day answer, and low-relevance abstention before model generation.
+- Final command output: `ALL GATEWAY + RAG API TESTS PASSED`. The vLLM model server was not restarted.
+- Report: `api/results/gateway-after-pdf-dependency-upgrade-2026-10-11.md`.
+- End-to-end API support for CSV, DOCX and PDF remains pending. Next run `api/test_format_ingestion.sh` against the isolated temporary gateway on port 8011; do not alter the main gateway on 8010 or vLLM on 8000.
