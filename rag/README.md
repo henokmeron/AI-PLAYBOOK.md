@@ -223,3 +223,23 @@ The live gateway still needs the guarded upgrade, then the CSV/DOCX/PDF HTTP int
 The user confirmed the isolated HTTP integration test returned the correct source-grounded answers for a CSV, a Word DOCX and a text-based PDF. The three source filenames were `visitor-rules.csv`, `launch-review.docx`, and `project-review.pdf`. Full details: [API integration report](../api/results/csv-docx-pdf-integration-2026-10-11.md).
 
 Excel `.xlsx` and scanned PDF OCR remain future work. These example tests do not guarantee extraction quality for arbitrary files.
+
+
+## Excel XLSX ingestion — code added, validation pending
+
+The reader now supports read-only `.xlsx` workbooks using pinned `openpyxl==3.1.5`, `et-xmlfile==2.0.0`, and `defusedxml==0.7.1` packages isolated under `/tmp/rag-deps`. The setup script stores hash-verified wheel files on the Global Volume and does not alter the vLLM environment. See [XLSX support notes](XLSX_SUPPORT.md).
+
+It retains worksheet names, row numbers and cell coordinates, and includes each sheet's visibility state. Formula values are read from cached values; formulas are not recalculated. Files are limited by compressed size, total decompressed size, sheet/row/column count and extracted text size. Legacy XLS, XLSM writing, and recalculation are out of scope.
+
+Run setup and tests:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/setup_xlsx_support.sh -o /tmp/setup_xlsx_support.sh && bash /tmp/setup_xlsx_support.sh
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/document_loaders.py -o /tmp/document_loaders.py
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/rag_engine.py -o /tmp/rag_engine.py
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/tests/test_document_loaders.py -o /tmp/test_document_loaders.py
+PYTHONPATH=/tmp/rag-deps /tmp/vllm-clean-env/bin/python -m py_compile /tmp/document_loaders.py /tmp/rag_engine.py /tmp/test_document_loaders.py
+PYTHONPATH=/tmp/rag-deps /tmp/vllm-clean-env/bin/python /tmp/test_document_loaders.py
+```
+
+This should run the expanded 16-test parser suite without GPU inference. Only after it passes, upgrade the gateway and execute the combined CSV/DOCX/PDF/XLSX HTTP integration test.
