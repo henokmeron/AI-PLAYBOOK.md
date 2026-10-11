@@ -37,7 +37,7 @@ curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/ops/
 ```
 
 The script:
-1. Refuses to proceed unless `/workspace` appears to be the expected `fuse.geeseefs` Global Volume mount.
+1. Verifies `/workspace` is itself a mount point and that the expected Gemma `config.json` exists there. It reports the filesystem/source but does not rely on brittle equality checks against the FUSE filesystem name.
 2. Resolves the latest `main` commit SHA and downloads that exact full repository archive.
 3. Validates the archive, records its SHA-256, and stores an immutable commit-named archive on the Global Volume (it refuses to overwrite a snapshot whose checksum differs).
 4. Captures copies/checksums of deployed runtime source files if present.
