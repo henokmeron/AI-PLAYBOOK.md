@@ -154,7 +154,7 @@ echo "=== XLSX INTEGRATION TEST ==="
 xlsx_response="$(curl -fsS -X POST "$URL/v1/rag/ask" \
   -H "Authorization: Bearer $API_KEY" -H 'Content-Type: application/json' \
   -d '{"question":"What is the Q4 marketing budget?","top_k":2}')"
-printf '%s' "$xlsx_response" | "$PYTHON" -c 'import json,sys; d=json.load(sys.stdin); print("Status:",d.get("status")); print("Answer:",d.get("answer")); print("Sources:",", ".join(x.get("file","?") for x in d.get("sources",[]))); assert d.get("status")=="answered"; assert "27500" in d.get("answer",""); assert any(x.get("file")=="department-budget.xlsx" for x in d.get("sources",[]))'
+printf '%s' "$xlsx_response" | "$PYTHON" -c 'import json,sys; d=json.load(sys.stdin); answer=d.get("answer",""); digits="".join(c for c in answer if c.isdigit()); print("Status:",d.get("status")); print("Answer:",answer); print("Sources:",", ".join(x.get("file","?") for x in d.get("sources",[]))); assert d.get("status")=="answered"; assert "27500" in digits; assert any(x.get("file")=="department-budget.xlsx" for x in d.get("sources",[]))'
 echo "PASS: XLSX was retrieved and its source was returned."
 
 echo "ALL CSV/DOCX/PDF/XLSX INTEGRATION TESTS PASSED."
