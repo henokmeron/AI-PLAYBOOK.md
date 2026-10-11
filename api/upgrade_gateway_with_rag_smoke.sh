@@ -11,6 +11,8 @@ OLD_GATEWAY=/tmp/platform_gateway.py.pre-rag
 NEXT_GATEWAY=/tmp/platform_gateway.py.next
 ENGINE=/tmp/rag_engine.py
 NEXT_ENGINE=/tmp/rag_engine.py.next
+LOADER=/tmp/document_loaders.py
+NEXT_LOADER=/tmp/document_loaders.py.next
 PID_FILE=/tmp/platform-gateway.pid
 LOG_FILE=/tmp/platform-gateway.log
 URL=http://127.0.0.1:8010
@@ -66,7 +68,8 @@ fi
 echo "=== DOWNLOAD AND CHECK NEW FILES ==="
 curl -fsSL "$BASE/api/local_gateway.py" -o "$NEXT_GATEWAY"
 curl -fsSL "$BASE/rag/rag_engine.py" -o "$NEXT_ENGINE"
-"$PYTHON" -m py_compile "$NEXT_GATEWAY" "$NEXT_ENGINE"
+curl -fsSL "$BASE/rag/document_loaders.py" -o "$NEXT_LOADER"
+"$PYTHON" -m py_compile "$NEXT_GATEWAY" "$NEXT_ENGINE" "$NEXT_LOADER"
 echo "New gateway and shared RAG engine passed Python syntax compilation."
 
 if [[ -f "$GATEWAY" ]]; then
@@ -107,6 +110,7 @@ fi
 UPGRADED=1
 cp "$NEXT_GATEWAY" "$GATEWAY"
 cp "$NEXT_ENGINE" "$ENGINE"
+cp "$NEXT_LOADER" "$LOADER"
 
 echo "=== START UPDATED LOOPBACK GATEWAY ==="
 PLATFORM_HOST=127.0.0.1 PLATFORM_PORT=8010 PLATFORM_API_KEY="$API_KEY" \
