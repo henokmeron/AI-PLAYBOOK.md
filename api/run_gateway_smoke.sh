@@ -8,6 +8,7 @@ PYTHON=/tmp/vllm-clean-env/bin/python
 GATEWAY_FILE=/tmp/platform_gateway.py
 ENGINE_FILE=/tmp/rag_engine.py
 LOADER_FILE=/tmp/document_loaders.py
+LIBRARY_FILE=/tmp/document_library.py
 LOG_FILE=/tmp/platform-gateway.log
 PID_FILE=/tmp/platform-gateway.pid
 KEY_FILE=/tmp/platform-gateway.key
@@ -37,13 +38,14 @@ echo "=== DOWNLOAD AND CHECK GATEWAY COMPONENTS ==="
 curl -fsSL "$API_BASE/local_gateway.py" -o "$GATEWAY_FILE"
 curl -fsSL "$RAG_BASE/rag_engine.py" -o "$ENGINE_FILE"
 curl -fsSL "$RAG_BASE/document_loaders.py" -o "$LOADER_FILE"
-"$PYTHON" -m py_compile "$GATEWAY_FILE" "$ENGINE_FILE" "$LOADER_FILE"
+curl -fsSL "$RAG_BASE/document_library.py" -o "$LIBRARY_FILE"
+"$PYTHON" -m py_compile "$GATEWAY_FILE" "$ENGINE_FILE" "$LOADER_FILE" "$LIBRARY_FILE"
 echo "Python syntax checks passed."
 
 umask 077
 "$PYTHON" -c 'import secrets; print(secrets.token_urlsafe(40))' > "$KEY_FILE"
 PYTHONPATH="$RAG_DEPS" PLATFORM_HOST=127.0.0.1 PLATFORM_PORT=8010 PLATFORM_API_KEY="$(cat "$KEY_FILE")" \
-  RAG_DOCS_DIR="$DOCS" RAG_MIN_SCORE=2.30 \
+  RAG_DOCS_DIR="$DOCS" RAG_MANAGED_DOCS_DIR=/workspace/rag-managed-docs RAG_MIN_SCORE=2.30 RAG_MANAGED_MIN_SCORE=2.30 \
   UV_CACHE_DIR=/tmp/uv-cache TMPDIR=/tmp \
   nohup "$PYTHON" "$GATEWAY_FILE" > "$LOG_FILE" 2>&1 </dev/null &
 echo "$!" > "$PID_FILE"
