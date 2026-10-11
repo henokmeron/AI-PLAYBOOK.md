@@ -152,3 +152,17 @@ The user ran the guarded upgrade script after the 12 PDF-enabled parser tests pa
 Report: [gateway-after-pdf-dependency-upgrade-2026-10-11.md](results/gateway-after-pdf-dependency-upgrade-2026-10-11.md).
 
 Next run `api/test_format_ingestion.sh` to verify CSV, DOCX and PDF questions end to end through an isolated gateway at port 8011. Until that passes, record PDF as parser-tested and gateway-startup-validated, not fully verified end-to-end.
+
+
+## CSV/DOCX/PDF end-to-end integration passed — 2026-10-11
+
+The user ran `api/test_format_ingestion.sh` successfully. Its isolated temporary gateway returned:
+- CSV: "Visitors must check in at Gate C" from `visitor-rules.csv`.
+- DOCX: Project Helios launch review on 18 November from `launch-review.docx`.
+- PDF: Project Orion purchase order review on 23 November from `project-review.pdf`.
+
+All three returned `status: answered` with source citations and correct source filenames. The temporary gateway was stopped; the existing main gateway at 8010 and vLLM at 8000 were left untouched.
+
+Full report: [csv-docx-pdf-integration-2026-10-11.md](results/csv-docx-pdf-integration-2026-10-11.md).
+
+This verifies those specific text-based samples end to end, not every real-world document layout. Scanned PDFs/OCR, password-protected PDFs, XLSX, and production security remain separate tasks.
