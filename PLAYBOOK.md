@@ -748,3 +748,10 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Gateway defaults to loopback `127.0.0.1:8010`; a one-command smoke harness lives in `api/run_gateway_smoke.sh`. The harness creates an ephemeral random key in Pod-local `/tmp`, confirms health, expects an unauthenticated call to return 401, and sends an authenticated real generation request. It leaves the gateway running only if the checks complete.
 - This is a local proof of concept, not production-ready and not exposed for business-app integration. Do not bind it to `0.0.0.0` or expose the port. External integrations later require HTTPS, managed identity/secrets, per-user/service authorization, tenant isolation, persistent audit trails, durable quotas, observability, and security review.
 - Next: run the gateway smoke harness from the current Pod without changing/stopping the existing vLLM server; record its real result, then build stable RAG/API integration behind this gateway.
+
+
+### 2026-10-11 — Authenticated gateway validated; RAG client updated for gateway
+- The user ran the gateway smoke script. Health was `ok` with one upstream model, unauthenticated chat was rejected with HTTP 401, and an authenticated request generated `gateway works`.
+- The local loopback gateway remains at `http://127.0.0.1:8010`; the ephemeral key is in `/tmp/platform-gateway.key` only. Never commit or print the key. Do not expose port 8010 publicly.
+- Updated `rag/ask_documents.py` to accept `--api-key-file`; when provided, it adds a bearer authorization header to chat requests. The local gateway currently does not proxy `/v1/models`, so `--model` must be supplied with this mode. The old direct-vLLM mode remains the default when the API key file is omitted.
+- Next test: run the RAG question against `http://127.0.0.1:8010/v1` with `--api-key-file /tmp/platform-gateway.key` and the explicit Gemma model ID. Verify the answer and that gateway logs show the request path; this validates the actual document-Q&A -> gateway -> vLLM flow.
