@@ -963,3 +963,11 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Screenshot confirms archive checksum passed. Runtime inventory and deployed runtime copies were captured where present; existing model/runtime backup folders were preserved.
 - Full record: `ops/results/global-volume-snapshot-2026-10-11.md`.
 - This snapshot contains the committed repository at the specified SHA. After committing this success record, re-run the sync script once to produce a newer snapshot that includes this record.
+
+
+### 2026-10-11 — Document management API tests passed on isolated temporary storage
+- User screenshot confirms `ALL DOCUMENT-MANAGEMENT API TESTS PASSED`.
+- The temporary gateway rejected unauthenticated upload; upload returned 201; list returned metadata; duplicate upload returned 409 without overwrite; traversal filename was rejected; query returned the finance contact with `finance-notice.md` source; delete succeeded and list was empty.
+- Test used temporary storage and cleaned it up. Existing main gateway on 8010 and vLLM were untouched.
+- Detailed result: `api/results/document-management-api-2026-10-11.md`.
+- Next: upgrade the main gateway to the document-management version, then verify upload/list/question/delete using a controlled test collection under `/workspace/rag-managed-docs` on Global Volume. Only then can we say the persistent document-management path is verified. Cross-Pod persistence still needs a recovery/re-attach test.
