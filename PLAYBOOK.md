@@ -812,3 +812,9 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Added tests for CSV, HTML, DOCX, unsupported files and source attribution, in addition to the existing tokenizer/chunking/BM25 tests.
 - No live gateway change has been applied by the GitHub commit alone. Next: fetch the loader/engine/tests to the active Pod, run syntax compilation and unit tests; only after they pass, use the guarded upgrade script to update the running gateway, then re-run the end-to-end gateway + RAG checks.
 - PDF and XLSX parsing remain deferred. No third-party parsing dependencies have been installed in the working model environment.
+
+
+### 2026-10-11 — Clarify loader test status
+- After adding CSV/HTML/DOCX loading, the user ran the compilation and general retrieval test command. Screenshot showed `Ran 10 tests`, matching the old retrieval tests; it did **not** confirm discovery of the five added loader tests.
+- Added a dedicated `rag/tests/test_document_loaders.py` suite (8 tests) and explicit instructions to run it separately.
+- Keep the live gateway unchanged until the focused parser suite passes. The 10 existing retrieval unit tests did pass; parser verification remains pending.
