@@ -779,3 +779,12 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Added OpenAPI 3.1 contract at `api/openapi.yaml`.
 - Added `api/upgrade_gateway_with_rag_smoke.sh` for the existing live gateway and updated `api/run_gateway_smoke.sh` for a fresh start. Both use a loopback listener and check authentication plus an end-to-end document answer. The in-place upgrade script has a rollback path and does not stop vLLM.
 - Code is committed, but the new HTTP endpoint has not yet passed a live test. Run the guarded upgrade script before claiming it works. The previous gateway version is backed up locally at `/tmp/platform_gateway.py.pre-rag` by the script.
+
+
+### 2026-10-11 — Authenticated RAG HTTP endpoint verified end to end
+- The guarded gateway upgrade/smoke script ran successfully. It syntax-checked files, restarted only the gateway, kept vLLM running, and confirmed upstream health.
+- `POST /v1/rag/ask` rejected missing credentials, returned the correct 10-business-day answer plus source metadata for the supported question, and abstained before model generation for the low-relevance yacht question.
+- Final output: `ALL GATEWAY + RAG API TESTS PASSED.`
+- Full record: `api/results/gateway-rag-api-live-2026-10-11.md`.
+- Gateway stays loopback-only on the Pod; API key is ephemeral in `/tmp/platform-gateway.key`. No public exposure or real customer data.
+- Next: add deterministic unit tests for the shared BM25 retrieval engine so ranking, chunking and zero-match behavior can be tested without spending GPU time; then use the same tests as a regression gate before extending ingestion or integrations.
