@@ -24,8 +24,8 @@ if [[ ! -d "$DOCS" ]]; then
   echo "ERROR: demo documents not found at $DOCS; fetch the sample documents using rag/README.md first." >&2
   exit 3
 fi
-if ! PYTHONPATH="$RAG_DEPS" "$PYTHON" -c 'import pypdf; assert pypdf.__version__ == "6.20.0"; print("Verified pypdf", pypdf.__version__)'; then
-  echo "ERROR: PDF dependency missing/wrong. Run rag/setup_pdf_support.sh first." >&2
+if ! PYTHONPATH="$RAG_DEPS" "$PYTHON" -c 'import importlib.metadata as m, pypdf, openpyxl, et_xmlfile, defusedxml; assert m.version("pypdf")=="6.20.0"; assert m.version("openpyxl")=="3.1.5"; assert m.version("et-xmlfile")=="2.0.0"; assert m.version("defusedxml")=="0.7.1"; print("Verified PDF/XLSX parser versions")'; then
+  echo "ERROR: PDF/XLSX dependencies missing or wrong. Run rag/setup_pdf_support.sh and rag/setup_xlsx_support.sh first." >&2
   exit 4
 fi
 if curl -fsS "$URL/health" >/dev/null 2>&1; then
