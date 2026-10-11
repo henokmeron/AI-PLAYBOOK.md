@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Isolated CSV/DOCX -> RAG HTTP API integration test.
+# Isolated CSV/DOCX/PDF -> RAG HTTP API integration test.
 # Starts a temporary loopback gateway on 8011; leaves the existing 8010 gateway and vLLM untouched.
 set -euo pipefail
 
@@ -36,6 +36,7 @@ trap cleanup EXIT
 
 if [[ ! -x "$PYTHON" ]]; then echo "ERROR: current Python environment not found; no installation attempted." >&2; exit 2; fi
 if [[ ! -r "$KEY_FILE" ]]; then echo "ERROR: current temporary gateway key not found; existing service untouched." >&2; exit 3; fi
+if ! PYTHONPATH=/tmp/rag-deps "$PYTHON" -c 'import pypdf; assert pypdf.__version__ == "6.20.0"; print("Verified pypdf", pypdf.__version__)'; then echo "ERROR: run rag/setup_pdf_support.sh first; existing services remain untouched." >&2; exit 4; fi
 if curl -fsS http://127.0.0.1:8000/v1/models >/dev/null 2>&1; then :; else echo "ERROR: vLLM is not responding at 127.0.0.1:8000." >&2; exit 4; fi
 if curl -fsS "$URL/health" >/dev/null 2>&1; then echo "ERROR: port 8011 already has a responsive service. Refusing to replace it." >&2; exit 5; fi
 
@@ -65,9 +66,42 @@ with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
     archive.writestr("word/document.xml", xml)
 PY
 
+"$PYTHON" - "$DOCS_DIR/project-review.pdf" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = "Project Orion purchase order review takes place on 23 November."
+stream = b"BT /F1 12 Tf 72 720 Td (" + text.encode("ascii") + b") Tj ET"
+objects = [
+    b"<< /Type /Catalog /Pages 2 0 R >>",
+    b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\\nstream\\n" + stream + b"\\nendstream",
+]
+data = bytearray(b"%PDF-1.4\\n%PDF integration fixture\\n")
+offsets = [0]
+for number, obj in enumerate(objects, start=1):
+    offsets.append(len(data))
+    data.extend(f"{number} 0 obj\\n".encode("ascii"))
+    data.extend(obj)
+    data.extend(b"\\nendobj\\n")
+xref_offset = len(data)
+data.extend(f"xref\\n0 {len(objects) + 1}\\n".encode("ascii"))
+data.extend(b"0000000000 65535 f \\n")
+for offset in offsets[1:]:
+    data.extend(f"{offset:010d} 00000 n \\n".encode("ascii"))
+data.extend(
+    (f"trailer\\n<< /Size {len(objects) + 1} /Root 1 0 R >>\\n"
+     f"startxref\\n{xref_offset}\\n%%EOF\\n").encode("ascii")
+)
+path.write_bytes(bytes(data))
+PY
+
 "$PYTHON" -m py_compile "$APP_DIR/local_gateway.py" "$APP_DIR/rag_engine.py" "$APP_DIR/document_loaders.py"
 API_KEY="$(cat "$KEY_FILE")"
-PLATFORM_HOST=127.0.0.1 PLATFORM_PORT=8011 PLATFORM_API_KEY="$API_KEY" \
+PYTHONPATH=/tmp/rag-deps PLATFORM_HOST=127.0.0.1 PLATFORM_PORT=8011 PLATFORM_API_KEY="$API_KEY" \
   VLLM_UPSTREAM_URL=http://127.0.0.1:8000/v1 RAG_DOCS_DIR="$DOCS_DIR" RAG_MIN_SCORE=0 \
   UV_CACHE_DIR=/tmp/uv-cache TMPDIR=/tmp \
   nohup "$PYTHON" "$APP_DIR/local_gateway.py" > "$LOG_FILE" 2>&1 </dev/null &
@@ -95,4 +129,11 @@ docx_response="$(curl -fsS -X POST "$URL/v1/rag/ask" \
 printf '%s' "$docx_response" | "$PYTHON" -c 'import json,sys; d=json.load(sys.stdin); print("Status:",d.get("status")); print("Answer:",d.get("answer")); print("Sources:",", ".join(x.get("file","?") for x in d.get("sources",[]))); assert d.get("status")=="answered"; assert "18 november" in d.get("answer","").casefold(); assert any(x.get("file")=="launch-review.docx" for x in d.get("sources",[]))'
 echo "PASS: DOCX was retrieved and its source was returned."
 
-echo "ALL CSV/DOCX INTEGRATION TESTS PASSED."
+echo "=== PDF INTEGRATION TEST ==="
+pdf_response="$(curl -fsS -X POST "$URL/v1/rag/ask" \
+  -H "Authorization: Bearer $API_KEY" -H 'Content-Type: application/json' \
+  -d '{"question":"When does the Project Orion purchase order review take place?","top_k":2}')"
+printf '%s' "$pdf_response" | "$PYTHON" -c 'import json,sys; d=json.load(sys.stdin); print("Status:",d.get("status")); print("Answer:",d.get("answer")); print("Sources:",", ".join(x.get("file","?") for x in d.get("sources",[]))); assert d.get("status")=="answered"; assert "23 november" in d.get("answer","").casefold(); assert any(x.get("file")=="project-review.pdf" for x in d.get("sources",[]))'
+echo "PASS: PDF was retrieved and its source was returned."
+
+echo "ALL CSV/DOCX/PDF INTEGRATION TESTS PASSED."
