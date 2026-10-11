@@ -843,3 +843,14 @@ Research should lead to a decision, not a pile of links. Every research report s
 - The script starts a second temporary loopback gateway on port 8011 with an isolated temporary corpus, tests a CSV fact and a DOCX fact through `POST /v1/rag/ask`, verifies answer and source filename, then cleans up the test gateway/files. It does not change the current gateway on 8010 or the vLLM model server on 8000.
 - The relevance gate is set to 0 only for this isolated format test because the 2.30 threshold is calibrated specifically for the two Markdown demo files, not a different corpus.
 - This test is pending execution. Do not claim CSV/DOCX works end-to-end until it passes.
+
+
+### 2026-10-11 — PDF support added to business document ingestion
+- Added text-based PDF parsing to `rag/document_loaders.py`, including page markers, a 10 MiB file cap, 300-page cap, and 5-million-character extracted-text cap. Password-protected PDFs and scanned/image-only PDFs are explicitly rejected because OCR is not included.
+- Chose pinned `pypdf==6.20.0` after checking the official PyPI project page. PyPI identifies it as pure Python, BSD-3-Clause, Python >=3.9, with a ~402 KB universal wheel. The wheel SHA-256 is pinned as `f003fc2014814d264fe7dd3f9d435c158e23e1a85a2233f87a0a2d6d21c914ad`. Details: `rag/PDF_SUPPORT.md` and `rag/requirements-ingestion.txt`.
+- Added `rag/setup_pdf_support.sh`: it verifies the wheel, persists it under `/workspace/runtime-setup/rag-wheelhouse` on the Global Volume, and extracts it to `/tmp/rag-deps`. It does not modify the working vLLM environment.
+- Added PDF tests to `rag/tests/test_document_loaders.py` for text extraction/page marker, blank/scanned-PDF rejection, malformed PDF rejection, and source filename preservation through retrieval. Total focused loader suite is now 12 tests, awaiting the user's run with `PYTHONPATH=/tmp/rag-deps`.
+- Updated gateway startup/upgrade scripts to require pypdf 6.20.0 and expose the isolated parser target via `PYTHONPATH`.
+- Expanded `api/test_format_ingestion.sh` to test CSV, DOCX and PDF through an isolated temporary gateway at port 8011. The PDF-specific end-to-end test remains pending.
+- Next sequence: run `rag/setup_pdf_support.sh`; download loader/engine/test file and run syntax compilation plus the 12 tests; then run guarded gateway upgrade; finally run CSV/DOCX/PDF end-to-end test. Do not claim PDF is verified live until the corresponding tests pass.
+- Source reference: https://pypi.org/project/pypdf/6.20.0/
