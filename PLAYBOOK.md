@@ -788,3 +788,10 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Full record: `api/results/gateway-rag-api-live-2026-10-11.md`.
 - Gateway stays loopback-only on the Pod; API key is ephemeral in `/tmp/platform-gateway.key`. No public exposure or real customer data.
 - Next: add deterministic unit tests for the shared BM25 retrieval engine so ranking, chunking and zero-match behavior can be tested without spending GPU time; then use the same tests as a regression gate before extending ingestion or integrations.
+
+
+### 2026-10-11 — GPU-free RAG retrieval unit tests added
+- Added `rag/tests/test_rag_engine.py`, which tests case-insensitive tokenization, empty input, chunking/overlap, expected source ranking for expenses and office-hours questions, zero-overlap retrieval, and top-k limits.
+- These tests use Python's standard library and do not call the model or the vLLM API. They can catch basic retrieval regressions without GPU inference costs.
+- Documented the one-command fetch/run sequence in `rag/README.md`.
+- Next: run the tests on the active Pod, fix any failures before altering ranking, then build broader ingestion/format support only after the retrieval core is stable.
