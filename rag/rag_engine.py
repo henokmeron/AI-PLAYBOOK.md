@@ -63,7 +63,7 @@ def load_chunks(folder: Path) -> list[Chunk]:
             if tokens:
                 chunks.append(Chunk(relative, index, part, tokens, Counter(tokens)))
     if not chunks:
-        raise RuntimeError(f"No readable non-empty .txt or .md document chunks found in {folder}")
+        raise RuntimeError(f"No readable non-empty supported document chunks found in {folder}")
     return chunks
 
 
