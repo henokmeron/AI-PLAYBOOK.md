@@ -102,3 +102,41 @@ The following were observed in the Global Volume:
 7. Launch vLLM, query `/v1/models`, then send a real `/v1/chat/completions` request. Server startup alone is not success.
 8. Capture exact package versions, command lines and test result. Only call the setup reusable after confirming artifacts remain on Global Volume and can recreate the working environment.
 
+
+
+## Error register and prevention log — 2026-10-11
+
+Use this as a preflight checklist; do not repeat a failed install command without correcting the specific cause.
+
+### Confirmed errors and resolutions
+
+1. **Wrong/incomplete virtual environment on Global Volume.** A prior `/workspace/vllm-env` contained unusable zero-byte launchers/symlinks and was not a real working vLLM environment. Resolution: abandon it; create a fresh venv on local `/tmp`. Never reuse it.
+2. **Global Volume does not support normal POSIX permission behavior.** `chmod` on `/workspace/runtime-setup/install-vllm.sh` failed with `Operation not permitted`. Resolution: call the readable script with `bash /workspace/runtime-setup/install-vllm.sh`; do not rely on executable permission or chmod on the mount.
+3. **uv cache silently defaulted to the Global Volume.** Even though the venv was under `/tmp`, an install failed while extracting `llguidance` at `/workspace/.cache/uv/tmp.../llguidance/_lib.abi3.so`, specifically because file permissions could not be set. Resolution: explicitly export `UV_CACHE_DIR=/tmp/uv-cache` and `TMPDIR=/tmp` before both venv creation and package install. Verify with `uv cache dir` before retrying.
+4. **A shell chain masked the fact that the setup did not run.** The earlier command used `&& chmod ... && bash ...`; because chmod failed, the final bash step was skipped. Resolution: avoid chmod and execute `bash script` explicitly; inspect the output before assuming a script ran.
+5. **Multiline terminal paste was unreliable.** A multiline script pasted line-by-line left the shell at continuation prompts and was not saved as intended. Resolution: provide one complete command to copy/paste, or carefully save a file by a method validated in that terminal. Do not assume a displayed command executed.
+6. **Ninja was not on PATH at runtime.** Resolution recorded from the prior launch: set `PATH="/tmp/vllm-clean-env/bin:$PATH"` before launching vLLM so environment-installed executables are found.
+7. **Temporary IPC/runtime files conflicted with mounted-storage limitations.** Prior launch used defaults that did not work reliably with the mount. Resolution recorded in the working launch command: `TMPDIR=/tmp` and `VLLM_RPC_BASE_PATH=/tmp`.
+8. **A previous dependency set had a missing CUDA runtime library / incompatible CUDA-linked package set.** Resolution principle: use a coherent, pinned vLLM/PyTorch/CUDA environment; do not patch individual shared libraries or mix packages blindly. Recheck imports and the CUDA build after install.
+9. **Torch and TorchAudio CUDA/version mismatch.** This was recorded among previous failures. Resolution principle: inspect exact installed versions and compatibility as one set before changing anything; do not upgrade individual Torch family packages ad hoc. Today's package listing alone is not proof of compatibility.
+10. **Wrong model directory was used during a prior launch attempt.** The verified model path for this Pod has three repeated directory levels: `/workspace/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it`. Verify its `config.json` before serving; do not redownload the 59 GB model to solve a path issue.
+11. **GPU/server startup was at risk of being mistaken for end-to-end success.** Prior records show server startup completed, but no confirmed generation result at that time. Resolution: check `/v1/models` and run an actual `/v1/chat/completions` request before declaring success.
+12. **The new Pod had only 30 GB of local overlay disk.** The Global Volume's virtual FUSE capacity display is not a reliable measure of local temporary disk. Resolution: check `df -h / /tmp` before installing; today's installer stops if less than 25 GiB is available.
+13. **Persistence boundaries were confused.** The model is persistent on Global Volume (and backed up in Azure); `/tmp/vllm-clean-env` and `/tmp/uv-cache` are local and may disappear on Pod recreation/reset. Resolution: distinguish the persistent model/setup files from the executable environment. Do not promise a persistent install until a rebuild-from-persistent-artifacts test passes.
+14. **The setup recipe was not initially checked into a durable source before being run.** Resolution: keep setup script and this error register in GitHub and a readable copy on Global Volume. The executable bit is not needed when invoking with `bash`.
+15. **Cost and destructive actions needed clearer guardrails.** The H100 NVL Pod is billed while running; model files must not be deleted to address software setup failures. Resolution: do not delete the Global Volume, model, or stopped Pods as an installation workaround; stop paid GPU compute when the user is finished testing, without deleting persistent data.
+
+### Current install attempt — status
+
+The 2026-10-11 screenshot shows a package list including `vllm==0.31.0` and `torch==2.13.0`, then a returned shell prompt without an installation error. This suggests that the install completed, but the environment is **not yet validated**. Next validation must be read-only and grouped: local disk, `uv cache dir`, vLLM version, PyTorch import, PyTorch CUDA build, `torch.cuda.is_available()`, GPU name, and `nvidia-smi`. Do not reinstall unless those checks identify a problem.
+
+### Required preflight before any future install
+
+- Confirm exact target venv and model path.
+- Check `df -h / /tmp`; the Pod-local overlay was 30 GB.
+- Set `TMPDIR=/tmp`, `UV_CACHE_DIR=/tmp/uv-cache`, and `VLLM_RPC_BASE_PATH=/tmp` explicitly.
+- Confirm `uv cache dir` resolves to `/tmp/uv-cache`.
+- Use a pinned, compatible package set and change one variable at a time.
+- If installation fails, read the first actual error and correct that cause—never repeat the same command unchanged.
+- After install, validate imports and GPU first, then start the server, check `/v1/models`, and make one generation request.
+- Preserve a tested wheelhouse or versioned runtime image plus setup and configuration files, and verify fresh-environment recovery before calling the runtime reproducible.
