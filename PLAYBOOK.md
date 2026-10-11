@@ -707,3 +707,9 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Unsupported yacht-colour question: correctly abstained (0.53 s), but lexical retrieval still passed unrelated expense/handbook chunks to the model. No-overlap question was rejected before model invocation.
 - Detailed report: `rag/results/rag-regression-run-2026-10-11.md`.
 - Next: build a small labelled relevance set and add a tested retrieval-abstention mechanism to reduce irrelevant context. Tune it from multiple answerable/unanswerable examples rather than guessing a score threshold. Preserve the current working baseline and keep the tests as a regression gate.
+
+
+### 2026-10-11 — Retrieval relevance calibration prepared
+- Added `rag/evaluate_retrieval.py`, a retrieval-only tool reporting top BM25 scores for six answerable and six unanswerable questions against the sample policy set. It makes no model calls.
+- The purpose is to gather evidence before choosing a relevance gate. Do not hard-code a score threshold from one irrelevant-query score; review the labelled positive/negative ranges and expand the dataset if there is overlap.
+- Next: run the calibration utility on the current Pod, inspect the score distribution/source ranking, then choose whether a simple threshold, score margin, or different retrieval design is justified.
