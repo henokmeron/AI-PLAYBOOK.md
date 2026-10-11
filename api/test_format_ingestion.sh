@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Isolated CSV/DOCX/PDF -> RAG HTTP API integration test.
+# Isolated CSV/DOCX/PDF/XLSX -> RAG HTTP API integration test.
 # Starts a temporary loopback gateway on 8011; leaves the existing 8010 gateway and vLLM untouched.
 set -euo pipefail
 
@@ -36,7 +36,7 @@ trap cleanup EXIT
 
 if [[ ! -x "$PYTHON" ]]; then echo "ERROR: current Python environment not found; no installation attempted." >&2; exit 2; fi
 if [[ ! -r "$KEY_FILE" ]]; then echo "ERROR: current temporary gateway key not found; existing service untouched." >&2; exit 3; fi
-if ! PYTHONPATH=/tmp/rag-deps "$PYTHON" -c 'import pypdf; assert pypdf.__version__ == "6.20.0"; print("Verified pypdf", pypdf.__version__)'; then echo "ERROR: run rag/setup_pdf_support.sh first; existing services remain untouched." >&2; exit 4; fi
+if ! PYTHONPATH=/tmp/rag-deps "$PYTHON" -c 'import importlib.metadata as m, pypdf, openpyxl, et_xmlfile, defusedxml; assert m.version("pypdf")=="6.20.0"; assert m.version("openpyxl")=="3.1.5"; assert m.version("et-xmlfile")=="2.0.0"; assert m.version("defusedxml")=="0.7.1"; print("Verified pypdf and XLSX parser dependencies")'; then echo "ERROR: run rag/setup_pdf_support.sh and rag/setup_xlsx_support.sh first; existing services remain untouched." >&2; exit 4; fi
 if curl -fsS http://127.0.0.1:8000/v1/models >/dev/null 2>&1; then :; else echo "ERROR: vLLM is not responding at 127.0.0.1:8000." >&2; exit 4; fi
 if curl -fsS "$URL/health" >/dev/null 2>&1; then echo "ERROR: port 8011 already has a responsive service. Refusing to replace it." >&2; exit 5; fi
 
@@ -99,6 +99,20 @@ data.extend(
 path.write_bytes(bytes(data))
 PY
 
+PYTHONPATH=/tmp/rag-deps "$PYTHON" - "$DOCS_DIR/department-budget.xlsx" <<'PY'
+import sys
+from pathlib import Path
+import openpyxl
+path = Path(sys.argv[1])
+workbook = openpyxl.Workbook()
+sheet = workbook.active
+sheet.title = "Budget"
+sheet.append(["Department", "Budget type", "Q4 budget"])
+sheet.append(["Marketing", "planned amount", 27500])
+workbook.save(path)
+workbook.close()
+PY
+
 "$PYTHON" -m py_compile "$APP_DIR/local_gateway.py" "$APP_DIR/rag_engine.py" "$APP_DIR/document_loaders.py"
 API_KEY="$(cat "$KEY_FILE")"
 PYTHONPATH=/tmp/rag-deps PLATFORM_HOST=127.0.0.1 PLATFORM_PORT=8011 PLATFORM_API_KEY="$API_KEY" \
@@ -136,4 +150,11 @@ pdf_response="$(curl -fsS -X POST "$URL/v1/rag/ask" \
 printf '%s' "$pdf_response" | "$PYTHON" -c 'import json,sys; d=json.load(sys.stdin); print("Status:",d.get("status")); print("Answer:",d.get("answer")); print("Sources:",", ".join(x.get("file","?") for x in d.get("sources",[]))); assert d.get("status")=="answered"; assert "23 november" in d.get("answer","").casefold(); assert any(x.get("file")=="project-review.pdf" for x in d.get("sources",[]))'
 echo "PASS: PDF was retrieved and its source was returned."
 
-echo "ALL CSV/DOCX/PDF INTEGRATION TESTS PASSED."
+echo "=== XLSX INTEGRATION TEST ==="
+xlsx_response="$(curl -fsS -X POST "$URL/v1/rag/ask" \
+  -H "Authorization: Bearer $API_KEY" -H 'Content-Type: application/json' \
+  -d '{"question":"What is the Q4 marketing budget?","top_k":2}')"
+printf '%s' "$xlsx_response" | "$PYTHON" -c 'import json,sys; d=json.load(sys.stdin); print("Status:",d.get("status")); print("Answer:",d.get("answer")); print("Sources:",", ".join(x.get("file","?") for x in d.get("sources",[]))); assert d.get("status")=="answered"; assert "27500" in d.get("answer",""); assert any(x.get("file")=="department-budget.xlsx" for x in d.get("sources",[]))'
+echo "PASS: XLSX was retrieved and its source was returned."
+
+echo "ALL CSV/DOCX/PDF/XLSX INTEGRATION TESTS PASSED."
