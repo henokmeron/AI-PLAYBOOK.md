@@ -78,3 +78,27 @@ test -x /tmp/vllm-clean-env/bin/vllm && /tmp/vllm-clean-env/bin/vllm --version |
 ## Operator limitation
 
 The assistant cannot directly start or type into the user's RunPod Pod from this chat. The user must start the Pod and provide the terminal access/output (or screenshots); then instructions can be given one command at a time based on the actual result. The assistant should not claim a command ran unless its output was provided and checked.
+
+## Rebuild session findings — 2026-10-11 evening
+
+The new Pod was deployed with the Global Volume `New model container` mounted at `/workspace`. It uses an NVIDIA H100 NVL (94 GB VRAM), the RunPod PyTorch 2.8.0 template, Python 3.12.3, and `uv 0.9.0`. `nvidia-smi` reports driver 580.126.09 and CUDA 13.0. This CUDA label is the driver capability and must not be confused with the CUDA runtime bundled with PyTorch.
+
+The following were observed in the Global Volume:
+- Model config exists at `/workspace/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it/config.json`.
+- Model directory occupies about 59 GB.
+- `/workspace/vllm-env` is an incomplete/broken environment: its `pyvenv.cfg` points to `/usr/local/bin`, and Python launcher files are zero-byte or symlinks targeting `/usr/local/bin/python`. Do not try to use it or treat it as a working vLLM install.
+- `/workspace/.uv-cache` is about 90 MB and `/workspace/uv-cache-fresh` about 168 KB. The cache includes some Torch/TorchAudio/TorchVision/Triton-related cache entries but is not known to contain the complete dependency set.
+- No requirements file, lock file, Dockerfile or install script was found in the diagnostic search under `/workspace`.
+- The mount is FUSE-backed (`fuse.geeseefs`). Earlier attempts to create a normal executable virtual environment directly on this filesystem produced unusable zero-byte launchers. Do not create the main venv on Global Volume without a successful filesystem capability test.
+
+### Rebuild policy for this Pod
+
+1. Do not delete or redownload the model.
+2. Preserve the original baseline and create a separate clean runtime profile.
+3. Keep install scripts, exact version pins, configuration and reusable package artifacts on the Global Volume. The 90 MB existing cache is insufficient evidence that the full environment is cached.
+4. Do not rely on a venv directly on Global Volume unless a real Python/vLLM execution test proves it works.
+5. Prefer a tested approach that stores a complete wheelhouse or equivalent install artifacts persistently, and recreates the executable venv on Pod-local storage from those artifacts; alternatively use a versioned persistent container image if supported. This avoids redownloading packages where the persistent artifacts suffice, while acknowledging the executable environment may need recreation.
+6. Before a large install, ensure enough free Pod-local disk for vLLM, PyTorch and build/cache overhead. Check storage capacity and package compatibility first.
+7. Launch vLLM, query `/v1/models`, then send a real `/v1/chat/completions` request. Server startup alone is not success.
+8. Capture exact package versions, command lines and test result. Only call the setup reusable after confirming artifacts remain on Global Volume and can recreate the working environment.
+
