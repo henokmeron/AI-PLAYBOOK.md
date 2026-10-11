@@ -65,8 +65,8 @@ if [[ ! -d "$DOCS" ]]; then
   echo "ERROR: expected demo document folder missing at $DOCS; existing gateway was not changed." >&2
   exit 5
 fi
-if ! PYTHONPATH="$RAG_DEPS" "$PYTHON" -c 'import pypdf; assert pypdf.__version__ == "6.20.0"; print("Verified pypdf", pypdf.__version__)'; then
-  echo "ERROR: isolated PDF parser is missing or wrong version. Run rag/setup_pdf_support.sh first; existing gateway was not changed." >&2
+if ! PYTHONPATH="$RAG_DEPS" "$PYTHON" -c 'import pypdf, openpyxl, et_xmlfile, defusedxml; import importlib.metadata as m; assert m.version("pypdf") == "6.20.0"; assert m.version("openpyxl") == "3.1.5"; assert m.version("et-xmlfile") == "2.0.0"; assert m.version("defusedxml") == "0.7.1"; print("Verified pypdf/openpyxl/et-xmlfile/defusedxml:", m.version("pypdf"), m.version("openpyxl"), m.version("et-xmlfile"), m.version("defusedxml"))'; then
+  echo "ERROR: PDF or XLSX parser dependency is missing/wrong. Run rag/setup_pdf_support.sh and rag/setup_xlsx_support.sh first; existing gateway was not changed." >&2
   exit 12
 fi
 
