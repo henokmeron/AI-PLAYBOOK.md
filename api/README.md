@@ -187,3 +187,12 @@ The next step is to run the guarded gateway upgrade, then the four-format API in
 The user ran `rag/setup_xlsx_support.sh` and the parser test suite with `PYTHONPATH=/tmp/rag-deps`. Screenshot confirms the pinned parser versions and **16/16 tests passed**. Report: [document-loader-tests-with-xlsx-2026-10-11.md](../rag/results/document-loader-tests-with-xlsx-2026-10-11.md).
 
 Next, run the guarded gateway upgrade and then the four-format CSV/DOCX/PDF/XLSX API integration test. XLSX is not marked end-to-end verified until its HTTP integration case passes.
+
+
+## PDF + XLSX dependency gateway upgrade passed — 2026-10-11
+
+The user's screenshot confirms the guarded upgrade verified `pypdf 6.20.0`, `openpyxl 3.1.5`, `et-xmlfile 2.0.0` and `defusedxml 0.7.1`; Python syntax checks passed, the gateway restarted without restarting vLLM, health passed, unauthenticated calls were rejected, the supported Markdown question returned its source-cited answer, and the low-relevance question abstained. Final output: `ALL GATEWAY + RAG API TESTS PASSED`.
+
+Detailed report: [gateway-after-pdf-xlsx-upgrade-2026-10-11.md](results/gateway-after-pdf-xlsx-upgrade-2026-10-11.md).
+
+Next: run `api/test_format_ingestion.sh` to validate CSV, DOCX, PDF, and XLSX through an isolated temporary HTTP gateway. XLSX remains not end-to-end verified until that test passes.
