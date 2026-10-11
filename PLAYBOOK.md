@@ -987,3 +987,11 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Added `ops/test_persistent_document_storage.sh`: after the guarded gateway upgrade, it verifies the Global Volume mount and model marker, uploads a small fictional canary via the real API into a unique collection under `/workspace/rag-managed-docs/`, confirms the file physically exists, lists it through the API, asks a question, and checks the source filename. It intentionally retains the tiny canary for a later cross-Pod re-attach test. It doesn't print the API key.
 - Next: run `api/upgrade_gateway_with_rag_smoke.sh` on the current Pod (restarts only the gateway, never vLLM), then run `ops/test_persistent_document_storage.sh`. If that passes, re-run `ops/sync_global_volume.sh` to save the newly committed operational script and deployment milestone to a newer immutable archive.
 - No claim of cross-Pod persistence yet: this next test proves writes/reads on the actual mounted Global Volume; a later attach/recovery test should verify the canary from a replacement Pod.
+
+
+### 2026-10-11 — Live document management verified on the Global Volume
+- User screenshot confirms the live gateway health check passed; a 136-byte fictional canary document was uploaded, physically found under `/workspace/rag-managed-docs/`, listed through the live API, and queried successfully through RAG with the expected answer and source metadata.
+- Final result: `SUCCESS: document upload/list/retrieval verified at the mounted Global Volume path.`
+- Retained canary: collection `global-canary-1791758676`, file `global-volume-canary.md`. It contains fictional data and is intentionally retained for a later Pod re-attach persistence test.
+- Detailed report: `api/results/live-global-volume-document-persistence-2026-10-11.md`.
+- Boundary: this proves persistence on the currently mounted Global Volume, not yet across Pod stop/recreation/re-attachment. Do not upload real customer data until production security, tenancy, retention and recovery controls are tested.
