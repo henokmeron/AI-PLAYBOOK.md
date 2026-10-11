@@ -135,3 +135,24 @@ Run these unit tests after changing tokenization, chunk size/overlap, BM25 scori
 ## RAG engine unit tests passed — 2026-10-11
 
 The user ran `rag/tests/test_rag_engine.py`: **10 tests ran, all OK** in 0.003 seconds. These tests do not call the LLM or consume GPU inference. The result covers tokenization, chunking, relevant-source ranking, no-overlap handling, and top-k behaviour. Detailed record: [rag-engine-unit-tests-2026-10-11.md](results/rag-engine-unit-tests-2026-10-11.md). This is a deterministic unit suite, not a quality guarantee for real business corpora.
+
+
+## Business document formats — initial parser expansion
+
+The current reader accepts `.txt`, `.md`, `.csv`, `.html`/`.htm`, and `.docx`. Text extraction uses Python's standard library; it does not execute document content. CSV rows are flattened into searchable text, HTML script/style/noscript/SVG content is excluded, and DOCX paragraphs are extracted from `word/document.xml`. A 10 MiB source-file limit and a 20 MiB uncompressed DOCX XML limit are enforced by the prototype.
+
+PDF and Excel `.xlsx` files are **not supported yet**. We will choose and test their parsers deliberately instead of installing dependencies into the working vLLM environment.
+
+### Refresh and run the expanded parser tests
+
+The loader is now a separate file imported by the retrieval engine, so download both before running tests:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/document_loaders.py -o /tmp/document_loaders.py
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/rag_engine.py -o /tmp/rag_engine.py
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/tests/test_rag_engine.py -o /tmp/test_rag_engine.py
+/tmp/vllm-clean-env/bin/python -m py_compile /tmp/document_loaders.py /tmp/rag_engine.py /tmp/test_rag_engine.py
+/tmp/vllm-clean-env/bin/python /tmp/test_rag_engine.py
+```
+
+The new tests cover CSV rows, HTML visible text with script/style exclusion, DOCX paragraph extraction, unsupported file types, and preserving source filenames after CSV/DOCX ingestion. The test suite must pass before upgrading the live gateway to the new engine.
