@@ -107,3 +107,12 @@ The updated gateway imports `rag_engine.py`, which now imports `document_loaders
 ## Document-loader tests passed — 2026-10-11
 
 The focused parser suite completed with 8/8 tests passing. This clears the preflight for the guarded in-place gateway upgrade, which will fetch `document_loaders.py`, `rag_engine.py`, and `local_gateway.py`, syntax-check them, then run the end-to-end RAG API checks. The upgrade script preserves the API key and has a rollback path; it restarts only the gateway, not vLLM.
+
+
+## Gateway re-upgrade passed — 2026-10-11
+
+The user ran the guarded upgrade script after the loader unit tests passed. The screenshot confirms syntax compilation, upstream health, unauthenticated RAG rejection, a correct source-cited expense answer, and low-relevance abstention at the demo-only BM25 threshold. The script reported `ALL GATEWAY + RAG API TESTS PASSED`, and did not restart vLLM.
+
+Detailed report: [gateway-after-loader-upgrade-2026-10-11.md](results/gateway-after-loader-upgrade-2026-10-11.md).
+
+Scope note: those live RAG smoke tests used the existing Markdown demo files. End-to-end API queries from CSV/HTML/DOCX still need a separate integration test; the parser unit tests passing alone don't prove the gateway's live import and processing path for each format.
