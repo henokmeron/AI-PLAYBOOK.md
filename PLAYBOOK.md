@@ -906,3 +906,16 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Final output: `ALL GATEWAY + RAG API TESTS PASSED`.
 - Report: `api/results/gateway-after-pdf-xlsx-upgrade-2026-10-11.md`.
 - Next: run `api/test_format_ingestion.sh` for CSV/DOCX/PDF/XLSX against isolated port 8011. Excel is parser-tested and gateway-startup-validated but remains unverified end-to-end until its HTTP integration case passes.
+
+
+### 2026-10-11 — CSV, DOCX, PDF and XLSX confirmed through RAG API
+- User screenshot shows `ALL CSV/DOCX/PDF/XLSX INTEGRATION TESTS PASSED`.
+- CSV: visitor check-in answer "Gate C", source `visitor-rules.csv`.
+- DOCX: Project Helios review date "18 November", source `launch-review.docx`.
+- PDF: Project Orion review date "23 November", source `project-review.pdf`.
+- XLSX: Q4 marketing budget "27,500", source `department-budget.xlsx`.
+- Each response had `status: answered` and correct source metadata.
+- Temporary format-test gateway stopped itself; the main gateway on 8010 and vLLM on 8000 remained untouched.
+- Detailed result: `api/results/csv-docx-pdf-xlsx-integration-2026-10-11.md`.
+- This verifies four synthetic documents, not arbitrary real-world file layouts. Scanned-PDF OCR, formula recalculation, complex spreadsheet/table handling, customer auth/tenant isolation and production hardening remain open tasks.
+- Next: build persistent document management around the API—safe upload, list and delete operations, per-document metadata and re-index-on-query—using an isolated test directory first. Do not ingest real customer files or expose the loopback prototype publicly.
