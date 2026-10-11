@@ -171,3 +171,10 @@ curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/
 ```
 
 Do not upgrade the live gateway to the new loaders until this dedicated suite passes.
+
+
+## Document-loader test result — 2026-10-11
+
+The focused `rag/tests/test_document_loaders.py` suite ran **8 tests, all OK**, in 0.010 seconds. Screenshot-confirmed coverage includes TXT, CSV, HTML script/style exclusion, DOCX text extraction, unknown/invalid file rejection, file-size guard, source-name retention and CSV/DOCX retrieval ranking. Details: [document-loader-tests-2026-10-11.md](results/document-loader-tests-2026-10-11.md).
+
+These tests do not call Gemma and are not evidence of complete parsing for every real-world file. PDF and XLSX remain unsupported.
