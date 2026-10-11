@@ -185,3 +185,15 @@ A real request to `http://127.0.0.1:8000/v1/chat/completions` succeeded. The req
 ### Next work — persistence and product
 
 Do not change the working runtime while it is serving. Keep the serving terminal open when testing. The next engineering priority is to make a repeatable, pinned install/runtime and persist the reusable package artifacts/configuration separately from the temporary environment. The present successful test does not make `/tmp/vllm-clean-env` persistent: stopping/recreating the Pod may remove it. The Global Volume model and Azure backup must be preserved. Once durable recovery is validated, build an API wrapper and platform features in separate versioned steps.
+
+
+## Persistence preparation preflight — 2026-10-11 20:14 (user screenshot)
+
+- Local overlay: 30 GB total, 8.2 GB used, 22 GB available.
+- Working environment at `/tmp/vllm-clean-env`: about 8.0 GB.
+- Local uv cache at `/tmp/uv-cache`: about 100 MB.
+- `uv pip check`: checked 199 packages; all installed packages are compatible according to pip's metadata consistency check.
+- Persistent setup files already saved under `/workspace/runtime-setup`: `install-vllm.sh`, `requirements-frozen.txt`, and `runtime-manifest.txt`.
+- Archive tools `zstd` and `pigz` are present on the Pod.
+- Next operation: create a compressed snapshot of the exact working environment at `/workspace/runtime-setup/vllm-clean-env.tar.zst` on the Global Volume, then verify its compressed stream and tar directory listing. Do this without stopping the server.
+- Important limitation: this archive is a snapshot, not a guarantee of portability across arbitrary base images. Recovery must use the same container/Python/CUDA-compatible base and extract to the same local path `/tmp/vllm-clean-env`; then verify vLLM version, torch CUDA availability, GPU detection, and a generation request. Keep the pinned requirements and setup script as independent rebuild options.
