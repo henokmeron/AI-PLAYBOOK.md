@@ -36,3 +36,15 @@ The generated key is temporary and will be lost when local temporary storage is 
 ## Security limitations
 
 This is **not a production or publicly exposed gateway**. It is deliberately bound to loopback. Do not change `PLATFORM_HOST` to `0.0.0.0` or expose port 8010 publicly. Before integration with external apps/customers, replace or harden this prototype with HTTPS termination, managed secrets/rotation, real user/service identity, tenant isolation, durable audit records, robust rate/quota controls, request/response schemas, monitoring, cancellation/timeouts, policy enforcement and security testing. The current in-memory limit is not distributed, and a single shared key is suitable only for local testing.
+
+
+## Gateway smoke test result — 2026-10-11
+
+The user ran `api/run_gateway_smoke.sh` on the current Pod. Screenshot confirms:
+- `GET /health` returned `{"status":"ok","upstream":"ok","model_count":1}`.
+- Unauthenticated `POST /v1/chat/completions` returned HTTP 401 with `authentication required`.
+- An authenticated request passed through the gateway and Gemma returned `gateway works`.
+- The loopback-only gateway remains running at `http://127.0.0.1:8010`.
+- The random API key is held in the Pod-local file `/tmp/platform-gateway.key` and was not printed or saved to GitHub. It is ephemeral; do not use it for a production deployment.
+
+The next integration test runs document Q&A through this gateway with the bearer key. Do not bypass the gateway for that test, and do not expose port 8010 publicly.
