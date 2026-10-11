@@ -7,10 +7,9 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
+from document_loaders import DocumentLoadError, SUPPORTED_EXTENSIONS, read_document
+
 TOKEN_RE = re.compile(r"[\w]+", re.UNICODE)
-SUPPORTED_EXTENSIONS = {".txt", ".md"}
-
-
 @dataclass
 class Chunk:
     source: str
@@ -55,8 +54,8 @@ def load_chunks(folder: Path) -> list[Chunk]:
     chunks: list[Chunk] = []
     for path in paths:
         try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError) as exc:
+            text = read_document(path)
+        except (DocumentLoadError, OSError) as exc:
             raise RuntimeError(f"Could not read document {path}: {exc}") from exc
         relative = path.relative_to(folder).as_posix()
         for index, part in enumerate(split_chunks(text), start=1):
