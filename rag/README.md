@@ -79,7 +79,7 @@ The first three cases call the model. The fourth exercises the retrieval no-matc
 The first run of `rag/run_rag_regression.py` completed with **4/4 cases passed**. The unsupported yacht question was safely refused, but retrieval still included irrelevant expense/handbook chunks; this remains a known retrieval-relevance issue. See [the dated automated test report](results/rag-regression-run-2026-10-11.md). Do not treat four passing smoke tests as a security certification.
 
 
-## Calibrate retrieval before adding a relevance threshold
+## Recalibrate the relevance threshold for each document corpus
 
 Run the retrieval-only calibration utility. It makes **no LLM calls** and will print top BM25 scores for labelled answerable and unanswerable questions:
 
@@ -88,7 +88,7 @@ curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/
 /tmp/vllm-clean-env/bin/python /tmp/evaluate_retrieval.py
 ```
 
-The initial set covers six answerable and six unanswerable questions for the two fictional sample documents. Review the top-source accuracy and positive/negative score ranges. This is a tiny development set, not statistically reliable evidence by itself. Do not introduce a hard rejection threshold unless these examples show a workable separation; expand and label the data if ranges overlap.
+The initial set covers six answerable and six unanswerable questions for the two fictional sample documents. The captured result was 6/6 expected sources ranked first; answerable scores ranged 2.351–5.797 and unanswerable scores ranged 0.690–2.258. Details: [calibration report](results/retrieval-calibration-2026-10-11.md). This is a tiny development set, not statistically reliable evidence by itself. Use the provisional 2.30 gate only for this exact demo corpus and only after the regression suite passes. Expand and relabel data if ranges overlap.
 
 
 ## Provisional relevance gate (demo corpus only)
