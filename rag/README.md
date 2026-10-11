@@ -252,3 +252,8 @@ The user ran setup and the expanded `rag/tests/test_document_loaders.py` suite. 
 Detailed record: [document-loader-tests-with-xlsx-2026-10-11.md](results/document-loader-tests-with-xlsx-2026-10-11.md).
 
 Next: guarded gateway upgrade, then the isolated CSV/DOCX/PDF/XLSX API integration test. XLSX remains parser-tested but not yet end-to-end verified.
+
+
+## XLSX-enabled parser test result — 2026-10-11
+
+The user ran the isolated setup and expanded `rag/tests/test_document_loaders.py`. Screenshot confirms `openpyxl 3.1.5`, `et-xmlfile 2.0.0`, and `defusedxml 0.7.1`; the suite completed **16 tests in 0.243 seconds, all OK**. See [the dated result report](results/document-loader-tests-with-xlsx-2026-10-11.md). The vLLM environment was left untouched. Next: run the guarded gateway upgrade, then the four-format API integration test. XLSX remains parser-tested but not end-to-end verified until the API test passes.
