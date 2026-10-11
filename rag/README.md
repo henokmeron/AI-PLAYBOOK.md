@@ -29,7 +29,7 @@ curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/
   --question "How many business days do employees have to submit expense receipts?"
 ```
 
-The script discovers the model from `/v1/models` by default. No Python package installation is required. To ask other questions, rerun the last command with a different `--question`.
+The script discovers the model from `/v1/models` by default. TXT/Markdown/CSV/HTML/DOCX extraction uses the Python standard library. PDF and XLSX require the separate setup scripts documented below. To ask other questions, rerun the last command with a different `--question`.
 
 ## Security and quality limits
 
