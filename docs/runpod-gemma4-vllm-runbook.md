@@ -197,3 +197,14 @@ Do not change the working runtime while it is serving. Keep the serving terminal
 - Archive tools `zstd` and `pigz` are present on the Pod.
 - Next operation: create a compressed snapshot of the exact working environment at `/workspace/runtime-setup/vllm-clean-env.tar.zst` on the Global Volume, then verify its compressed stream and tar directory listing. Do this without stopping the server.
 - Important limitation: this archive is a snapshot, not a guarantee of portability across arbitrary base images. Recovery must use the same container/Python/CUDA-compatible base and extract to the same local path `/tmp/vllm-clean-env`; then verify vLLM version, torch CUDA availability, GPU detection, and a generation request. Keep the pinned requirements and setup script as independent rebuild options.
+
+
+## Working environment archive created and verified — 2026-10-11 20:16 (user screenshot)
+
+- Archive stored on Global Volume: `/workspace/runtime-setup/vllm-clean-env.tar.zst`.
+- Compressed archive size from `ls -lh`: about 3.4 GB.
+- `zstd -t` passed and reported uncompressed content size about 8.42 GB.
+- Tar listing succeeded and contained 70,954 entries.
+- Related persistent files: `install-vllm.sh`, `requirements-frozen.txt`, `runtime-manifest.txt`.
+- This verifies the archive's compressed-stream integrity and readable tar index; it does **not** yet prove a restored environment can run. Next create a SHA-256 checksum file and preserve it with the archive. Recovery must be tested later on a compatible Pod/container without overwriting the currently working environment.
+- Keep the server and Pod running until the restore/recovery strategy is documented. Do not delete the Global Volume or Azure model backup.
