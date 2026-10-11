@@ -109,11 +109,13 @@ def retrieve(question: str, chunks: list[Chunk], top_k: int) -> list[tuple[float
     return ranked[:top_k]
 
 
-def request_json(url: str, payload: dict[str, Any] | None = None, timeout: int = 120) -> dict[str, Any]:
+def request_json(url: str, payload: dict[str, Any] | None = None, timeout: int = 120, api_key: str | None = None) -> dict[str, Any]:
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {"Accept": "application/json"}
     if data is not None:
         headers["Content-Type"] = "application/json"
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
     request = urllib.request.Request(
         url,
         data=data,
@@ -142,7 +144,8 @@ def main() -> int:
     parser.add_argument("--docs", type=Path, required=True, help="Folder containing .md/.txt business documents")
     parser.add_argument("--question", required=True, help="Question to answer from the supplied documents")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000/v1", help="OpenAI-compatible API base URL")
-    parser.add_argument("--model", default=None, help="Model ID; defaults to first ID returned by /models")
+    parser.add_argument("--model", default=None, help="Model ID; defaults to first ID returned by /models when using direct vLLM")
+    parser.add_argument("--api-key-file", type=Path, default=None, help="Optional file containing a bearer key for an authenticated gateway; never pass the key itself on the command line")
     parser.add_argument("--top-k", type=int, default=4, help="Maximum number of evidence chunks to retrieve")
     parser.add_argument("--min-score", type=float, default=2.30, help="Minimum top BM25 score required to send evidence to the model; 2.30 is calibrated only for the two-file fictional demo corpus")
     parser.add_argument("--timeout", type=int, default=120, help="Inference request timeout in seconds")
@@ -151,6 +154,16 @@ def main() -> int:
         parser.error("--top-k must be between 1 and 10")
     if args.min_score < 0:
         parser.error("--min-score must be non-negative")
+    api_key = None
+    if args.api_key_file is not None:
+        try:
+            api_key = args.api_key_file.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            parser.error(f"could not read --api-key-file: {exc}")
+        if len(api_key) < 32:
+            parser.error("--api-key-file must contain a non-empty secret of at least 32 characters")
+        if not args.model:
+            parser.error("--model is required with --api-key-file because the local prototype gateway does not expose /v1/models")
 
     try:
         chunks = load_chunks(args.docs)
@@ -181,7 +194,7 @@ def main() -> int:
         base_url = args.base_url.rstrip("/")
         model = args.model
         if not model:
-            model_list = request_json(f"{base_url}/models", timeout=args.timeout).get("data", [])
+            model_list = request_json(f"{base_url}/models", timeout=args.timeout, api_key=api_key).get("data", [])
             ids = [
                 item.get("id") for item in model_list
                 if isinstance(item, dict) and isinstance(item.get("id"), str)
@@ -215,7 +228,7 @@ def main() -> int:
             "max_tokens": 300,
         }
         start = time.perf_counter()
-        response = request_json(f"{base_url}/chat/completions", payload, args.timeout)
+        response = request_json(f"{base_url}/chat/completions", payload, args.timeout, api_key=api_key)
         elapsed = time.perf_counter() - start
         choices = response.get("choices")
         if not isinstance(choices, list) or not choices:
