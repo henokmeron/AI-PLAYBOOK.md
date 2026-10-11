@@ -206,5 +206,56 @@ class DocumentLoaderTests(unittest.TestCase):
             read_document(path)
 
 
+    def make_xlsx(self, path: Path, rows: list[list[object]], sheet_name: str = "Budget") -> None:
+        import openpyxl
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet.title = sheet_name
+        for row in rows:
+            sheet.append(row)
+        workbook.save(path)
+        workbook.close()
+
+    def test_xlsx_extracts_sheet_name_and_cell_values(self) -> None:
+        path = self.root / "department-budget.xlsx"
+        self.make_xlsx(
+            path,
+            [["Department", "Budget type", "Q4 budget"],
+             ["Marketing", "planned amount", 27500]],
+        )
+        text = read_document(path)
+        self.assertIn("Sheet: Budget", text)
+        self.assertIn("Marketing", text)
+        self.assertIn("27500", text)
+        self.assertIn("C2=27500", text)
+
+    def test_rag_engine_indexes_xlsx_and_preserves_source_name(self) -> None:
+        path = self.root / "quarterly-results.xlsx"
+        self.make_xlsx(
+            path,
+            [["Product", "Quarter", "Revenue"],
+             ["Falcon", "Q3", 125000]],
+            sheet_name="Sales",
+        )
+        chunks = load_chunks(self.root)
+        self.assertTrue(any(chunk.source == "quarterly-results.xlsx" for chunk in chunks))
+        ranked = retrieve("What was Falcon revenue in Q3?", chunks, top_k=1)
+        self.assertTrue(ranked)
+        self.assertEqual(ranked[0][1].source, "quarterly-results.xlsx")
+        self.assertIn("Sheet: Sales", ranked[0][1].text)
+
+    def test_malformed_xlsx_is_rejected(self) -> None:
+        path = self.root / "broken.xlsx"
+        path.write_bytes(b"not an Excel workbook")
+        with self.assertRaises(DocumentLoadError):
+            read_document(path)
+
+    def test_xlsx_without_searchable_cells_is_rejected(self) -> None:
+        path = self.root / "blank.xlsx"
+        self.make_xlsx(path, [])
+        with self.assertRaisesRegex(DocumentLoadError, "no searchable worksheet cell values"):
+            read_document(path)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
