@@ -180,3 +180,10 @@ See [XLSX support notes](../rag/XLSX_SUPPORT.md). End-to-end XLSX integration re
 The user ran `rag/setup_xlsx_support.sh` and then the focused parser suite with `PYTHONPATH=/tmp/rag-deps`. Screenshot confirms expected package versions and **16/16 tests passed**. Detailed report: [document-loader-tests-with-xlsx-2026-10-11.md](../rag/results/document-loader-tests-with-xlsx-2026-10-11.md).
 
 The next step is to run the guarded gateway upgrade, then the four-format API integration test. Do not claim XLSX is live end-to-end until the XLSX HTTP case passes.
+
+
+## XLSX parser suite passed — 2026-10-11
+
+The user ran `rag/setup_xlsx_support.sh` and the parser test suite with `PYTHONPATH=/tmp/rag-deps`. Screenshot confirms the pinned parser versions and **16/16 tests passed**. Report: [document-loader-tests-with-xlsx-2026-10-11.md](../rag/results/document-loader-tests-with-xlsx-2026-10-11.md).
+
+Next, run the guarded gateway upgrade and then the four-format CSV/DOCX/PDF/XLSX API integration test. XLSX is not marked end-to-end verified until its HTTP integration case passes.
