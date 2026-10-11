@@ -646,3 +646,13 @@ For each substantial feature or architectural change, the development agent shou
 
 ### Output standard
 Research should lead to a decision, not a pile of links. Every research report should finish with: what we learned; what to adopt; what not to adopt and why; the impact on the target architecture; risks/costs; a prioritised next action; and what evidence would change the recommendation.
+
+
+### 2026-10-11 — Gemma 4 inference baseline validated; Phase 2 evaluation started
+- On RunPod H100 NVL, installed vLLM 0.31.0 and PyTorch 2.13.0 in a Pod-local environment at `/tmp/vllm-clean-env`. The uv cache is explicitly redirected to `/tmp/uv-cache` to avoid permission errors on the Global Volume mounted at `/workspace`.
+- Confirmed PyTorch CUDA build 12.9, CUDA available, GPU detected as NVIDIA H100 NVL, and `uv pip check` passed for 199 packages.
+- vLLM reported `Application startup complete`; a real `/v1/chat/completions` request returned exactly `model works`. This is the first confirmed end-to-end generation test on the current Pod.
+- Created an environment archive `/workspace/runtime-setup/vllm-clean-env.tar.zst` (about 3.4 GB compressed; 8.42 GB uncompressed), alongside frozen requirements, runtime manifest, installation script, and SHA256 sums.
+- `sha256sum -c SHA256SUMS` reported all four files OK and `zstd -t` passed. These confirm archive/file integrity, not successful restoration. A fresh-Pod restore test was deferred because RunPod showed GPU capacity unavailable in all displayed configurations. Treat restore as unverified, preserve current Pod/Global Volume/Azure model copy, and retry the restore test when capacity is available.
+- Began Phase 2 (Evaluation). Added a dependency-free baseline runner in `evaluation/run_chat_eval.py` and usage notes in `evaluation/README.md`. It checks instruction following, simple arithmetic, use of supplied text, and JSON formatting. Run it against the current server before using it as a reference baseline. Four checks are smoke tests only, not a broad quality or compliance benchmark.
+- Next: run the four-check suite, record actual results, expand evaluations for tool use, business documents, coding, latency, and cost; then proceed to model lifecycle and platform/API layers. Keep the serving runtime unchanged while evaluation is added.
