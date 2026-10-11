@@ -15,7 +15,16 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
+from document_library import (
+    DocumentLibraryError,
+    delete_document,
+    get_collection_dir,
+    list_documents,
+    store_document,
+    validate_collection_name,
+)
 from rag_engine import load_chunks, retrieve
 
 HOST = os.environ.get("PLATFORM_HOST", "127.0.0.1")
@@ -23,10 +32,13 @@ PORT = int(os.environ.get("PLATFORM_PORT", "8010"))
 API_KEY = os.environ.get("PLATFORM_API_KEY", "")
 UPSTREAM = os.environ.get("VLLM_UPSTREAM_URL", "http://127.0.0.1:8000/v1").rstrip("/")
 RAG_DOCS_DIR = Path(os.environ.get("RAG_DOCS_DIR", "/workspace/rag-demo-docs"))
-# This cutoff is calibrated only for the two-file fictional demo corpus.
-# Recalibrate before using any different corpus.
+RAG_MANAGED_DOCS_DIR = Path(os.environ.get("RAG_MANAGED_DOCS_DIR", "/workspace/rag-managed-docs"))
+# 2.30 is calibrated only for the two-file fictional demo corpus. Managed collections
+# inherit it unless explicitly configured; calibrate the threshold for every real corpus.
 RAG_MIN_SCORE = float(os.environ.get("RAG_MIN_SCORE", "2.30"))
+RAG_MANAGED_MIN_SCORE = float(os.environ.get("RAG_MANAGED_MIN_SCORE", str(RAG_MIN_SCORE)))
 MAX_BODY_BYTES = 1_048_576
+MAX_UPLOAD_BODY_BYTES = 14 * 1024 * 1024
 MAX_QUESTION_CHARS = 2000
 UPSTREAM_TIMEOUT = 180
 RATE_LIMIT_PER_MINUTE = 30
@@ -93,28 +105,56 @@ class Handler(BaseHTTPRequestHandler):
             request_times[peer] = times
             return True
 
-    def do_GET(self) -> None:
-        if self.path != "/health":
-            self.send_json(404, {"error": "not found"})
-            return
-        try:
-            payload = read_upstream_json("/models", timeout=5)
-            entries = payload.get("data", [])
-            count = len(entries) if isinstance(entries, list) else 0
-            self.send_json(200, {"status": "ok", "upstream": "ok", "model_count": count})
-        except Exception:
-            self.send_json(503, {"status": "degraded", "upstream": "unavailable"})
-
-    def do_POST(self) -> None:
-        allowed = {"/v1/chat/completions", "/v1/rag/ask"}
-        if self.path not in allowed:
-            self.send_json(404, {"error": "not found"})
-            return
+    def require_auth_and_rate_limit(self) -> bool:
         if not self.authorised():
             self.send_json(401, {"error": "authentication required"})
-            return
+            return False
         if not self.within_rate_limit():
             self.send_json(429, {"error": "rate limit exceeded"})
+            return False
+        return True
+
+    def single_query_parameter(self, name: str) -> str | None:
+        values = parse_qs(urlsplit(self.path).query, keep_blank_values=True).get(name)
+        if values is None or len(values) != 1 or not values[0]:
+            return None
+        return values[0]
+
+    def do_GET(self) -> None:
+        parsed = urlsplit(self.path)
+        if parsed.path == "/health":
+            try:
+                payload = read_upstream_json("/models", timeout=5)
+                entries = payload.get("data", [])
+                count = len(entries) if isinstance(entries, list) else 0
+                self.send_json(200, {"status": "ok", "upstream": "ok", "model_count": count})
+            except Exception:
+                self.send_json(503, {"status": "degraded", "upstream": "unavailable"})
+            return
+        if parsed.path == "/v1/rag/documents":
+            if not self.require_auth_and_rate_limit():
+                return
+            collection = self.single_query_parameter("collection")
+            if not collection:
+                self.send_json(400, {"error": "one collection query parameter is required"})
+                return
+            try:
+                collection = validate_collection_name(collection)
+                documents = list_documents(RAG_MANAGED_DOCS_DIR, collection)
+            except DocumentLibraryError as exc:
+                self.send_json(400, {"error": str(exc)})
+                return
+            self.send_json(200, {"collection": collection, "documents": documents})
+            return
+        self.send_json(404, {"error": "not found"})
+
+    def do_POST(self) -> None:
+        parsed_path = urlsplit(self.path).path
+        allowed = {"/v1/chat/completions", "/v1/rag/ask", "/v1/rag/documents"}
+        if parsed_path not in allowed or urlsplit(self.path).query:
+            self.send_json(404, {"error": "not found"})
+            return
+        if not self.require_auth_and_rate_limit():
             return
         content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
         if content_type != "application/json":
@@ -128,7 +168,8 @@ class Handler(BaseHTTPRequestHandler):
         if length <= 0:
             self.send_json(400, {"error": "request body required"})
             return
-        if length > MAX_BODY_BYTES:
+        body_limit = MAX_UPLOAD_BODY_BYTES if parsed_path == "/v1/rag/documents" else MAX_BODY_BYTES
+        if length > body_limit:
             self.send_json(413, {"error": "request body too large"})
             return
         raw = self.rfile.read(length)
@@ -141,10 +182,53 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(400, {"error": "JSON object required"})
             return
 
-        if self.path == "/v1/rag/ask":
+        if parsed_path == "/v1/rag/ask":
             self.handle_rag_ask(payload)
+        elif parsed_path == "/v1/rag/documents":
+            self.handle_document_upload(payload)
+        else:
+            self.handle_chat(payload)
+
+    def do_DELETE(self) -> None:
+        parsed = urlsplit(self.path)
+        if parsed.path != "/v1/rag/documents":
+            self.send_json(404, {"error": "not found"})
             return
-        self.handle_chat(payload)
+        if not self.require_auth_and_rate_limit():
+            return
+        collection = self.single_query_parameter("collection")
+        filename = self.single_query_parameter("filename")
+        if not collection or not filename:
+            self.send_json(400, {"error": "one collection and one filename query parameter are required"})
+            return
+        try:
+            outcome = delete_document(RAG_MANAGED_DOCS_DIR, collection, filename)
+        except FileNotFoundError:
+            self.send_json(404, {"error": "document not found"})
+            return
+        except DocumentLibraryError as exc:
+            self.send_json(400, {"error": str(exc)})
+            return
+        self.send_json(200, outcome)
+
+    def handle_document_upload(self, payload: dict[str, Any]) -> None:
+        try:
+            outcome = store_document(
+                RAG_MANAGED_DOCS_DIR,
+                payload.get("collection"),
+                payload.get("filename"),
+                payload.get("content_base64"),
+                payload.get("overwrite", False),
+            )
+        except FileExistsError:
+            self.send_json(409, {"error": "document already exists; set overwrite=true to replace it"})
+            return
+        except DocumentLibraryError as exc:
+            message = str(exc)
+            status = 413 if "exceeds" in message.casefold() and "bytes" in message.casefold() else 400
+            self.send_json(status, {"error": message})
+            return
+        self.send_json(201, {"status": "stored", "document": outcome})
 
     def handle_chat(self, payload: dict[str, Any]) -> None:
         if not isinstance(payload.get("messages"), list):
@@ -174,8 +258,23 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(400, {"error": "top_k must be an integer from 1 to 10"})
             return
 
+        collection = payload.get("collection")
+        documents_dir = RAG_DOCS_DIR
+        minimum_score = RAG_MIN_SCORE
+        if collection is not None:
+            try:
+                collection = validate_collection_name(collection)
+                documents_dir = get_collection_dir(RAG_MANAGED_DOCS_DIR, collection)
+            except DocumentLibraryError as exc:
+                self.send_json(400, {"error": str(exc)})
+                return
+            if not documents_dir.is_dir():
+                self.send_json(404, {"error": "document collection not found"})
+                return
+            minimum_score = RAG_MANAGED_MIN_SCORE
+
         try:
-            chunks = load_chunks(RAG_DOCS_DIR)
+            chunks = load_chunks(documents_dir)
             ranked = retrieve(question, chunks, top_k=top_k)
         except (RuntimeError, OSError):
             self.send_json(500, {"error": "document retrieval unavailable"})
@@ -191,7 +290,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         top_score = ranked[0][0]
-        if top_score < RAG_MIN_SCORE:
+        if top_score < minimum_score:
             self.send_json(200, {
                 "status": "abstained",
                 "answer": "No sufficiently relevant evidence was found in the supplied documents.",
@@ -200,7 +299,7 @@ class Handler(BaseHTTPRequestHandler):
                     "matched": True,
                     "reason": "below_min_score",
                     "top_score": round(top_score, 3),
-                    "minimum_score": RAG_MIN_SCORE,
+                    "minimum_score": minimum_score,
                 },
             })
             return
@@ -268,11 +367,12 @@ class Handler(BaseHTTPRequestHandler):
             "status": "answered",
             "answer": answer.strip(),
             "model": model,
+            "collection": collection,
             "sources": sources,
             "retrieval": {
                 "matched": True,
                 "top_score": round(top_score, 3),
-                "minimum_score": RAG_MIN_SCORE,
+                "minimum_score": minimum_score,
             },
         })
 
@@ -293,7 +393,8 @@ def main() -> int:
         print(f"ERROR: could not bind gateway to {HOST}:{PORT}: {exc}", flush=True)
         return 2
     print(f"Local platform gateway listening on http://{HOST}:{PORT}; upstream={UPSTREAM}", flush=True)
-    print(f"RAG document corpus: {RAG_DOCS_DIR}; min BM25 score={RAG_MIN_SCORE} (demo corpus only)", flush=True)
+    print(f"Demo corpus: {RAG_DOCS_DIR}; managed collections: {RAG_MANAGED_DOCS_DIR}", flush=True)
+    print(f"BM25 thresholds: demo={RAG_MIN_SCORE}; managed={RAG_MANAGED_MIN_SCORE} (calibrate for each corpus)", flush=True)
     print("Prototype warning: loopback-only; not production-hardened.", flush=True)
     try:
         server.serve_forever()
