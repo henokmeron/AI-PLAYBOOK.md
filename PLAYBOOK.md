@@ -836,3 +836,10 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Detailed result: `api/results/gateway-after-loader-upgrade-2026-10-11.md`.
 - Validation boundary: live smoke tests still use the Markdown demo corpus. Parser unit tests passed for CSV/HTML/DOCX, but actual live RAG API requests against those file types remain unverified.
 - Next: add a separate fictional CSV and DOCX to the configured RAG document folder, ask a question whose answer exists only in each one through `POST /v1/rag/ask`, and confirm source metadata points to the correct source file. Do not expose the gateway or use real customer data.
+
+
+### 2026-10-11 — Verify common business document types through HTTP API
+- After CSV/HTML/DOCX parser unit tests passed 8/8 and the gateway was upgraded successfully, created `api/test_format_ingestion.sh`.
+- The script starts a second temporary loopback gateway on port 8011 with an isolated temporary corpus, tests a CSV fact and a DOCX fact through `POST /v1/rag/ask`, verifies answer and source filename, then cleans up the test gateway/files. It does not change the current gateway on 8010 or the vLLM model server on 8000.
+- The relevance gate is set to 0 only for this isolated format test because the 2.30 threshold is calibrated specifically for the two Markdown demo files, not a different corpus.
+- This test is pending execution. Do not claim CSV/DOCX works end-to-end until it passes.
