@@ -897,3 +897,12 @@ Research should lead to a decision, not a pile of links. Every research report s
 - The working vLLM environment was not modified; document parsing dependencies are isolated from it.
 - Detailed record: `rag/results/document-loader-tests-with-xlsx-2026-10-11.md`.
 - Next: run `api/upgrade_gateway_with_rag_smoke.sh`, then `api/test_format_ingestion.sh` to verify CSV, DOCX, PDF and XLSX through the HTTP API. XLSX remains unverified end to end until the final HTTP integration test passes.
+
+
+### 2026-10-11 — Gateway passed with PDF and XLSX parser dependencies enabled
+- User screenshot confirms the gateway upgrade verified pypdf 6.20.0, openpyxl 3.1.5, et-xmlfile 2.0.0 and defusedxml 0.7.1.
+- New gateway and shared retrieval engine compiled; only the gateway process was stopped/restarted (old PID 3118), not vLLM.
+- Health passed, unauthenticated requests were rejected, the supported source-grounded policy question passed, and the low-relevance question was blocked before generation at demo threshold 2.3.
+- Final output: `ALL GATEWAY + RAG API TESTS PASSED`.
+- Report: `api/results/gateway-after-pdf-xlsx-upgrade-2026-10-11.md`.
+- Next: run `api/test_format_ingestion.sh` for CSV/DOCX/PDF/XLSX against isolated port 8011. Excel is parser-tested and gateway-startup-validated but remains unverified end-to-end until its HTTP integration case passes.
