@@ -89,3 +89,16 @@ curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/
 ```
 
 The initial set covers six answerable and six unanswerable questions for the two fictional sample documents. Review the top-source accuracy and positive/negative score ranges. This is a tiny development set, not statistically reliable evidence by itself. Do not introduce a hard rejection threshold unless these examples show a workable separation; expand and label the data if ranges overlap.
+
+
+## Provisional relevance gate (demo corpus only)
+
+The retrieval calibration run on the two fictional demo documents produced these top BM25 score ranges:
+- Answerable queries: 2.351–5.797; expected source was top-ranked for 6/6.
+- Unanswerable queries: 0.690–2.258.
+
+There was a narrow gap, so `ask_documents.py` now has `--min-score`, defaulting to **2.30 for this exact two-document demo corpus**. If the top result scores below the threshold, the script stops before the model call and says no sufficiently relevant evidence was found.
+
+**Do not reuse 2.30 for another company's documents.** BM25 score distributions depend on corpus size/content and the query set. Before using a different corpus, label answerable/unanswerable queries, run `evaluate_retrieval.py`, inspect the score ranges, and calibrate a threshold. If the ranges overlap, do not pretend a single threshold solves relevance; improve retrieval and add tests.
+
+Use `--min-score 0` only for the specific regression test that checks whether the language model abstains when irrelevant passages are deliberately allowed through; it disables the score gate for that invocation.
