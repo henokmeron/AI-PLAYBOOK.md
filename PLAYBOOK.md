@@ -919,3 +919,13 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Detailed result: `api/results/csv-docx-pdf-xlsx-integration-2026-10-11.md`.
 - This verifies four synthetic documents, not arbitrary real-world file layouts. Scanned-PDF OCR, formula recalculation, complex spreadsheet/table handling, customer auth/tenant isolation and production hardening remain open tasks.
 - Next: build persistent document management around the API—safe upload, list and delete operations, per-document metadata and re-index-on-query—using an isolated test directory first. Do not ingest real customer files or expose the loopback prototype publicly.
+
+
+### 2026-10-11 — Managed document collection API implemented; validation pending
+- Added `rag/document_library.py`: validated collection names and filenames, allowlist for TXT/MD/CSV/HTML/DOCX/PDF/XLSX, strict base64 decoding, 10 MiB decoded-file limit, parser validation before storing, duplicate protection unless `overwrite=true`, and list/delete operations. Paths are constrained to a configured managed root; writes avoid assuming atomic rename support on the FUSE mount.
+- Extended `api/local_gateway.py` with authenticated `POST /v1/rag/documents`, `GET /v1/rag/documents?collection=...`, `DELETE /v1/rag/documents?collection=...&filename=...`; `POST /v1/rag/ask` now accepts an optional collection identifier.
+- Main gateway setup/upgrade scripts download and compile the document-library module and configure managed storage at `/workspace/rag-managed-docs` on the mounted Global Volume. Main gateway has not yet been upgraded to this feature.
+- Added `rag/tests/test_document_library.py` (14 no-GPU unit tests) and `api/test_document_management.sh` for isolated authenticated upload/list/query/delete tests on port 8012 and temporary storage.
+- Updated OpenAPI contract to version 0.3 with document endpoints.
+- The managed collection BM25 threshold defaults to 0.0 in this prototype because the demo threshold is not calibrated for new collections. This is intentionally documented as not production-safe; calibrate per collection before business use.
+- Next: run syntax compilation and all document-library unit tests, then run the isolated API management script. Only after both pass should the main gateway be upgraded and a harmless test document be uploaded to the Global Volume.
