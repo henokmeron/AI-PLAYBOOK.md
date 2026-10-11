@@ -803,3 +803,12 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Detailed record: `rag/results/rag-engine-unit-tests-2026-10-11.md`.
 - These tests run without model inference and can be used as a cheap local regression check. They do not prove retrieval quality on real corpora or make the prototype production-ready.
 - Next: broaden document ingestion beyond Markdown/plain text to practical business file types (at minimum CSV and DOCX with standard-library parsers where feasible), while preserving source references and adding parser tests. PDF/XLSX support should be added with deliberate dependency and safety decisions rather than blindly installing packages into the current working model environment.
+
+
+### 2026-10-11 — Expanded RAG ingestion to common business formats; tests pending
+- Added `rag/document_loaders.py` using only the Python standard library. Initial supported types: TXT, Markdown, CSV, HTML/HTM, and DOCX.
+- CSV is flattened by row; HTML parser omits script/style/noscript/SVG text; DOCX parser extracts paragraphs from `word/document.xml`. Source-file size is capped at 10 MiB and uncompressed DOCX document XML at 20 MiB.
+- Integrated the loader into `rag/rag_engine.py`, updated CLI help and gateway scripts to fetch the new module.
+- Added tests for CSV, HTML, DOCX, unsupported files and source attribution, in addition to the existing tokenizer/chunking/BM25 tests.
+- No live gateway change has been applied by the GitHub commit alone. Next: fetch the loader/engine/tests to the active Pod, run syntax compilation and unit tests; only after they pass, use the guarded upgrade script to update the running gateway, then re-run the end-to-end gateway + RAG checks.
+- PDF and XLSX parsing remain deferred. No third-party parsing dependencies have been installed in the working model environment.
