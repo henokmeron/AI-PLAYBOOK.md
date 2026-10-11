@@ -110,3 +110,8 @@ Use `--min-score 0` only for the specific regression test that checks whether th
 The revised suite passed **5/5 cases** on the current Pod. The low-relevance question was blocked before model inference at the provisional 2.30 threshold, and an explicit `--min-score 0` test confirmed the model's own abstention behaviour. Report: [rag-regression-gated-run-2026-10-11.md](results/rag-regression-gated-run-2026-10-11.md).
 
 Do not use this threshold outside the two-file fictional demo corpus without new calibration. The 0.093 calibration gap is narrow, and the corpus is tiny.
+
+
+## Full authenticated gateway test — 2026-10-11
+
+The user verified the same expense question through `http://127.0.0.1:8010/v1` using the temporary bearer key file. The script retrieved the expenses policy and Gemma answered "10 business days" with a source label. Detailed result: [RAG through gateway](results/rag-through-gateway-2026-10-11.md). The CLI now can use the gateway, while a single `POST /v1/rag/ask` endpoint remains the next API milestone.
