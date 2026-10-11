@@ -88,3 +88,8 @@ This is the first confirmed copy, not the latest source after this note. Re-run 
 The user confirmed a newer successful snapshot at commit `bd44a9d3bca78837c039fca140b2d8543b0bab83`; its checksum passed. Archive: `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-bd44a9d3bca78837c039fca140b2d8543b0bab83.tar.gz`. Manifest: `/workspace/ai-platform-backups/manifests/global-volume-manifest-bd44a9d3bca78837c039fca140b2d8543b0bab83.txt`. Full record: [snapshot report](results/global-volume-document-management-snapshot-2026-10-11.md).
 
 Next persistence verification is to deploy the latest gateway and save/read a small, non-sensitive canary document under `/workspace/rag-managed-docs/`. The source snapshot above predates this added snapshot report and any subsequent gateway deployment/test code; run the sync script again after the next verified milestone.
+
+
+## Live document-storage canary
+
+After the main gateway is upgraded, `ops/test_persistent_document_storage.sh` uses the authenticated API to upload and retrieve one fictional canary under `/workspace/rag-managed-docs/`. It verifies the file physically exists on the mounted Global Volume. The canary is deliberately retained as a later cross-Pod re-attach check; it contains no customer information. This proves a live write/read on the mounted path only, not yet survival across Pod replacement.
