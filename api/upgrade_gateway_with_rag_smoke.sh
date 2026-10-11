@@ -17,6 +17,7 @@ PID_FILE=/tmp/platform-gateway.pid
 LOG_FILE=/tmp/platform-gateway.log
 URL=http://127.0.0.1:8010
 DOCS=/workspace/rag-demo-docs
+RAG_DEPS=/tmp/rag-deps
 UPGRADED=0
 NEW_PID=""
 
@@ -29,7 +30,7 @@ rollback_on_failure() {
       sleep 1
     fi
     cp "$OLD_GATEWAY" "$GATEWAY"
-    PLATFORM_HOST=127.0.0.1 PLATFORM_PORT=8010 PLATFORM_API_KEY="$API_KEY" \
+    PYTHONPATH="$RAG_DEPS" PLATFORM_HOST=127.0.0.1 PLATFORM_PORT=8010 PLATFORM_API_KEY="$API_KEY" \
       UV_CACHE_DIR=/tmp/uv-cache TMPDIR=/tmp \
       nohup "$PYTHON" "$GATEWAY" > /tmp/platform-gateway-rollback.log 2>&1 </dev/null &
     rollback_pid=$!
@@ -63,6 +64,10 @@ fi
 if [[ ! -d "$DOCS" ]]; then
   echo "ERROR: expected demo document folder missing at $DOCS; existing gateway was not changed." >&2
   exit 5
+fi
+if ! PYTHONPATH="$RAG_DEPS" "$PYTHON" -c 'import pypdf; assert pypdf.__version__ == "6.20.0"; print("Verified pypdf", pypdf.__version__)'; then
+  echo "ERROR: isolated PDF parser is missing or wrong version. Run rag/setup_pdf_support.sh first; existing gateway was not changed." >&2
+  exit 12
 fi
 
 echo "=== DOWNLOAD AND CHECK NEW FILES ==="
@@ -113,7 +118,7 @@ cp "$NEXT_ENGINE" "$ENGINE"
 cp "$NEXT_LOADER" "$LOADER"
 
 echo "=== START UPDATED LOOPBACK GATEWAY ==="
-PLATFORM_HOST=127.0.0.1 PLATFORM_PORT=8010 PLATFORM_API_KEY="$API_KEY" \
+PYTHONPATH="$RAG_DEPS" PLATFORM_HOST=127.0.0.1 PLATFORM_PORT=8010 PLATFORM_API_KEY="$API_KEY" \
   RAG_DOCS_DIR="$DOCS" RAG_MIN_SCORE=2.30 \
   UV_CACHE_DIR=/tmp/uv-cache TMPDIR=/tmp \
   nohup "$PYTHON" "$GATEWAY" > "$LOG_FILE" 2>&1 </dev/null &
