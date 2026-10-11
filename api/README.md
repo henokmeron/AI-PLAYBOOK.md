@@ -102,3 +102,8 @@ The API is verified only as a local loopback prototype. It must not be exposed p
 ### Document loader dependency
 
 The updated gateway imports `rag_engine.py`, which now imports `document_loaders.py`. Both files must be present in the same directory as `platform_gateway.py` (the scripts place them under `/tmp`). The guarded upgrade/fresh-start scripts now download and syntax-check the loader module. Run the RAG parser unit tests before upgrading the live gateway.
+
+
+## Document-loader tests passed — 2026-10-11
+
+The focused parser suite completed with 8/8 tests passing. This clears the preflight for the guarded in-place gateway upgrade, which will fetch `document_loaders.py`, `rag_engine.py`, and `local_gateway.py`, syntax-check them, then run the end-to-end RAG API checks. The upgrade script preserves the API key and has a rollback path; it restarts only the gateway, not vLLM.
