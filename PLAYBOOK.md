@@ -889,3 +889,11 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Added four parser tests for worksheet text, source attribution/retrieval, malformed workbook, and empty workbook.
 - Updated gateway startup/upgrade scripts to require the pinned XLSX dependency alongside pypdf; expanded the isolated format integration test to query CSV, DOCX, PDF and XLSX.
 - Next: run XLSX setup, then syntax compile and the now-16-test parser suite with `PYTHONPATH=/tmp/rag-deps`. Do not alter the live gateway until all parser tests pass. Then run guarded gateway upgrade and combined four-format integration test.
+
+
+### 2026-10-11 — XLSX parser tests passed
+- The user screenshot confirms `openpyxl 3.1.5`, `et-xmlfile 2.0.0` and `defusedxml 0.7.1` were verified under `/tmp/rag-deps`; the Global Volume holds the wheel artifacts and checksum list.
+- The expanded document-loader suite ran 16 tests in 0.243 seconds and all passed. Coverage includes TXT, CSV, HTML, DOCX, text-based PDF, XLSX, source attribution, malformed/empty documents and resource limits.
+- The working vLLM environment was not modified; document parsing dependencies are isolated from it.
+- Detailed record: `rag/results/document-loader-tests-with-xlsx-2026-10-11.md`.
+- Next: run `api/upgrade_gateway_with_rag_smoke.sh`, then `api/test_format_ingestion.sh` to verify CSV, DOCX, PDF and XLSX through the HTTP API. XLSX remains unverified end to end until the final HTTP integration test passes.
