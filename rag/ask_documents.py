@@ -144,10 +144,13 @@ def main() -> int:
     parser.add_argument("--base-url", default="http://127.0.0.1:8000/v1", help="OpenAI-compatible API base URL")
     parser.add_argument("--model", default=None, help="Model ID; defaults to first ID returned by /models")
     parser.add_argument("--top-k", type=int, default=4, help="Maximum number of evidence chunks to retrieve")
+    parser.add_argument("--min-score", type=float, default=2.30, help="Minimum top BM25 score required to send evidence to the model; 2.30 is calibrated only for the two-file fictional demo corpus")
     parser.add_argument("--timeout", type=int, default=120, help="Inference request timeout in seconds")
     args = parser.parse_args()
     if args.top_k < 1 or args.top_k > 10:
         parser.error("--top-k must be between 1 and 10")
+    if args.min_score < 0:
+        parser.error("--min-score must be non-negative")
 
     try:
         chunks = load_chunks(args.docs)
@@ -165,6 +168,15 @@ def main() -> int:
             evidence_parts.append(
                 f"[Source {number}: file={chunk.source}; chunk={chunk.number}]\n{chunk.text}"
             )
+
+        top_score = ranked[0][0]
+        if top_score < args.min_score:
+            print(
+                f"Top retrieval score {top_score:.3f} is below the configured "
+                f"minimum {args.min_score:.3f}."
+            )
+            print("No sufficiently relevant evidence was found. No model answer was generated.")
+            return 1
 
         base_url = args.base_url.rstrip("/")
         model = args.model
@@ -215,7 +227,7 @@ def main() -> int:
         print(answer.strip())
         print(f"\nModel: {model}")
         print(f"Inference latency: {elapsed:.2f}s (single request; not a benchmark)")
-        print("Prototype note: retrieval is lexical BM25, not semantic-vector search. Always check source citations.")
+        print("Prototype note: retrieval is lexical BM25, not semantic-vector search. The default minimum score (2.30) is calibrated only for the two fictional demo documents; recalibrate before using another corpus. Always check source citations.")
         return 0
     except (RuntimeError, OSError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
