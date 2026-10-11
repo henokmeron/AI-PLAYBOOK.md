@@ -21,18 +21,28 @@ if ! command -v findmnt >/dev/null 2>&1; then
   echo "ERROR: findmnt not available; refusing to assume /workspace is persistent." >&2
   exit 2
 fi
-# Read filesystem type and source separately. Exact type comparison is more
-# reliable than matching a combined FSTYPE,SOURCE string on this FUSE mount.
-MOUNT_TYPE="$(findmnt -T "$GLOBAL" -n -o FSTYPE 2>/dev/null | head -n 1 | tr -d '[:space:]' || true)"
-MOUNT_SOURCE="$(findmnt -T "$GLOBAL" -n -o SOURCE 2>/dev/null | head -n 1 | tr -d '\\r' || true)"
+# Do not rely on brittle filesystem-type string equality on the provider's FUSE mount.
+# Verify that /workspace itself is a mount point AND that the expected model file is
+# present on that mount. This avoids falsely rejecting the correct Global Volume
+# while still refusing to write into an ordinary container directory.
+MOUNT_TARGET="$(findmnt -T "$GLOBAL" -n -o TARGET 2>/dev/null | head -n 1 || true)"
+MOUNT_TYPE="$(findmnt -T "$GLOBAL" -n -o FSTYPE 2>/dev/null | head -n 1 || true)"
+MOUNT_SOURCE="$(findmnt -T "$GLOBAL" -n -o SOURCE 2>/dev/null | head -n 1 || true)"
 MOUNT_INFO="$MOUNT_TYPE $MOUNT_SOURCE"
-if [[ "$MOUNT_TYPE" != "fuse.geeseefs" ]]; then
-  echo "ERROR: /workspace does not look like the expected mounted Global Volume." >&2
-  echo "Detected filesystem: ${MOUNT_TYPE:-none}; source: ${MOUNT_SOURCE:-none}" >&2
-  echo "Nothing was copied. Confirm the Global Volume is mounted at /workspace." >&2
+MODEL_MARKER="$GLOBAL/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it/config.json"
+
+if [[ "$MOUNT_TARGET" != "$GLOBAL" ]]; then
+  echo "ERROR: $GLOBAL is not itself a mount point." >&2
+  echo "Detected mount target: ${MOUNT_TARGET:-none}; filesystem: ${MOUNT_TYPE:-none}" >&2
+  echo "Nothing was copied. Confirm the Global Volume is attached at /workspace." >&2
   exit 3
 fi
-
+if [[ ! -f "$MODEL_MARKER" ]]; then
+  echo "ERROR: expected Gemma model marker is missing from $GLOBAL." >&2
+  echo "Detected mount: $MOUNT_INFO" >&2
+  echo "Nothing was copied; refusing to write to an unverified volume." >&2
+  exit 3
+fi
 mkdir -p "$SOURCE_DIR" "$MANIFEST_DIR" "$DEPLOYED_DIR" "$RESTORE_DIR"
 echo "Global Volume mount verified: $MOUNT_INFO"
 
