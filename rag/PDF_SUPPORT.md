@@ -40,5 +40,5 @@ The current gateway's launch/upgrade scripts set `PYTHONPATH=/tmp/rag-deps`, so 
 - Searchable text extraction only. Images, tables and multi-column layout may extract imperfectly.
 - Scanned/image-only PDF OCR is not implemented.
 - PDF annotation text/embedded files are not parsed.
-- Excel XLSX support remains a separate future feature.
+- Excel XLSX ingestion is implemented separately with openpyxl; see [XLSX support notes](XLSX_SUPPORT.md). Its parser tests and end-to-end HTTP test are tracked independently.
 - Before production, keep this package in an explicit dependency inventory, rescan for relevant security advisories, and test representative customer PDF samples and malformed/encrypted input behaviour.
