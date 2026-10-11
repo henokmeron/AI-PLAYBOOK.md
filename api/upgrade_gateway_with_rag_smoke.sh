@@ -13,6 +13,8 @@ ENGINE=/tmp/rag_engine.py
 NEXT_ENGINE=/tmp/rag_engine.py.next
 LOADER=/tmp/document_loaders.py
 NEXT_LOADER=/tmp/document_loaders.py.next
+LIBRARY=/tmp/document_library.py
+NEXT_LIBRARY=/tmp/document_library.py.next
 PID_FILE=/tmp/platform-gateway.pid
 LOG_FILE=/tmp/platform-gateway.log
 URL=http://127.0.0.1:8010
@@ -74,7 +76,8 @@ echo "=== DOWNLOAD AND CHECK NEW FILES ==="
 curl -fsSL "$BASE/api/local_gateway.py" -o "$NEXT_GATEWAY"
 curl -fsSL "$BASE/rag/rag_engine.py" -o "$NEXT_ENGINE"
 curl -fsSL "$BASE/rag/document_loaders.py" -o "$NEXT_LOADER"
-"$PYTHON" -m py_compile "$NEXT_GATEWAY" "$NEXT_ENGINE" "$NEXT_LOADER"
+curl -fsSL "$BASE/rag/document_library.py" -o "$NEXT_LIBRARY"
+"$PYTHON" -m py_compile "$NEXT_GATEWAY" "$NEXT_ENGINE" "$NEXT_LOADER" "$NEXT_LIBRARY"
 echo "New gateway and shared RAG engine passed Python syntax compilation."
 
 if [[ -f "$GATEWAY" ]]; then
@@ -116,10 +119,11 @@ UPGRADED=1
 cp "$NEXT_GATEWAY" "$GATEWAY"
 cp "$NEXT_ENGINE" "$ENGINE"
 cp "$NEXT_LOADER" "$LOADER"
+cp "$NEXT_LIBRARY" "$LIBRARY"
 
 echo "=== START UPDATED LOOPBACK GATEWAY ==="
 PYTHONPATH="$RAG_DEPS" PLATFORM_HOST=127.0.0.1 PLATFORM_PORT=8010 PLATFORM_API_KEY="$API_KEY" \
-  RAG_DOCS_DIR="$DOCS" RAG_MIN_SCORE=2.30 \
+  RAG_DOCS_DIR="$DOCS" RAG_MANAGED_DOCS_DIR=/workspace/rag-managed-docs RAG_MIN_SCORE=2.30 RAG_MANAGED_MIN_SCORE=2.30 \
   UV_CACHE_DIR=/tmp/uv-cache TMPDIR=/tmp \
   nohup "$PYTHON" "$GATEWAY" > "$LOG_FILE" 2>&1 </dev/null &
 NEW_PID=$!
