@@ -216,3 +216,10 @@ This test starts and then cleans up only its temporary gateway and sample files;
 After running the isolated PDF setup and using `PYTHONPATH=/tmp/rag-deps`, the user ran the expanded `rag/tests/test_document_loaders.py` suite: **12 tests ran in 0.064 seconds, all OK**. This confirms the sample PDF text extraction and page-marker tests pass, the no-text/scanned-PDF case is explicitly rejected pending OCR, malformed PDFs are rejected, and PDF source names survive retrieval. Detailed record: [document-loader-tests-with-pdf-2026-10-11.md](results/document-loader-tests-with-pdf-2026-10-11.md).
 
 The live gateway still needs the guarded upgrade, then the CSV/DOCX/PDF HTTP integration script should be run before PDF support is marked end-to-end verified.
+
+
+## CSV/DOCX/PDF API integration passed — 2026-10-11
+
+The user confirmed the isolated HTTP integration test returned the correct source-grounded answers for a CSV, a Word DOCX and a text-based PDF. The three source filenames were `visitor-rules.csv`, `launch-review.docx`, and `project-review.pdf`. Full details: [API integration report](../api/results/csv-docx-pdf-integration-2026-10-11.md).
+
+Excel `.xlsx` and scanned PDF OCR remain future work. These example tests do not guarantee extraction quality for arbitrary files.
