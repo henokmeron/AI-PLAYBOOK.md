@@ -1,9 +1,9 @@
 """Bounded text extraction for small business-document prototypes.
 
 TXT, Markdown, CSV, HTML and DOCX use the Python standard library. PDF text
-extraction uses a separately installed, pinned pypdf dependency.
+extraction uses a separately installed, pinned pypdf dependency. XLSX reading
+uses pinned openpyxl + defusedxml dependencies installed separately from vLLM.
 PDFs containing only scanned images require OCR and are intentionally rejected.
-XLSX remains unsupported.
 """
 from __future__ import annotations
 
@@ -15,11 +15,16 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 TEXT_EXTENSIONS = {".txt", ".md"}
-SUPPORTED_EXTENSIONS = TEXT_EXTENSIONS | {".csv", ".html", ".htm", ".docx", ".pdf"}
+SUPPORTED_EXTENSIONS = TEXT_EXTENSIONS | {".csv", ".html", ".htm", ".docx", ".pdf", ".xlsx"}
 MAX_INPUT_BYTES = 10 * 1024 * 1024
 MAX_DOCX_XML_BYTES = 20 * 1024 * 1024
 MAX_PDF_PAGES = 300
 MAX_EXTRACTED_TEXT_CHARS = 5_000_000
+MAX_XLSX_TOTAL_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
+MAX_XLSX_MEMBER_BYTES = 40 * 1024 * 1024
+MAX_XLSX_SHEETS = 50
+MAX_XLSX_ROWS_PER_SHEET = 100_000
+MAX_XLSX_COLUMNS_PER_SHEET = 512
 WORD_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 
@@ -188,6 +193,117 @@ def _read_pdf(path: Path) -> str:
     return "\\n\\n".join(pages)
 
 
+def _read_xlsx(path: Path) -> str:
+    # Optional packages are kept in /tmp/rag-deps, separate from vLLM/PyTorch.
+    try:
+        import openpyxl
+    except ImportError as exc:
+        raise DocumentLoadError(
+            "XLSX support requires the pinned openpyxl and defusedxml dependencies; "
+            "run rag/setup_xlsx_support.sh first"
+        ) from exc
+
+    # Validate ZIP entry sizes before giving the workbook to a reader. XLSX files
+    # are ZIP containers and must be treated as untrusted input.
+    try:
+        with zipfile.ZipFile(path, "r") as archive:
+            infos = archive.infolist()
+            names = {info.filename for info in infos}
+            if "[Content_Types].xml" not in names or "xl/workbook.xml" not in names:
+                raise DocumentLoadError(f"{path.name} is not a valid XLSX workbook")
+            total_size = 0
+            for info in infos:
+                member = Path(info.filename)
+                if member.is_absolute() or ".." in member.parts:
+                    raise DocumentLoadError(f"unsafe ZIP entry in {path.name}")
+                if info.file_size > MAX_XLSX_MEMBER_BYTES:
+                    raise DocumentLoadError(
+                        f"uncompressed component in {path.name} exceeds the size limit"
+                    )
+                total_size += info.file_size
+                if total_size > MAX_XLSX_TOTAL_UNCOMPRESSED_BYTES:
+                    raise DocumentLoadError(
+                        f"uncompressed workbook in {path.name} exceeds the total size limit"
+                    )
+    except DocumentLoadError:
+        raise
+    except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
+        raise DocumentLoadError(f"invalid or unreadable XLSX file {path.name}: {exc}") from exc
+
+    workbook = None
+    try:
+        workbook = openpyxl.load_workbook(
+            filename=path,
+            read_only=True,
+            data_only=True,
+            keep_links=False,
+        )
+        sheets = workbook.worksheets
+        if len(sheets) > MAX_XLSX_SHEETS:
+            raise DocumentLoadError(
+                f"{path.name} has more than {MAX_XLSX_SHEETS} worksheets"
+            )
+        output: list[str] = []
+        total_chars = 0
+        for sheet in sheets:
+            if sheet.max_row is not None and sheet.max_row > MAX_XLSX_ROWS_PER_SHEET:
+                raise DocumentLoadError(
+                    f"worksheet {sheet.title!r} in {path.name} exceeds the row limit"
+                )
+            if sheet.max_column is not None and sheet.max_column > MAX_XLSX_COLUMNS_PER_SHEET:
+                raise DocumentLoadError(
+                    f"worksheet {sheet.title!r} in {path.name} exceeds the column limit"
+                )
+            sheet_label = f"Sheet: {sheet.title} (state: {sheet.sheet_state})"
+            output.append(sheet_label)
+            row_count = 0
+            for row_index, row in enumerate(sheet.iter_rows(values_only=False), start=1):
+                row_count = row_index
+                if row_count > MAX_XLSX_ROWS_PER_SHEET:
+                    raise DocumentLoadError(
+                        f"worksheet {sheet.title!r} in {path.name} exceeds the row limit"
+                    )
+                values: list[str] = []
+                for cell in row:
+                    value = cell.value
+                    if value is None or (isinstance(value, str) and not value.strip()):
+                        continue
+                    if hasattr(value, "isoformat") and callable(value.isoformat):
+                        rendered = value.isoformat()
+                    elif isinstance(value, bool):
+                        rendered = "TRUE" if value else "FALSE"
+                    else:
+                        rendered = str(value).strip()
+                    if rendered:
+                        values.append(f"{cell.coordinate}={rendered}")
+                if values:
+                    line = f"Sheet: {sheet.title} | Row {row_index}: " + " | ".join(values)
+                    total_chars += len(line)
+                    if total_chars > MAX_EXTRACTED_TEXT_CHARS:
+                        raise DocumentLoadError(
+                            f"extracted worksheet text from {path.name} exceeds the text limit"
+                        )
+                    output.append(line)
+                if row_count % 1000 == 0 and total_chars > MAX_EXTRACTED_TEXT_CHARS:
+                    raise DocumentLoadError(
+                        f"extracted worksheet text from {path.name} exceeds the text limit"
+                    )
+        text = "\n".join(output).strip()
+        if not text or not any(line.startswith("Sheet:") and "| Row " in line for line in output):
+            raise DocumentLoadError(f"{path.name} contains no searchable worksheet cell values")
+        return text
+    except DocumentLoadError:
+        raise
+    except Exception as exc:
+        raise DocumentLoadError(f"invalid or unreadable XLSX file {path.name}: {exc}") from exc
+    finally:
+        if workbook is not None:
+            try:
+                workbook.close()
+            except Exception:
+                pass
+
+
 def read_document(path: Path) -> str:
     """Read a supported document into plain text without executing its content."""
     suffix = path.suffix.casefold()
@@ -211,4 +327,6 @@ def read_document(path: Path) -> str:
         return _read_docx(path)
     if suffix == ".pdf":
         return _read_pdf(path)
+    if suffix == ".xlsx":
+        return _read_xlsx(path)
     raise DocumentLoadError(f"unsupported document type: {suffix}")
