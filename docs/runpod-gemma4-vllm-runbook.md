@@ -165,3 +165,23 @@ Read-only validation completed after installing with the uv cache explicitly pla
   curl -sS http://127.0.0.1:8000/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"/workspace/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it","messages":[{"role":"user","content":"Reply with exactly: model works"}],"max_tokens":12}'
   ```
 - Only after the second request returns generated text should model serving be marked end-to-end verified.
+
+
+## End-to-end generation confirmed — 2026-10-11 20:11 (user screenshot)
+
+A real request to `http://127.0.0.1:8000/v1/chat/completions` succeeded. The request asked the model to reply exactly `model works`; JSON returned `choices[0].message.content = "model works"`, with `finish_reason = "stop"`. This proves the current vLLM server, model loading, and local chat-completions API work together on this Pod.
+
+### Current verified baseline
+
+- Model path: `/workspace/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it` on RunPod Global Volume.
+- vLLM: 0.31.0.
+- PyTorch: 2.13.0; CUDA build 12.9.
+- GPU: NVIDIA H100 NVL, detected by PyTorch; driver 580.126.09.
+- Python environment: `/tmp/vllm-clean-env` (Pod-local and temporary).
+- uv cache: `/tmp/uv-cache` (Pod-local and temporary).
+- Server: port 8000, max model length 4096, GPU memory utilization 0.90.
+- Environment cache/temp path fix confirmed; do not reinstall this working environment unnecessarily.
+
+### Next work — persistence and product
+
+Do not change the working runtime while it is serving. Keep the serving terminal open when testing. The next engineering priority is to make a repeatable, pinned install/runtime and persist the reusable package artifacts/configuration separately from the temporary environment. The present successful test does not make `/tmp/vllm-clean-env` persistent: stopping/recreating the Pod may remove it. The Global Volume model and Azure backup must be preserved. Once durable recovery is validated, build an API wrapper and platform features in separate versioned steps.
