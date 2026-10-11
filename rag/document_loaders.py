@@ -1,7 +1,9 @@
-"""Safe, dependency-free text extraction for small business-document prototypes.
+"""Bounded text extraction for small business-document prototypes.
 
-Supported formats: plain text, Markdown, CSV, HTML, and DOCX.
-PDF and XLSX intentionally remain unsupported pending dependency/security review.
+TXT, Markdown, CSV, HTML and DOCX use the Python standard library. PDF text
+extraction uses a separately installed, pinned pypdf dependency.
+PDFs containing only scanned images require OCR and are intentionally rejected.
+XLSX remains unsupported.
 """
 from __future__ import annotations
 
@@ -13,9 +15,11 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 TEXT_EXTENSIONS = {".txt", ".md"}
-SUPPORTED_EXTENSIONS = TEXT_EXTENSIONS | {".csv", ".html", ".htm", ".docx"}
+SUPPORTED_EXTENSIONS = TEXT_EXTENSIONS | {".csv", ".html", ".htm", ".docx", ".pdf"}
 MAX_INPUT_BYTES = 10 * 1024 * 1024
 MAX_DOCX_XML_BYTES = 20 * 1024 * 1024
+MAX_PDF_PAGES = 300
+MAX_EXTRACTED_TEXT_CHARS = 5_000_000
 WORD_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 
@@ -130,6 +134,60 @@ def _read_docx(path: Path) -> str:
     return "\n".join(paragraphs)
 
 
+def _read_pdf(path: Path) -> str:
+    # Import lazily so TXT/CSV/HTML/DOCX still work if the optional PDF dependency
+    # is not installed. The gateway startup script sets PYTHONPATH=/tmp/rag-deps.
+    try:
+        from pypdf import PdfReader
+    except ImportError as exc:
+        raise DocumentLoadError(
+            "PDF support requires the pinned pypdf dependency; run rag/setup_pdf_support.sh first"
+        ) from exc
+
+    try:
+        reader = PdfReader(str(path), strict=False)
+        if reader.is_encrypted:
+            try:
+                unlocked = reader.decrypt("")
+            except Exception as exc:
+                raise DocumentLoadError(f"encrypted PDF is not supported: {path.name}") from exc
+            if not unlocked:
+                raise DocumentLoadError(f"password-protected PDF is not supported: {path.name}")
+        page_count = len(reader.pages)
+        if page_count > MAX_PDF_PAGES:
+            raise DocumentLoadError(
+                f"{path.name} has {page_count} pages; the limit is {MAX_PDF_PAGES}"
+            )
+        pages: list[str] = []
+        total_chars = 0
+        for page_number, page in enumerate(reader.pages, start=1):
+            try:
+                text = page.extract_text() or ""
+            except Exception as exc:
+                raise DocumentLoadError(
+                    f"could not extract text from page {page_number} of {path.name}"
+                ) from exc
+            text = text.strip()
+            if text:
+                page_text = f"[Page {page_number}]\\n{text}"
+                total_chars += len(page_text)
+                if total_chars > MAX_EXTRACTED_TEXT_CHARS:
+                    raise DocumentLoadError(
+                        f"extracted text from {path.name} exceeds the safety limit"
+                    )
+                pages.append(page_text)
+    except DocumentLoadError:
+        raise
+    except Exception as exc:
+        raise DocumentLoadError(f"invalid or unreadable PDF file {path.name}: {exc}") from exc
+
+    if not pages:
+        raise DocumentLoadError(
+            f"{path.name} contains no extractable text; scanned/image-only PDFs require OCR, which is not enabled"
+        )
+    return "\\n\\n".join(pages)
+
+
 def read_document(path: Path) -> str:
     """Read a supported document into plain text without executing its content."""
     suffix = path.suffix.casefold()
@@ -151,4 +209,6 @@ def read_document(path: Path) -> str:
         return _read_html(path)
     if suffix == ".docx":
         return _read_docx(path)
+    if suffix == ".pdf":
+        return _read_pdf(path)
     raise DocumentLoadError(f"unsupported document type: {suffix}")
