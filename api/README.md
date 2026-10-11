@@ -48,3 +48,10 @@ The user ran `api/run_gateway_smoke.sh` on the current Pod. Screenshot confirms:
 - The random API key is held in the Pod-local file `/tmp/platform-gateway.key` and was not printed or saved to GitHub. It is ephemeral; do not use it for a production deployment.
 
 The next integration test runs document Q&A through this gateway with the bearer key. Do not bypass the gateway for that test, and do not expose port 8010 publicly.
+
+
+## RAG client-through-gateway test passed — 2026-10-11
+
+The user ran `rag/ask_documents.py` with the gateway URL `http://127.0.0.1:8010/v1`, explicit Gemma model ID, and `--api-key-file /tmp/platform-gateway.key`. It retrieved `expenses-policy.md` first, then the gateway and Gemma returned the correct answer "10 business days" with `[Source 1]`. Report: [rag-through-gateway-2026-10-11.md](../rag/results/rag-through-gateway-2026-10-11.md).
+
+This proves the command-line RAG client can authenticate to and use the gateway, but it is not yet a single HTTP RAG endpoint for a business app. Next: build `POST /v1/rag/ask` behind the same authenticated front door. Keep the service loopback-only until production security exists.
