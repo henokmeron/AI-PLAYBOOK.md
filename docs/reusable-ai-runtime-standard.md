@@ -74,3 +74,8 @@ Before paid GPU work, plan the smallest test that can prove persistence and mode
 - Server startup and a real generation request have been confirmed.
 - A compressed environment snapshot, pinned package listing and manifest exist on Global Volume. Checksums and `zstd -t` passed; restore remains unverified because a second GPU Pod could not be provisioned due to RunPod capacity.
 - A new dependency-free baseline evaluation script has been added at `evaluation/run_chat_eval.py`. Run it before declaring the evaluation baseline recorded. Avoid model/runtime changes during this step.
+
+
+## Evaluation update — 2026-10-11
+
+The first run of `evaluation/run_chat_eval.py` returned 4/4 checks passed: instruction following, arithmetic, supplied-information recall, and JSON output. Detailed outputs and one-run latency figures are recorded at `evaluation/results/gemma-4-31b-smoke-2026-10-11.md`. The environment is serving successfully and the smoke suite is a useful initial regression gate, but this does not meet the broader evaluation or restore-testing checklist. Keep the model as a prototype baseline.
