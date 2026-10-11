@@ -38,3 +38,8 @@ Do not mark Gemma as approved/production based on these four checks. Record the 
 ## First recorded result — 2026-10-11
 
 The first run against the current Gemma 4 31B-it vLLM server passed all four checks: instruction following, arithmetic, use of supplied information, and JSON output. Recorded results and individual timings are in [the dated baseline report](results/gemma-4-31b-smoke-2026-10-11.md). These are smoke tests, not a production approval; keep the registry at prototype-baseline/pending broader evaluation.
+
+
+## First recorded result — 2026-10-11
+
+The first run against the current Gemma 4 31B-it vLLM server passed all four checks: instruction following, arithmetic, use of supplied information, and JSON output. Results and per-request times are recorded in [the dated baseline report](results/gemma-4-31b-smoke-2026-10-11.md). These checks do not approve the model for production; broader evaluation remains pending.
