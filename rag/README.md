@@ -38,7 +38,7 @@ The script discovers the model from `/v1/models` by default. No Python package i
 - The prototype has no login, tenant isolation, document ACL enforcement, audit logging, or production hardening. Do not expose it as a customer-facing service or ingest confidential real customer documents yet.
 - Keyword/BM25 retrieval may miss semantically related passages and can retrieve false positives. Check the displayed sources and citations.
 - A model can still make unsupported claims. Evaluate source faithfulness against a labelled test set before any commercial use.
-- The first version only reads plain text and Markdown; PDFs, Office files, OCR, tables, and scanned documents are out of scope.
+- Supported text extraction currently covers TXT, Markdown, CSV, HTML, DOCX, and text-based PDF. Scanned/image-only PDF OCR, password-protected PDFs, and XLSX spreadsheets remain unsupported.
 
 
 ## First end-to-end test result — 2026-10-11
@@ -139,9 +139,9 @@ The user ran `rag/tests/test_rag_engine.py`: **10 tests ran, all OK** in 0.003 s
 
 ## Business document formats — initial parser expansion
 
-The current reader accepts `.txt`, `.md`, `.csv`, `.html`/`.htm`, and `.docx`. Text extraction uses Python's standard library; it does not execute document content. CSV rows are flattened into searchable text, HTML script/style/noscript/SVG content is excluded, and DOCX paragraphs are extracted from `word/document.xml`. A 10 MiB source-file limit and a 20 MiB uncompressed DOCX XML limit are enforced by the prototype.
+The current reader accepts `.txt`, `.md`, `.csv`, `.html`/`.htm`, `.docx`, and text-based `.pdf`. TXT/Markdown/CSV/HTML/DOCX extraction uses Python's standard library; PDF extraction uses the pinned optional `pypdf==6.20.0` dependency. CSV rows are flattened into searchable text; HTML script/style/noscript/SVG content is excluded; DOCX paragraphs are extracted from `word/document.xml`; PDF pages are extracted with page markers. Source files are limited to 10 MiB, DOCX XML to 20 MiB, PDFs to 300 pages, and extracted PDF text to 5 million characters.
 
-PDF and Excel `.xlsx` files are **not supported yet**. We will choose and test their parsers deliberately instead of installing dependencies into the working vLLM environment.
+PDF extraction reads selectable text; it does not OCR scanned/image-only PDFs. Password-protected PDFs are unsupported. Excel `.xlsx` parsing and OCR are still pending. The dependency is installed into `/tmp/rag-deps`, **not** into the working vLLM environment; a pinned, SHA-256-verified wheel is kept under `/workspace/runtime-setup/rag-wheelhouse` on the Global Volume. See [PDF dependency notes](PDF_SUPPORT.md).
 
 ### Refresh and run the expanded parser tests
 
@@ -178,3 +178,34 @@ Do not upgrade the live gateway to the new loaders until this dedicated suite pa
 The focused `rag/tests/test_document_loaders.py` suite ran **8 tests, all OK**, in 0.010 seconds. Screenshot-confirmed coverage includes TXT, CSV, HTML script/style exclusion, DOCX text extraction, unknown/invalid file rejection, file-size guard, source-name retention and CSV/DOCX retrieval ranking. Details: [document-loader-tests-2026-10-11.md](results/document-loader-tests-2026-10-11.md).
 
 These tests do not call Gemma and are not evidence of complete parsing for every real-world file. PDF and XLSX remain unsupported.
+
+
+## Enable and test PDF support
+
+The parser uses [pypdf 6.20.0](https://pypi.org/project/pypdf/6.20.0/), a pure-Python PDF text-extraction library with a BSD-3-Clause license. The exact wheel is SHA-256 pinned in `rag/requirements-ingestion.txt`. The setup script stores a verified copy on the Global Volume and extracts it to a separate `/tmp/rag-deps` path. It does not change `/tmp/vllm-clean-env` or the vLLM/PyTorch packages.
+
+Run setup first, then run the parser tests with the separate dependency on `PYTHONPATH`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/setup_pdf_support.sh -o /tmp/setup_pdf_support.sh && bash /tmp/setup_pdf_support.sh
+```
+
+Then test the loaders:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/document_loaders.py -o /tmp/document_loaders.py
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/rag_engine.py -o /tmp/rag_engine.py
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/tests/test_document_loaders.py -o /tmp/test_document_loaders.py
+PYTHONPATH=/tmp/rag-deps /tmp/vllm-clean-env/bin/python -m py_compile /tmp/document_loaders.py /tmp/rag_engine.py /tmp/test_document_loaders.py
+PYTHONPATH=/tmp/rag-deps /tmp/vllm-clean-env/bin/python /tmp/test_document_loaders.py
+```
+
+Once the PDF tests pass, update the live gateway using the guarded upgrade script. It checks the pinned dependency exists before stopping the old gateway and starts the new gateway with `PYTHONPATH=/tmp/rag-deps`. The vLLM server is not restarted.
+
+Finally, run the isolated format integration test (CSV, DOCX **and PDF**) through a temporary gateway on port 8011:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/api/test_format_ingestion.sh -o /tmp/test_format_ingestion.sh && bash /tmp/test_format_ingestion.sh
+```
+
+This test starts and then cleans up only its temporary gateway and sample files; it does not change the running gateway on 8010 or the vLLM service on 8000. Keep both listeners loopback-only.
