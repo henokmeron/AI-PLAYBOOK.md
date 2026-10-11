@@ -45,7 +45,7 @@ Previously recorded environment:
 - vLLM 0.31.0.
 - PyTorch 2.13.0+cu129.
 - Model files on Global Volume at `/workspace/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it`.
-- The vLLM server reached "Application startup complete", but a successful chat-completion generation test was not confirmed.
+- The vLLM server reached "Application startup complete" and a real `/v1/chat/completions` request returned `model works`; end-to-end generation is confirmed on the current Pod.
 - The environment was installed at `/tmp/vllm-clean-env`, so it must be treated as temporary and not as a persistent solution.
 
 These are historical observations, not a guarantee that the environment still exists or that this version combination is the best choice for future models. Re-check the current Pod, versions, CUDA/driver compatibility, and model support before spending on GPU time.
@@ -64,3 +64,13 @@ These are historical observations, not a guarantee that the environment still ex
 ## Operating rule
 
 Before paid GPU work, plan the smallest test that can prove persistence and model generation. Stop the GPU Pod when testing is complete. Do not delete the Azure model backup or the only known-good artifacts while validating a new setup.
+
+
+## Update — 2026-10-11: verified inference, backup integrity, and evaluation start
+
+- Current Pod environment: Python 3.12.3, vLLM 0.31.0, PyTorch 2.13.0, PyTorch CUDA build 12.9, TorchVision 0.28.0, TorchAudio 2.11.0, Triton 3.7.1.
+- `uv cache dir` is `/tmp/uv-cache`; all runtime temp paths are explicitly redirected to `/tmp`.
+- PyTorch reported CUDA available and detected an NVIDIA H100 NVL. Driver shown by `nvidia-smi`: 580.126.09.
+- Server startup and a real generation request have been confirmed.
+- A compressed environment snapshot, pinned package listing and manifest exist on Global Volume. Checksums and `zstd -t` passed; restore remains unverified because a second GPU Pod could not be provisioned due to RunPod capacity.
+- A new dependency-free baseline evaluation script has been added at `evaluation/run_chat_eval.py`. Run it before declaring the evaluation baseline recorded. Avoid model/runtime changes during this step.
