@@ -945,3 +945,11 @@ Research should lead to a decision, not a pile of links. Every research report s
 - User then ran `ops/sync_global_volume.sh`. It aborted before copying anything because its mount validation falsely rejected the reported mount `fuse.geeseefs 5aac0c77-6fcc-4be9-a112-dfe3890d1373`, which matches the expected Global Volume filesystem from prior diagnostics.
 - The script was corrected to read filesystem type and source separately and compare the filesystem type exactly against `fuse.geeseefs`. No file was copied by the failed attempt.
 - Next: fetch the corrected script from GitHub, run `bash -n`, and run the sync again. Verify the printed snapshot and manifest paths plus successful SHA-256 checks. Do not claim the source snapshot exists until this succeeds.
+
+
+### 2026-10-11 — Repeated Global Volume sync preflight failure corrected again
+- The user ran the script pinned to commit `4c21052c13c05ff42db2829b9124100664610945`; output showed the corrected `Detected filesystem: fuse.geeseefs` message but it still rejected the volume. My prior diagnosis that the user was still downloading the old script was wrong.
+- No files were copied by either failed attempt.
+- Replaced filesystem-type string equality with two checks: `findmnt` must report `/workspace` itself as the mount target, and the expected Gemma `config.json` must exist on that mounted path. This should avoid the false rejection while refusing to copy if the volume is not mounted or lacks the expected model.
+- New script commit: `81778c1a8da93a7a9e3b46884bb5b6ed82663282`.
+- Next: fetch that exact commit, confirm it contains `MODEL_MARKER=`, run `bash -n`, then run the sync. Do not claim the snapshot exists until the script confirms archive and manifest checksums.
