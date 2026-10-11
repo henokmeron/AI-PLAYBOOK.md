@@ -656,3 +656,12 @@ Research should lead to a decision, not a pile of links. Every research report s
 - `sha256sum -c SHA256SUMS` reported all four files OK and `zstd -t` passed. These confirm archive/file integrity, not successful restoration. A fresh-Pod restore test was deferred because RunPod showed GPU capacity unavailable in all displayed configurations. Treat restore as unverified, preserve current Pod/Global Volume/Azure model copy, and retry the restore test when capacity is available.
 - Began Phase 2 (Evaluation). Added a dependency-free baseline runner in `evaluation/run_chat_eval.py` and usage notes in `evaluation/README.md`. It checks instruction following, simple arithmetic, use of supplied text, and JSON formatting. Run it against the current server before using it as a reference baseline. Four checks are smoke tests only, not a broad quality or compliance benchmark.
 - Next: run the four-check suite, record actual results, expand evaluations for tool use, business documents, coding, latency, and cost; then proceed to model lifecycle and platform/API layers. Keep the serving runtime unchanged while evaluation is added.
+
+
+### 2026-10-11 — First Gemma smoke-test baseline recorded
+- Ran `evaluation/run_chat_eval.py` against the current vLLM API at `http://127.0.0.1:8000/v1`.
+- All four checks passed: exact instruction following (`PASS`), arithmetic (17 × 19 = `323`), supplied fact recall (`09:30`), and valid JSON (`{"status":"ok","count":3}`).
+- Per-request elapsed times reported by this single run were 0.06 s, 0.12 s, 2.84 s, and 0.27 s respectively. These are one-off observations, not throughput benchmarks.
+- Detailed report: `evaluation/results/gemma-4-31b-smoke-2026-10-11.md`.
+- Keep Gemma 4 31B-it as `prototype-baseline`; this small smoke test does not approve it for production.
+- Next product capability: implement a minimal document Q&A/RAG prototype using approved local documents and source references. Build and test retrieval separately before asking the model to answer, so we can detect missing evidence and reduce unsupported answers.
