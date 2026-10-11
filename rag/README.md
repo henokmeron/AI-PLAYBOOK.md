@@ -156,3 +156,18 @@ curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/
 ```
 
 The new tests cover CSV rows, HTML visible text with script/style exclusion, DOCX paragraph extraction, unsupported file types, and preserving source filenames after CSV/DOCX ingestion. The test suite must pass before upgrading the live gateway to the new engine.
+
+
+### Important: run the focused parser tests separately
+
+The first command after the loader change displayed only 10 tests—the original retrieval unit suite. That proves the original 10 tests still pass, but it does not confirm the new parser tests were discovered by that run. To make this unambiguous, run the dedicated `rag/tests/test_document_loaders.py` suite below, which tests TXT, CSV, HTML, DOCX, invalid/unsupported files, file-size limiting and source attribution:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/document_loaders.py -o /tmp/document_loaders.py
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/rag_engine.py -o /tmp/rag_engine.py
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/tests/test_document_loaders.py -o /tmp/test_document_loaders.py
+/tmp/vllm-clean-env/bin/python -m py_compile /tmp/document_loaders.py /tmp/rag_engine.py /tmp/test_document_loaders.py
+/tmp/vllm-clean-env/bin/python /tmp/test_document_loaders.py
+```
+
+Do not upgrade the live gateway to the new loaders until this dedicated suite passes.
