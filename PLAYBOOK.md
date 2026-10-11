@@ -674,3 +674,13 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Started a minimal document Q&A/RAG proof of concept under `rag/`. It uses plain-text/Markdown documents, overlapping text chunks, BM25 lexical retrieval and the OpenAI-compatible vLLM chat API, with source labels and a basic untrusted-document instruction.
 - The initial RAG prototype deliberately avoids new Python dependencies and avoids writing an index database to the FUSE-backed Global Volume. It is not production-ready: no authentication, ACL enforcement, tenant isolation, PDF/Office parsing, semantic vector search, audit logging, or comprehensive prompt-injection defence.
 - Next: run the documented test question against fictional sample documents; inspect source retrieval and answer citations, then extend evaluation to measure whether each answer is supported by retrieved evidence.
+
+
+### 2026-10-11 — First RAG question answered from a source document
+- Ran `rag/ask_documents.py` against two fictional Markdown files saved on the Global Volume.
+- Question: "How many business days do employees have to submit expense receipts?"
+- BM25 ranked `expenses-policy.md` first (score 5.363), ahead of `employee-handbook.md` (score 0.638).
+- Gemma answered: "Employees must submit expense claims with receipts within 10 business days of the expense [Source 1]."
+- The answer matches the sample policy; reported single-request inference latency was 0.62 seconds.
+- Detailed report: `rag/results/rag-demo-2026-10-11.md`.
+- This confirms one basic retrieval-and-generation path. Next validate unsupported questions and prompt-injection text in documents before moving on to consequential business integrations. The prototype remains non-production: no authentication, document ACLs, tenant isolation, or audit logging.
