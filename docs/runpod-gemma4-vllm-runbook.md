@@ -140,3 +140,15 @@ The 2026-10-11 screenshot shows a package list including `vllm==0.31.0` and `tor
 - If installation fails, read the first actual error and correct that cause—never repeat the same command unchanged.
 - After install, validate imports and GPU first, then start the server, check `/v1/models`, and make one generation request.
 - Preserve a tested wheelhouse or versioned runtime image plus setup and configuration files, and verify fresh-environment recovery before calling the runtime reproducible.
+
+
+## Local install validation — 2026-10-11 19:54 (user screenshot)
+
+Read-only validation completed after installing with the uv cache explicitly placed under `/tmp`:
+- Local overlay: 30 GB total, 7.9 GB used, 23 GB available (27% used).
+- `uv cache dir`: `/tmp/uv-cache` — confirms cache is no longer resolving to `/workspace`.
+- `vllm --version`: 0.31.0.
+- Installed package versions: vLLM 0.31.0, PyTorch 2.13.0, TorchVision 0.28.0, TorchAudio 2.11.0, Triton 3.7.1.
+- PyTorch CUDA build: 12.9; `torch.cuda.is_available()`: True; GPU detected: NVIDIA H100 NVL.
+- `nvidia-smi`: driver 580.126.09, driver CUDA capability 13.0; GPU idle with 0 MiB used at check.
+- Conclusion: the vLLM package install completed and PyTorch sees the GPU. This does not yet prove model loading or generation works. Next step is to launch with the recorded exact model path, then check `/v1/models` and one completion request. Do not reinstall unless serving or tests reveal a specific fault.
