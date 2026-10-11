@@ -65,8 +65,8 @@ class DocumentLoaderTests(unittest.TestCase):
         self.assertIn("Manager approval", text)
 
     def test_unknown_extension_is_rejected(self) -> None:
-        path = self.root / "policy.pdf"
-        path.write_bytes(b"not a PDF")
+        path = self.root / "policy.exe"
+        path.write_bytes(b"unsupported file type")
         with self.assertRaises(DocumentLoadError):
             read_document(path)
 
