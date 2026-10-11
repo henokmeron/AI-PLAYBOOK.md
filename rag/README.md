@@ -243,3 +243,12 @@ PYTHONPATH=/tmp/rag-deps /tmp/vllm-clean-env/bin/python /tmp/test_document_loade
 ```
 
 This should run the expanded 16-test parser suite without GPU inference. Only after it passes, upgrade the gateway and execute the combined CSV/DOCX/PDF/XLSX HTTP integration test.
+
+
+## XLSX-enabled parser tests passed — 2026-10-11
+
+The user ran setup and the expanded `rag/tests/test_document_loaders.py` suite. Screenshot confirms `openpyxl 3.1.5`, `et-xmlfile 2.0.0`, `defusedxml 0.7.1` under `/tmp/rag-deps`, followed by **16 tests in 0.243 seconds, all OK**. The vLLM environment was not modified.
+
+Detailed record: [document-loader-tests-with-xlsx-2026-10-11.md](results/document-loader-tests-with-xlsx-2026-10-11.md).
+
+Next: guarded gateway upgrade, then the isolated CSV/DOCX/PDF/XLSX API integration test. XLSX remains parser-tested but not yet end-to-end verified.
