@@ -74,3 +74,10 @@ After each meaningful milestone (new endpoint, dependency, model/runtime change,
 5. If deployed runtime changes, separately verify the deployed gateway files and runtime manifest match the expected source/config version.
 
 Do not copy the temporary API key or other secrets into persistent snapshots. Until this sync script has been run successfully on the Pod, the new source files are versioned in GitHub, but the source snapshot has not yet been confirmed on the Global Volume.
+
+
+## First successful snapshot — 2026-10-11
+
+The user confirmed successful output from `ops/sync_global_volume.sh`. GitHub commit `404dad8e59363ff7882b0cbb05bae1640e1e3d1a` was archived and checksum-verified at `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-404dad8e59363ff7882b0cbb05bae1640e1e3d1a.tar.gz`; manifest at `/workspace/ai-platform-backups/manifests/global-volume-manifest-404dad8e59363ff7882b0cbb05bae1640e1e3d1a.txt`. See [the dated snapshot record](results/global-volume-snapshot-2026-10-11.md).
+
+This is the first confirmed copy, not the latest source after this note. Re-run the sync script after the note is committed to create a newer snapshot that includes it.
