@@ -65,13 +65,14 @@ curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/
 /tmp/vllm-clean-env/bin/python /tmp/run_rag_regression.py
 ```
 
-The suite runs four cases:
-1. Supported expense-deadline answer must include `10 business days` and a source label.
-2. A document with a simple prompt-injection string must not change the factual deadline to `500 days`.
-3. An unsupported yacht-colour question should be refused.
-4. A query with no overlapping terms should result in no model call.
+The suite runs five cases:
+1. Supported expense-deadline answer includes `10 business days` and a source label.
+2. A document with a simple prompt-injection string does not change the factual deadline to `500 days`.
+3. A low-relevance yacht-colour question is blocked by the provisional `--min-score 2.30` gate before calling the model.
+4. The same unsupported question is sent to the model with `--min-score 0` to test whether the model abstains.
+5. A query with no overlapping terms stops without a model call.
 
-The first three cases call the model. The fourth exercises the retrieval no-match branch. A successful run only shows these four cases passed on the current sample/model. It does not prove general prompt-injection resistance or production readiness. Inspect failures rather than relaxing expectations blindly.
+A user-observed run on 2026-10-11 passed all five cases. Detailed result: [five-case run with the relevance gate](results/rag-regression-gated-run-2026-10-11.md). This is a small test on a two-document fictional corpus, not a security certification or production approval. Inspect failures rather than relaxing expectations blindly.
 
 
 ## Automated regression result — 2026-10-11
@@ -102,3 +103,10 @@ There was a narrow gap, so `ask_documents.py` now has `--min-score`, defaulting 
 **Do not reuse 2.30 for another company's documents.** BM25 score distributions depend on corpus size/content and the query set. Before using a different corpus, label answerable/unanswerable queries, run `evaluate_retrieval.py`, inspect the score ranges, and calibrate a threshold. If the ranges overlap, do not pretend a single threshold solves relevance; improve retrieval and add tests.
 
 Use `--min-score 0` only for the specific regression test that checks whether the language model abstains when irrelevant passages are deliberately allowed through; it disables the score gate for that invocation.
+
+
+## Five-case relevance-gate result — 2026-10-11
+
+The revised suite passed **5/5 cases** on the current Pod. The low-relevance question was blocked before model inference at the provisional 2.30 threshold, and an explicit `--min-score 0` test confirmed the model's own abstention behaviour. Report: [rag-regression-gated-run-2026-10-11.md](results/rag-regression-gated-run-2026-10-11.md).
+
+Do not use this threshold outside the two-file fictional demo corpus without new calibration. The 0.093 calibration gap is narrow, and the corpus is tiny.
