@@ -136,3 +136,10 @@ The script uses the current local API key but does not print it. Never expose po
 The RAG HTTP endpoint now supports text-based PDF through the pinned `pypdf==6.20.0` dependency. It must be installed separately in `/tmp/rag-deps` with `PYTHONPATH=/tmp/rag-deps` when launching the gateway; do not install it into the working vLLM virtual environment. Run [the setup script](../rag/setup_pdf_support.sh) before the guarded gateway upgrade. The pinned wheel and checksum are stored on the Global Volume.
 
 The updated format integration script checks CSV, DOCX and PDF through an isolated gateway on port 8011. A scanned/image-only or password-protected PDF is not yet supported; OCR isn't included. See [PDF support decision](../rag/PDF_SUPPORT.md).
+
+
+## PDF parser suite passed — 2026-10-11
+
+The focused document loader suite now reports 12/12 tests passing with `PYTHONPATH=/tmp/rag-deps`. See the [detailed report](../rag/results/document-loader-tests-with-pdf-2026-10-11.md).
+
+Next: run the guarded gateway upgrade, which verifies the exact pinned pypdf version before switching the gateway to the updated loader. Then run `api/test_format_ingestion.sh` for end-to-end CSV, DOCX and PDF tests through an isolated temporary gateway. PDF support is not called fully integrated until this API test passes.
