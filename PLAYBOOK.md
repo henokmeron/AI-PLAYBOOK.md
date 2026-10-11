@@ -738,3 +738,13 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Detailed report: `rag/results/rag-regression-gated-run-2026-10-11.md`.
 - Caution: the positive/negative score gap is only 0.093 across six positive and six negative questions against two fictional files. The 2.30 gate is only a demo setting, not a general/corporate threshold.
 - Next platform milestone: establish a thin, authenticated local API gateway in front of vLLM so future RAG, integrations, logging and policy enforcement can use a stable platform boundary rather than accessing the model server directly. Bind locally by default; do not expose it publicly without HTTPS, production authentication/secrets handling, tenant isolation, quotas and auditing.
+
+
+### 2026-10-11 — RAG gate passed; local API gateway created
+- User ran the updated RAG regression suite after refreshing both scripts from GitHub. Screenshot confirms 5/5 cases passed with the provisional 2.30 minimum top-score gate for the two-file fictional corpus.
+- The test covered source-cited answer, embedded-instruction sample, low-relevance question blocked before model call, model abstention with the gate deliberately disabled, and zero-overlap rejection.
+- Detailed outcome is in `rag/results/rag-regression-gated-run-2026-10-11.md`. The gate remains demo-only because calibration separation is only 0.093 across a tiny sample.
+- Created `api/local_gateway.py` and `api/README.md` as the next platform layer. The gateway provides a stable authenticated `/v1/chat/completions` boundary in front of vLLM, a basic upstream health check, payload limit, a small in-memory rate limit, and route/status-only logging.
+- Gateway defaults to loopback `127.0.0.1:8010`; a one-command smoke harness lives in `api/run_gateway_smoke.sh`. The harness creates an ephemeral random key in Pod-local `/tmp`, confirms health, expects an unauthenticated call to return 401, and sends an authenticated real generation request. It leaves the gateway running only if the checks complete.
+- This is a local proof of concept, not production-ready and not exposed for business-app integration. Do not bind it to `0.0.0.0` or expose the port. External integrations later require HTTPS, managed identity/secrets, per-user/service authorization, tenant isolation, persistent audit trails, durable quotas, observability, and security review.
+- Next: run the gateway smoke harness from the current Pod without changing/stopping the existing vLLM server; record its real result, then build stable RAG/API integration behind this gateway.
