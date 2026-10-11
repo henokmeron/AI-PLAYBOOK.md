@@ -130,3 +130,8 @@ curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/
 ```
 
 Run these unit tests after changing tokenization, chunk size/overlap, BM25 scoring or ranking. A pass verifies these small deterministic examples only; it does not establish retrieval quality across real business corpora.
+
+
+## RAG engine unit tests passed — 2026-10-11
+
+The user ran `rag/tests/test_rag_engine.py`: **10 tests ran, all OK** in 0.003 seconds. These tests do not call the LLM or consume GPU inference. The result covers tokenization, chunking, relevant-source ranking, no-overlap handling, and top-k behaviour. Detailed record: [rag-engine-unit-tests-2026-10-11.md](results/rag-engine-unit-tests-2026-10-11.md). This is a deterministic unit suite, not a quality guarantee for real business corpora.
