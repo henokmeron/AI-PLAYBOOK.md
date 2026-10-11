@@ -137,6 +137,12 @@ def read_document(path: Path) -> str:
         raise DocumentLoadError(f"unsupported document type: {path.suffix or '(no extension)'}")
     if not path.is_file():
         raise DocumentLoadError(f"not a regular file: {path}")
+    try:
+        input_size = path.stat().st_size
+    except OSError as exc:
+        raise DocumentLoadError(f"cannot inspect {path}: {exc}") from exc
+    if input_size > MAX_INPUT_BYTES:
+        raise DocumentLoadError(f"{path} exceeds the {MAX_INPUT_BYTES}-byte input limit")
     if suffix in TEXT_EXTENSIONS:
         return _read_utf8(path)
     if suffix == ".csv":
