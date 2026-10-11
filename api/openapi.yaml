@@ -150,6 +150,77 @@ paths:
         "401": { description: Authentication required }
         "404": { description: Document not found }
         "429": { description: Rate limit exceeded }
+  /v1/rag/documents:
+    get:
+      summary: List documents in one managed collection
+      parameters:
+        - name: collection
+          in: query
+          required: true
+          schema: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,39}$" }
+      responses:
+        "200":
+          description: Document metadata only, without document content
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [collection, documents]
+                properties:
+                  collection: { type: string }
+                  documents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        filename: { type: string }
+                        size_bytes: { type: integer }
+                        extension: { type: string }
+        "400": { description: Invalid or missing collection }
+        "401": { description: Authentication required }
+        "429": { description: Rate limit exceeded }
+    post:
+      summary: Upload a document to a managed collection
+      description: >
+        Base64-encoded file bytes, at most 10 MiB after decoding. Supports txt,
+        md, csv, html, htm, docx, searchable pdf, and xlsx. Path-traversal names
+        are rejected and duplicate files return 409 unless overwrite is true.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [collection, filename, content_base64]
+              properties:
+                collection: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,39}$" }
+                filename: { type: string, maxLength: 120 }
+                content_base64: { type: string, format: byte }
+                overwrite: { type: boolean, default: false }
+      responses:
+        "201": { description: Document stored after content validation }
+        "400": { description: Invalid upload or unsupported document }
+        "401": { description: Authentication required }
+        "409": { description: Document already exists and overwrite was not requested }
+        "413": { description: Upload too large }
+        "429": { description: Rate limit exceeded }
+    delete:
+      summary: Delete one document from a managed collection
+      parameters:
+        - name: collection
+          in: query
+          required: true
+          schema: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,39}$" }
+        - name: filename
+          in: query
+          required: true
+          schema: { type: string, maxLength: 120 }
+      responses:
+        "200": { description: Document deleted }
+        "400": { description: Invalid collection or filename }
+        "401": { description: Authentication required }
+        "404": { description: Document not found }
+        "429": { description: Rate limit exceeded }
 components:
   securitySchemes:
     BearerAuth:
