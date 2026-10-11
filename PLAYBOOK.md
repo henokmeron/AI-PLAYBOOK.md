@@ -795,3 +795,11 @@ Research should lead to a decision, not a pile of links. Every research report s
 - These tests use Python's standard library and do not call the model or the vLLM API. They can catch basic retrieval regressions without GPU inference costs.
 - Documented the one-command fetch/run sequence in `rag/README.md`.
 - Next: run the tests on the active Pod, fix any failures before altering ranking, then build broader ingestion/format support only after the retrieval core is stable.
+
+
+### 2026-10-11 — RAG engine unit tests passed
+- The user ran `rag/tests/test_rag_engine.py`: 10 tests ran in 0.003 seconds and all passed.
+- Covered case-insensitive tokenization, empty inputs, chunk splitting/overlap, expected BM25 source ranking for expense and office-hours questions, zero-overlap retrieval, and top-k limit.
+- Detailed record: `rag/results/rag-engine-unit-tests-2026-10-11.md`.
+- These tests run without model inference and can be used as a cheap local regression check. They do not prove retrieval quality on real corpora or make the prototype production-ready.
+- Next: broaden document ingestion beyond Markdown/plain text to practical business file types (at minimum CSV and DOCX with standard-library parsers where feasible), while preserving source references and adding parser tests. PDF/XLSX support should be added with deliberate dependency and safety decisions rather than blindly installing packages into the current working model environment.
