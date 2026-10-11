@@ -979,3 +979,11 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Manifest: `/workspace/ai-platform-backups/manifests/global-volume-manifest-bd44a9d3bca78837c039fca140b2d8543b0bab83.txt`.
 - Report: `ops/results/global-volume-document-management-snapshot-2026-10-11.md`.
 - The isolated document management API tests previously passed all checks. Next: upgrade the main gateway, write and query a small non-sensitive canary under `/workspace/rag-managed-docs/`, verify it physically exists on the Global Volume, then run a fresh source snapshot so this next milestone is persistent too.
+
+
+### 2026-10-11 — Source snapshot verified; document management API ready for live Global Volume test
+- User screenshot confirms latest successful source archive at commit `bd44a9d3bca78837c039fca140b2d8543b0bab83` with archive checksum `OK`; manifest is present under `/workspace/ai-platform-backups/manifests/`.
+- The temporary document-management API tests passed all 14 checks, including upload/list/duplicate protection/path-traversal/query/delete. This did not touch the persistent volume.
+- Added `ops/test_persistent_document_storage.sh`: after the guarded gateway upgrade, it verifies the Global Volume mount and model marker, uploads a small fictional canary via the real API into a unique collection under `/workspace/rag-managed-docs/`, confirms the file physically exists, lists it through the API, asks a question, and checks the source filename. It intentionally retains the tiny canary for a later cross-Pod re-attach test. It doesn't print the API key.
+- Next: run `api/upgrade_gateway_with_rag_smoke.sh` on the current Pod (restarts only the gateway, never vLLM), then run `ops/test_persistent_document_storage.sh`. If that passes, re-run `ops/sync_global_volume.sh` to save the newly committed operational script and deployment milestone to a newer immutable archive.
+- No claim of cross-Pod persistence yet: this next test proves writes/reads on the actual mounted Global Volume; a later attach/recovery test should verify the canary from a replacement Pod.
