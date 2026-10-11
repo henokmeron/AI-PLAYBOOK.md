@@ -152,3 +152,16 @@ Read-only validation completed after installing with the uv cache explicitly pla
 - PyTorch CUDA build: 12.9; `torch.cuda.is_available()`: True; GPU detected: NVIDIA H100 NVL.
 - `nvidia-smi`: driver 580.126.09, driver CUDA capability 13.0; GPU idle with 0 MiB used at check.
 - Conclusion: the vLLM package install completed and PyTorch sees the GPU. This does not yet prove model loading or generation works. Next step is to launch with the recorded exact model path, then check `/v1/models` and one completion request. Do not reinstall unless serving or tests reveal a specific fault.
+
+
+## Server startup confirmed — 2026-10-11 20:10 (user screenshot)
+
+- Launched vLLM 0.31.0 from `/tmp/vllm-clean-env` with local `TMPDIR=/tmp`, `UV_CACHE_DIR=/tmp/uv-cache`, and `VLLM_RPC_BASE_PATH=/tmp`.
+- Screenshot confirms server listening at `http://0.0.0.0:8000` and reports `Application startup complete.`
+- Routes include `/v1/models` and `/v1/chat/completions`.
+- This confirms server startup, but not yet that Gemma can complete a generation. Keep the serving terminal open and test from a second terminal:
+  ```bash
+  curl -sS http://127.0.0.1:8000/v1/models
+  curl -sS http://127.0.0.1:8000/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"/workspace/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it","messages":[{"role":"user","content":"Reply with exactly: model works"}],"max_tokens":12}'
+  ```
+- Only after the second request returns generated text should model serving be marked end-to-end verified.
