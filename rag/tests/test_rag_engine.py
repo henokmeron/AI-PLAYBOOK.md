@@ -84,5 +84,81 @@ class RetrievalTests(unittest.TestCase):
         self.assertEqual(retrieve("!? -- ...", self.chunks, top_k=4), [])
 
 
+class DocumentLoaderTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory(prefix="rag-loader-test-")
+        self.folder = Path(self.temp_dir.name)
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def test_csv_is_read_as_searchable_rows(self) -> None:
+        from document_loaders import read_document
+        path = self.folder / "expenses.csv"
+        path.write_text("category,limit\nrail,100 pounds\n", encoding="utf-8")
+        text = read_document(path)
+        self.assertIn("rail", text)
+        self.assertIn("100 pounds", text)
+        self.assertIn("Row 2", text)
+
+    def test_html_ignores_script_and_style_content(self) -> None:
+        from document_loaders import read_document
+        path = self.folder / "policy.html"
+        path.write_text(
+            "<html><head><style>hidden_style</style><script>ignore_secret</script></head>"
+            "<body><h1>Travel policy</h1><p>Book standard class rail.</p></body></html>",
+            encoding="utf-8",
+        )
+        text = read_document(path)
+        self.assertIn("Travel policy", text)
+        self.assertIn("standard class rail", text)
+        self.assertNotIn("hidden_style", text)
+        self.assertNotIn("ignore_secret", text)
+
+    def test_docx_extracts_paragraph_text(self) -> None:
+        import zipfile
+        from document_loaders import read_document
+        path = self.folder / "policy.docx"
+        document_xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            '<w:body><w:p><w:r><w:t>Expense deadline is 10 business days.</w:t></w:r></w:p>'
+            '<w:p><w:r><w:t>Manager approval is required above 100 pounds.</w:t></w:r></w:p>'
+            '</w:body></w:document>'
+        )
+        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("word/document.xml", document_xml)
+        text = read_document(path)
+        self.assertIn("10 business days", text)
+        self.assertIn("Manager approval", text)
+
+    def test_loader_rejects_unknown_file_type(self) -> None:
+        from document_loaders import DocumentLoadError, read_document
+        path = self.folder / "policy.pdf"
+        path.write_bytes(b"not a pdf")
+        with self.assertRaises(DocumentLoadError):
+            read_document(path)
+
+    def test_rag_engine_indexes_csv_and_docx_with_source_names(self) -> None:
+        import zipfile
+        csv_path = self.folder / "approval.csv"
+        csv_path.write_text("type,rule\nexpense,manager approval above 100 pounds\n", encoding="utf-8")
+        docx_path = self.folder / "deadline.docx"
+        document_xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            '<w:body><w:p><w:r><w:t>Receipts must be submitted within 10 business days.</w:t></w:r></w:p>'
+            '</w:body></w:document>'
+        )
+        with zipfile.ZipFile(docx_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("word/document.xml", document_xml)
+        chunks = load_chunks(self.folder)
+        self.assertEqual({chunk.source for chunk in chunks}, {"approval.csv", "deadline.docx"})
+        ranked = retrieve("When must receipts be submitted in business days?", chunks, top_k=2)
+        self.assertTrue(ranked)
+        self.assertEqual(ranked[0][1].source, "deadline.docx")
+
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
