@@ -129,3 +129,10 @@ curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/api/
 It starts a temporary gateway on loopback port 8011 using a separate temporary app directory and two temporary sample files, tests CSV and DOCX source attribution, then stops the temporary gateway and cleans up its test files. The existing gateway at 8010 and vLLM on port 8000 are not modified. For this test only, `RAG_MIN_SCORE=0` is used because the demo threshold was calibrated for the two Markdown sample documents, not this different corpus.
 
 The script uses the current local API key but does not print it. Never expose port 8011 publicly.
+
+
+## PDF support dependency
+
+The RAG HTTP endpoint now supports text-based PDF through the pinned `pypdf==6.20.0` dependency. It must be installed separately in `/tmp/rag-deps` with `PYTHONPATH=/tmp/rag-deps` when launching the gateway; do not install it into the working vLLM virtual environment. Run [the setup script](../rag/setup_pdf_support.sh) before the guarded gateway upgrade. The pinned wheel and checksum are stored on the Global Volume.
+
+The updated format integration script checks CSV, DOCX and PDF through an isolated gateway on port 8011. A scanned/image-only or password-protected PDF is not yet supported; OCR isn't included. See [PDF support decision](../rag/PDF_SUPPORT.md).
