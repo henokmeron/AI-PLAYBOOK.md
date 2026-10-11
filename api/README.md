@@ -166,3 +166,10 @@ All three returned `status: answered` with source citations and correct source f
 Full report: [csv-docx-pdf-integration-2026-10-11.md](results/csv-docx-pdf-integration-2026-10-11.md).
 
 This verifies those specific text-based samples end to end, not every real-world document layout. Scanned PDFs/OCR, password-protected PDFs, XLSX, and production security remain separate tasks.
+
+
+## Excel XLSX support — validation pending
+
+The shared document loader now accepts `.xlsx` through pinned `openpyxl==3.1.5`, `et-xmlfile==2.0.0` and `defusedxml==0.7.1` extracted to `/tmp/rag-deps`. The guarded gateway upgrade and fresh-start scripts verify the PDF and XLSX package set. The combined format integration script now checks CSV, DOCX, PDF and XLSX through an isolated temporary gateway on port 8011.
+
+See [XLSX support notes](../rag/XLSX_SUPPORT.md). End-to-end XLSX integration remains pending until the parser suite passes, the main gateway is upgraded, and the combined format test passes.
