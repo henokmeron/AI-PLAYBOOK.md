@@ -818,3 +818,12 @@ Research should lead to a decision, not a pile of links. Every research report s
 - After adding CSV/HTML/DOCX loading, the user ran the compilation and general retrieval test command. Screenshot showed `Ran 10 tests`, matching the old retrieval tests; it did **not** confirm discovery of the five added loader tests.
 - Added a dedicated `rag/tests/test_document_loaders.py` suite (8 tests) and explicit instructions to run it separately.
 - Keep the live gateway unchanged until the focused parser suite passes. The 10 existing retrieval unit tests did pass; parser verification remains pending.
+
+
+### 2026-10-11 — Focused document-loader tests passed
+- The user ran `rag/tests/test_document_loaders.py`: 8 tests ran in 0.010 seconds and all passed.
+- Covered TXT reading, CSV row extraction, HTML script/style exclusion, DOCX paragraph extraction, invalid/unsupported input rejection, 10 MiB input-size guard, source filename preservation, and CSV/DOCX source ranking.
+- Report: `rag/results/document-loader-tests-2026-10-11.md`.
+- The new loader has now passed its focused parser suite; the existing 10 retrieval tests were also previously confirmed to pass.
+- Next: run the guarded gateway upgrade script to deploy the updated shared loader/retrieval modules and re-test health, unauthenticated rejection, supported RAG answer/source metadata, and low-relevance abstention. The script upgrades only the gateway and does not restart the model server.
+- PDF/XLSX ingestion remains deferred pending a deliberate parser/dependency choice.
