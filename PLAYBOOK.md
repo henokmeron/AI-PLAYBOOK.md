@@ -721,3 +721,11 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Updated regression suite to test low-score rejection as well as the model's abstention when the threshold is explicitly disabled for that test.
 - Do not apply 2.30 to customer corpora without recalibration. BM25 scores depend on corpus; if score distributions overlap, change retrieval design and evaluation rather than pretending a threshold is reliable.
 - Next: refresh the scripts on the current Pod and run all five regression cases. Do not record the threshold as passing until the actual run succeeds.
+
+
+### 2026-10-11 — BM25 retrieval calibration results captured
+- The six answerable sample questions all ranked the expected source first; their top scores ranged 2.351–5.797.
+- Six unanswerable questions scored 0.690–2.258. The nearest observed scores are separated by only 0.093.
+- Recorded the run in `rag/results/retrieval-calibration-2026-10-11.md`.
+- Implemented a provisional minimum top-score gate of 2.30 in `rag/ask_documents.py`, only for the two-file fictional demo corpus. This is a narrow sample separation, not a general threshold.
+- Next: download the updated RAG script and revised regression suite to the current Pod, then verify all five cases pass. Keep 2.30 scoped to the demo corpus; recalibrate for each new corpus.
