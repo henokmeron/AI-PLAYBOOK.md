@@ -57,3 +57,24 @@ curl -s http://127.0.0.1:8000/v1/chat/completions \
 ## Repeatability plan (next engineering task)
 
 Create and test a pinned deployment recipe (ideally a container image or reproducible image template) with the Python, vLLM, PyTorch/CUDA backend and launch configuration locked. Keep model weights on persistent storage. Test the recipe on a fresh Pod before claiming it is reproducible. Keep the smoke test as a deployment gate. Never upgrade individual CUDA/Torch packages without validating the entire compatible set first.
+
+## Resume checklist for the next session
+
+**Do not immediately reinstall. First inspect what survived.** After starting the existing Pod, run these checks in the terminal:
+
+```bash
+nvidia-smi
+ls -ld /workspace/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it
+test -x /tmp/vllm-clean-env/bin/vllm && /tmp/vllm-clean-env/bin/vllm --version || echo "Previous temporary vLLM environment is missing"
+```
+
+- If `/tmp/vllm-clean-env/bin/vllm` exists, inspect and try that existing environment before installing anything.
+- If it is missing, do **not** assume the model is lost: check the Global Volume model path separately. The model and Python environment have different persistence boundaries.
+- Do not promise a five-minute rebuild: the previous install took time and required troubleshooting. First test what remains; then make the setup reproducible.
+- If the environment is missing, record that fact and follow the persistent-runtime plan. Do not perform a large GPU install until the user agrees and the persistence approach is clear.
+- Once vLLM starts, test `/v1/models` and send the chat-completion smoke test above. A server startup message alone is not proof that generation works.
+- Keep the server terminal open while testing; use a second terminal or the RunPod proxy to make requests. Stop the Pod after testing if it is not needed.
+
+## Operator limitation
+
+The assistant cannot directly start or type into the user's RunPod Pod from this chat. The user must start the Pod and provide the terminal access/output (or screenshots); then instructions can be given one command at a time based on the actual result. The assistant should not claim a command ran unless its output was provided and checked.
