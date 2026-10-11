@@ -90,5 +90,16 @@ class DocumentLibraryTests(unittest.TestCase):
             store_document(self.root, "finance", "budget.md", "")
 
 
+    def test_invalid_pdf_is_rejected_before_storage(self) -> None:
+        with self.assertRaises(DocumentLibraryError):
+            store_document(self.root, "finance", "broken.pdf", self.encoded("not a PDF"))
+        self.assertFalse((self.root / "finance" / "broken.pdf").exists())
+
+    def test_document_with_no_extractable_text_is_rejected(self) -> None:
+        with self.assertRaisesRegex(DocumentLibraryError, "no extractable text"):
+            store_document(self.root, "finance", "blank.md", self.encoded("   "))
+        self.assertFalse((self.root / "finance" / "blank.md").exists())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
