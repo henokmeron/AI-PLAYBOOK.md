@@ -971,3 +971,11 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Test used temporary storage and cleaned it up. Existing main gateway on 8010 and vLLM were untouched.
 - Detailed result: `api/results/document-management-api-2026-10-11.md`.
 - Next: upgrade the main gateway to the document-management version, then verify upload/list/question/delete using a controlled test collection under `/workspace/rag-managed-docs` on Global Volume. Only then can we say the persistent document-management path is verified. Cross-Pod persistence still needs a recovery/re-attach test.
+
+
+### 2026-10-11 — Source snapshot refreshed before live document-storage deployment
+- User screenshot confirms successful source snapshot at commit `bd44a9d3bca78837c039fca140b2d8543b0bab83`; archive checksum passed.
+- Archive: `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-bd44a9d3bca78837c039fca140b2d8543b0bab83.tar.gz`.
+- Manifest: `/workspace/ai-platform-backups/manifests/global-volume-manifest-bd44a9d3bca78837c039fca140b2d8543b0bab83.txt`.
+- Report: `ops/results/global-volume-document-management-snapshot-2026-10-11.md`.
+- The isolated document management API tests previously passed all checks. Next: upgrade the main gateway, write and query a small non-sensitive canary under `/workspace/rag-managed-docs/`, verify it physically exists on the Global Volume, then run a fresh source snapshot so this next milestone is persistent too.
