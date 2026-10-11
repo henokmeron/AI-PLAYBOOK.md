@@ -7,6 +7,7 @@ RAG_BASE=https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag
 PYTHON=/tmp/vllm-clean-env/bin/python
 GATEWAY_FILE=/tmp/platform_gateway.py
 ENGINE_FILE=/tmp/rag_engine.py
+LOADER_FILE=/tmp/document_loaders.py
 LOG_FILE=/tmp/platform-gateway.log
 PID_FILE=/tmp/platform-gateway.pid
 KEY_FILE=/tmp/platform-gateway.key
@@ -30,7 +31,8 @@ fi
 echo "=== DOWNLOAD AND CHECK GATEWAY COMPONENTS ==="
 curl -fsSL "$API_BASE/local_gateway.py" -o "$GATEWAY_FILE"
 curl -fsSL "$RAG_BASE/rag_engine.py" -o "$ENGINE_FILE"
-"$PYTHON" -m py_compile "$GATEWAY_FILE" "$ENGINE_FILE"
+curl -fsSL "$RAG_BASE/document_loaders.py" -o "$LOADER_FILE"
+"$PYTHON" -m py_compile "$GATEWAY_FILE" "$ENGINE_FILE" "$LOADER_FILE"
 echo "Python syntax checks passed."
 
 umask 077
