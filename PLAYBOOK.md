@@ -713,3 +713,11 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Added `rag/evaluate_retrieval.py`, a retrieval-only tool reporting top BM25 scores for six answerable and six unanswerable questions against the sample policy set. It makes no model calls.
 - The purpose is to gather evidence before choosing a relevance gate. Do not hard-code a score threshold from one irrelevant-query score; review the labelled positive/negative ranges and expand the dataset if there is overlap.
 - Next: run the calibration utility on the current Pod, inspect the score distribution/source ranking, then choose whether a simple threshold, score margin, or different retrieval design is justified.
+
+
+### 2026-10-11 — Provisional BM25 relevance gate added
+- Calibration on the two fictional sample documents: all six answerable questions top-ranked the expected source (positive score range 2.351–5.797); six unanswerable questions scored 0.690–2.258. The observed separation is narrow (0.093).
+- Added configurable `--min-score` to `rag/ask_documents.py`, with a default of 2.30 **only for the existing two-document demo corpus**. Queries below that top-score threshold stop before the model call.
+- Updated regression suite to test low-score rejection as well as the model's abstention when the threshold is explicitly disabled for that test.
+- Do not apply 2.30 to customer corpora without recalibration. BM25 scores depend on corpus; if score distributions overlap, change retrieval design and evaluation rather than pretending a threshold is reliable.
+- Next: refresh the scripts on the current Pod and run all five regression cases. Do not record the threshold as passing until the actual run succeeds.
