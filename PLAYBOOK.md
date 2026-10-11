@@ -938,3 +938,10 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Existing persistent assets already noted: model in `/workspace/gemma-4-31B-it/`; vLLM runtime archive/frozen requirements/manifest/install script in `/workspace/runtime-setup/`; PDF/XLSX wheels and checksums in `/workspace/runtime-setup/rag-wheelhouse/`; Azure remains an independent backup.
 - **Important status:** the new source snapshot script has been committed to GitHub, but the user has not yet run it on the live Pod. Do not claim the complete GitHub source snapshot is already mirrored to the Global Volume until a successful run confirms the archive and manifest paths.
 - Operating rule: after every meaningful code/config/dependency/model/runtime change, commit source/tests/docs in GitHub, run tests, run `ops/sync_global_volume.sh`, and check the checksum output. Do not treat Pod-local `/tmp` content or temporary API keys as persistent assets.
+
+
+### 2026-10-11 — First Global Volume source sync blocked safely; mount check corrected
+- User ran the document library unit tests: **14 tests passed**.
+- User then ran `ops/sync_global_volume.sh`. It aborted before copying anything because its mount validation falsely rejected the reported mount `fuse.geeseefs 5aac0c77-6fcc-4be9-a112-dfe3890d1373`, which matches the expected Global Volume filesystem from prior diagnostics.
+- The script was corrected to read filesystem type and source separately and compare the filesystem type exactly against `fuse.geeseefs`. No file was copied by the failed attempt.
+- Next: fetch the corrected script from GitHub, run `bash -n`, and run the sync again. Verify the printed snapshot and manifest paths plus successful SHA-256 checks. Do not claim the source snapshot exists until this succeeds.
