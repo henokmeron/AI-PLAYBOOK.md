@@ -953,3 +953,13 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Replaced filesystem-type string equality with two checks: `findmnt` must report `/workspace` itself as the mount target, and the expected Gemma `config.json` must exist on that mounted path. This should avoid the false rejection while refusing to copy if the volume is not mounted or lacks the expected model.
 - New script commit: `81778c1a8da93a7a9e3b46884bb5b6ed82663282`.
 - Next: fetch that exact commit, confirm it contains `MODEL_MARKER=`, run `bash -n`, then run the sync. Do not claim the snapshot exists until the script confirms archive and manifest checksums.
+
+
+### 2026-10-11 — First complete source snapshot verified on Global Volume
+- User screenshot confirms `ops/sync_global_volume.sh` finished with `SUCCESS: source snapshot and manifest saved on the mounted Global Volume.`
+- Captured GitHub commit: `404dad8e59363ff7882b0cbb05bae1640e1e3d1a`.
+- Source archive: `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-404dad8e59363ff7882b0cbb05bae1640e1e3d1a.tar.gz`.
+- Manifest: `/workspace/ai-platform-backups/manifests/global-volume-manifest-404dad8e59363ff7882b0cbb05bae1640e1e3d1a.txt`.
+- Screenshot confirms archive checksum passed. Runtime inventory and deployed runtime copies were captured where present; existing model/runtime backup folders were preserved.
+- Full record: `ops/results/global-volume-snapshot-2026-10-11.md`.
+- This snapshot contains the committed repository at the specified SHA. After committing this success record, re-run the sync script once to produce a newer snapshot that includes this record.
