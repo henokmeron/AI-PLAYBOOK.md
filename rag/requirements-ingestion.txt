@@ -1,0 +1,3 @@
+# Optional PDF text extraction dependency for the RAG ingestion subsystem.
+# Keep this out of the vLLM runtime's installed packages; install into /tmp/rag-deps.
+pypdf==6.20.0 --hash=sha256:f003fc2014814d264fe7dd3f9d435c158e23e1a85a2233f87a0a2d6d21c914ad
