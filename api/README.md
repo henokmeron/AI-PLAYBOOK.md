@@ -55,3 +55,33 @@ The next integration test runs document Q&A through this gateway with the bearer
 The user ran `rag/ask_documents.py` with the gateway URL `http://127.0.0.1:8010/v1`, explicit Gemma model ID, and `--api-key-file /tmp/platform-gateway.key`. It retrieved `expenses-policy.md` first, then the gateway and Gemma returned the correct answer "10 business days" with `[Source 1]`. Report: [rag-through-gateway-2026-10-11.md](../rag/results/rag-through-gateway-2026-10-11.md).
 
 This proves the command-line RAG client can authenticate to and use the gateway, but it is not yet a single HTTP RAG endpoint for a business app. Next: build `POST /v1/rag/ask` behind the same authenticated front door. Keep the service loopback-only until production security exists.
+
+
+## Single-endpoint document Q&A — implementation added, test pending
+
+The upgraded gateway now exposes `POST /v1/rag/ask`, using shared lexical retrieval from `rag/rag_engine.py`. A request only needs a question and optional `top_k`; the response includes answer status, answer text, cited source metadata (file, chunk and retrieval score), and retrieval information. It uses the same bearer key as `/v1/chat/completions` and the same rate limiter.
+
+- API contract: [OpenAPI specification](openapi.yaml).
+- Shared retrieval engine: [rag/rag_engine.py](../rag/rag_engine.py).
+- Run the guarded upgrade/test from the current Pod: [upgrade_gateway_with_rag_smoke.sh](upgrade_gateway_with_rag_smoke.sh).
+
+### Upgrade and test the currently running gateway
+
+Keep the vLLM terminal running. The test script downloads and syntax-checks the new gateway and engine before stopping the old gateway. It backs up the previous gateway code and attempts to roll back if the new health/auth/RAG checks fail. Run in the second terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/api/upgrade_gateway_with_rag_smoke.sh -o /tmp/upgrade_gateway_with_rag_smoke.sh && bash /tmp/upgrade_gateway_with_rag_smoke.sh
+```
+
+The script preserves the current temporary API key, keeps the listener on `127.0.0.1:8010`, tests that unauthenticated RAG requests return 401, tests a correct expense answer with source metadata, and tests that an irrelevant question is blocked before generation. It never stops vLLM and does not print the key.
+
+### Example API request (local development only)
+
+```bash
+curl -sS -X POST http://127.0.0.1:8010/v1/rag/ask \
+  -H "Authorization: Bearer $(cat /tmp/platform-gateway.key)" \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"How many business days do employees have to submit expense receipts?","top_k":4}'
+```
+
+Do not expose this loopback-only prototype publicly. The shared key is temporary; the BM25 score threshold is demo-corpus-only. Production needs proper identity/tenancy, HTTPS, secret management, access-controlled document sources, durable auditability, calibrated retrieval, monitoring and security review.
