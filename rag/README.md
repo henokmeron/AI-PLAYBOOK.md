@@ -115,3 +115,18 @@ Do not use this threshold outside the two-file fictional demo corpus without new
 ## Full authenticated gateway test — 2026-10-11
 
 The user verified the same expense question through `http://127.0.0.1:8010/v1` using the temporary bearer key file. The script retrieved the expenses policy and Gemma answered "10 business days" with a source label. Detailed result: [RAG through gateway](results/rag-through-gateway-2026-10-11.md). The CLI now can use the gateway, while a single `POST /v1/rag/ask` endpoint remains the next API milestone.
+
+
+## Fast retrieval unit tests (no GPU/model calls)
+
+The unit tests check tokenization, chunking/overlap, source ranking for two simple questions, zero-overlap handling, and top-k limits. They use only the Python standard library.
+
+Run on the current Pod (works with the existing Python environment, but does not contact vLLM):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/rag_engine.py -o /tmp/rag_engine.py
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/tests/test_rag_engine.py -o /tmp/test_rag_engine.py
+/tmp/vllm-clean-env/bin/python /tmp/test_rag_engine.py
+```
+
+Run these unit tests after changing tokenization, chunk size/overlap, BM25 scoring or ranking. A pass verifies these small deterministic examples only; it does not establish retrieval quality across real business corpora.
