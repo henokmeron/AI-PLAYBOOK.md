@@ -94,5 +94,66 @@ class DocumentLoaderTests(unittest.TestCase):
         self.assertEqual(ranked[0][1].source, "deadline.docx")
 
 
+    def make_pdf(self, path: Path, text: str | None) -> None:
+        """Create a minimal valid one-page text PDF without third-party PDF writers."""
+        stream = b"" if text is None else (
+            b"BT /F1 12 Tf 72 720 Td (" + text.encode("ascii") + b") Tj ET"
+        )
+        objects = [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n"
+            + stream + b"\nendstream",
+        ]
+        data = bytearray(b"%PDF-1.4\n%Test PDF\n")
+        offsets = [0]
+        for number, obj in enumerate(objects, start=1):
+            offsets.append(len(data))
+            data.extend(f"{number} 0 obj\n".encode("ascii"))
+            data.extend(obj)
+            data.extend(b"\nendobj\n")
+        xref_offset = len(data)
+        data.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+        data.extend(b"0000000000 65535 f \n")
+        for offset in offsets[1:]:
+            data.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+        data.extend(
+            f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{xref_offset}\n%%EOF\n".encode("ascii")
+        )
+        path.write_bytes(bytes(data))
+
+    def test_pdf_text_is_extracted_with_page_marker(self) -> None:
+        path = self.root / "expense-policy.pdf"
+        self.make_pdf(path, "PDF receipt deadline is 10 business days.")
+        text = read_document(path)
+        self.assertIn("[Page 1]", text)
+        self.assertIn("10 business days", text)
+
+    def test_pdf_without_text_is_rejected_with_ocr_message(self) -> None:
+        path = self.root / "scanned.pdf"
+        self.make_pdf(path, None)
+        with self.assertRaisesRegex(DocumentLoadError, "require OCR"):
+            read_document(path)
+
+    def test_malformed_pdf_is_rejected(self) -> None:
+        path = self.root / "broken.pdf"
+        path.write_bytes(b"not a PDF document")
+        with self.assertRaises(DocumentLoadError):
+            read_document(path)
+
+    def test_rag_engine_indexes_pdf_and_preserves_source_name(self) -> None:
+        path = self.root / "deadline.pdf"
+        self.make_pdf(path, "Receipts must be submitted within 10 business days.")
+        chunks = load_chunks(self.root)
+        self.assertTrue(any(chunk.source == "deadline.pdf" for chunk in chunks))
+        ranked = retrieve("When must receipts be submitted in business days?", chunks, top_k=1)
+        self.assertTrue(ranked)
+        self.assertEqual(ranked[0][1].source, "deadline.pdf")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
