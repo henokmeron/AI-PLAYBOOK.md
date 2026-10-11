@@ -208,3 +208,10 @@ Do not change the working runtime while it is serving. Keep the serving terminal
 - Related persistent files: `install-vllm.sh`, `requirements-frozen.txt`, `runtime-manifest.txt`.
 - This verifies the archive's compressed-stream integrity and readable tar index; it does **not** yet prove a restored environment can run. Next create a SHA-256 checksum file and preserve it with the archive. Recovery must be tested later on a compatible Pod/container without overwriting the currently working environment.
 - Keep the server and Pod running until the restore/recovery strategy is documented. Do not delete the Global Volume or Azure model backup.
+
+
+## Archive checksum recorded — 2026-10-11 20:36 (user screenshot)
+
+The command `sha256sum vllm-clean-env.tar.zst requirements-frozen.txt runtime-manifest.txt install-vllm.sh > SHA256SUMS` completed and `cat SHA256SUMS` printed SHA-256 entries for all four files. The checksum file exists at `/workspace/runtime-setup/SHA256SUMS` (348 bytes per `ls -lh` screenshot).
+
+Next, verify with `cd /workspace/runtime-setup && sha256sum -c SHA256SUMS && zstd -t vllm-clean-env.tar.zst`. A checksum and compressed-stream test confirm file integrity only; do not describe the environment as restore-tested yet. Python virtual environments commonly contain absolute paths, so a real restore test must use a compatible container and account for the original path `/tmp/vllm-clean-env`; do not extract over the currently serving environment.
