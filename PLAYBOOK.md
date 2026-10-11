@@ -729,3 +729,12 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Recorded the run in `rag/results/retrieval-calibration-2026-10-11.md`.
 - Implemented a provisional minimum top-score gate of 2.30 in `rag/ask_documents.py`, only for the two-file fictional demo corpus. This is a narrow sample separation, not a general threshold.
 - Next: download the updated RAG script and revised regression suite to the current Pod, then verify all five cases pass. Keep 2.30 scoped to the demo corpus; recalibrate for each new corpus.
+
+
+### 2026-10-11 — Five-case RAG regression passed with demo-only relevance gate
+- User ran the refreshed `rag/run_rag_regression.py`; screenshot confirms 5/5 cases passed.
+- Supported question returned "10 business days" with source label; tested document injection did not override the factual deadline.
+- The yacht-colour query (scores 0.690/0.625) was blocked by the demo-only `--min-score 2.30` gate before model inference. With the gate disabled only for a separate regression case, the model abstained correctly. A no-overlap query was rejected before inference.
+- Detailed report: `rag/results/rag-regression-gated-run-2026-10-11.md`.
+- Caution: the positive/negative score gap is only 0.093 across six positive and six negative questions against two fictional files. The 2.30 gate is only a demo setting, not a general/corporate threshold.
+- Next platform milestone: establish a thin, authenticated local API gateway in front of vLLM so future RAG, integrations, logging and policy enforcement can use a stable platform boundary rather than accessing the model server directly. Bind locally by default; do not expose it publicly without HTTPS, production authentication/secrets handling, tenant isolation, quotas and auditing.
