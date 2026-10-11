@@ -995,3 +995,13 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Retained canary: collection `global-canary-1791758676`, file `global-volume-canary.md`. It contains fictional data and is intentionally retained for a later Pod re-attach persistence test.
 - Detailed report: `api/results/live-global-volume-document-persistence-2026-10-11.md`.
 - Boundary: this proves persistence on the currently mounted Global Volume, not yet across Pod stop/recreation/re-attachment. Do not upload real customer data until production security, tenancy, retention and recovery controls are tested.
+
+
+### 2026-10-11 — Live document storage verified on Global Volume
+- User screenshot confirms `ops/test_persistent_document_storage.sh` completed with `SUCCESS: document upload/list/retrieval verified at the mounted Global Volume path.`
+- Gateway health and upstream were both OK.
+- Live upload stored a 136-byte fictional canary in collection `global-canary-1791758676`; physical file verified at `/workspace/rag-managed-docs/global-canary-1791758676/global-volume-canary.md`.
+- Live API listing returned its metadata, and a live RAG query returned `GLOBALVOL-58317` from the canary source.
+- The canary is intentionally retained for a future Pod re-attach persistence test.
+- Detailed report: `ops/results/live-global-volume-document-storage-2026-10-11.md`.
+- Remaining: sync this latest report/source to the Global Volume; later test re-attachment to a fresh Pod. Do not use real customer documents until tenant isolation, access control, encryption, retention, backup and audit controls are implemented and tested.
