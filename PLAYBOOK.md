@@ -869,3 +869,15 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Final command output: `ALL GATEWAY + RAG API TESTS PASSED`. The vLLM model server was not restarted.
 - Report: `api/results/gateway-after-pdf-dependency-upgrade-2026-10-11.md`.
 - End-to-end API support for CSV, DOCX and PDF remains pending. Next run `api/test_format_ingestion.sh` against the isolated temporary gateway on port 8011; do not alter the main gateway on 8010 or vLLM on 8000.
+
+
+### 2026-10-11 — CSV, DOCX and PDF verified end to end through RAG API
+- User ran `api/test_format_ingestion.sh`; screenshot confirms all three API integration tests passed.
+- CSV query returned "Visitors must check in at Gate C" with source `visitor-rules.csv`.
+- DOCX query returned Project Helios launch review on 18 November with source `launch-review.docx`.
+- PDF query returned Project Orion purchase order review on 23 November with source `project-review.pdf`.
+- All requests returned `status: answered`, source citations, and expected source filenames. pypdf 6.20.0 was verified.
+- The temporary test gateway stopped itself; main gateway at 8010 and vLLM at 8000 remained untouched.
+- Report: `api/results/csv-docx-pdf-integration-2026-10-11.md`.
+- Coverage boundary: these are fictional, text-based, small samples; not proof every real-world file layout works. Scanned PDF OCR, password-protected PDFs, XLSX spreadsheets and production hardening remain separate work.
+- Next: add business Excel `.xlsx` ingestion using an isolated, pinned parser dependency and tests that preserve sheet names, rows and source attribution; do not install it into the vLLM environment.
