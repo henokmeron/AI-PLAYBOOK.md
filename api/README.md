@@ -249,3 +249,10 @@ The user ran `api/test_document_management.sh`; screenshot confirms all tests pa
 Report: [document-management-api-2026-10-11.md](results/document-management-api-2026-10-11.md).
 
 Next: upgrade the main gateway using the guarded script (it downloads `document_library.py` and sets managed storage to `/workspace/rag-managed-docs`), then verify a controlled upload/list/query/delete against that mounted Global Volume path. This will prove that the persistent storage path works; the temporary API tests alone do not prove cross-Pod persistence.
+
+
+## Persistent storage verification — next live test
+
+The guarded gateway upgrade sets `RAG_MANAGED_DOCS_DIR=/workspace/rag-managed-docs`, a path on the mounted Global Volume. After upgrading and passing gateway smoke checks, run `ops/test_persistent_document_storage.sh`. It uploads a small non-sensitive canary document using the live API, verifies the file physically exists under the configured mounted directory, lists it through the API, and asks a question whose answer is in that document. It deliberately leaves the small canary in a uniquely named collection for a future Pod re-attach persistence check.
+
+This test proves live writes and reads on the Global Volume mount; a true cross-Pod persistence check requires attaching the same Global Volume to another Pod later. Do not upload actual customer documents yet.
