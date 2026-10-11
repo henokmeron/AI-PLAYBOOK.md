@@ -763,3 +763,11 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Detailed record: `rag/results/rag-through-gateway-2026-10-11.md`.
 - The RAG client now uses the authenticated gateway. This is still a CLI-based prototype; the next milestone is a single authenticated `POST /v1/rag/ask` API for future business apps.
 - Keep gateway and vLLM loopback-only. Do not expose the temporary shared-key gateway publicly; production use requires real identity, HTTPS, tenant isolation, durable auditing, managed secrets, quotas and security review.
+
+
+### 2026-10-11 — Single-endpoint RAG API implemented; live test pending
+- Added `POST /v1/rag/ask` to the local API gateway. It uses the shared standard-library retrieval module `rag/rag_engine.py`, applies the demo-only minimum score, invokes the local vLLM upstream, and returns `status`, answer text, source file/chunk/score metadata and retrieval details.
+- Both chat and RAG routes share the gateway bearer-key authentication, payload size check and per-client in-memory rate limiter. RAG requests validate question length and `top_k`; keys/prompts/answers are not logged.
+- Added `api/openapi.yaml` as a versioned API contract and documented the guarded upgrade/test in `api/README.md`.
+- Updated gateway has **not yet been run in the live Pod**. The next action is to run `api/upgrade_gateway_with_rag_smoke.sh` in the second terminal. It syntax-checks files, saves a previous gateway copy, restarts only the gateway (not vLLM), and attempts rollback if tests fail.
+- Keep binding to `127.0.0.1`. Do not expose this prototype publicly. The current demo threshold is not suitable for arbitrary customer corpora, and the shared key is only a temporary local development credential.
