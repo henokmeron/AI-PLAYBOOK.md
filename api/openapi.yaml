@@ -1,0 +1,117 @@
+openapi: 3.1.0
+info:
+  title: Local Business AI Prototype API
+  version: 0.2.0
+  description: >
+    Development-only, loopback-bound API for vLLM chat completion and
+    document-grounded question answering. Not for public or production exposure.
+servers:
+  - url: http://127.0.0.1:8010
+    description: Local RunPod Pod only
+security:
+  - BearerAuth: []
+paths:
+  /health:
+    get:
+      security: []
+      summary: Check whether the vLLM upstream is reachable
+      responses:
+        "200":
+          description: Upstream is reachable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, const: ok }
+                  upstream: { type: string, const: ok }
+                  model_count: { type: integer }
+        "503":
+          description: Upstream unavailable
+  /v1/chat/completions:
+    post:
+      summary: Proxy a non-streaming OpenAI-compatible chat completion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messages]
+              properties:
+                model: { type: string }
+                messages:
+                  type: array
+                  items: { type: object }
+                temperature: { type: number }
+                max_tokens: { type: integer }
+                stream: { type: boolean, default: false }
+      responses:
+        "200": { description: vLLM completion response }
+        "400": { description: Invalid request or streaming requested }
+        "401": { description: Authentication required }
+        "413": { description: Request body too large }
+        "429": { description: Rate limit exceeded }
+        "502": { description: Inference upstream unavailable }
+  /v1/rag/ask:
+    post:
+      summary: Answer a question using the configured local document corpus
+      description: >
+        Retrieves relevant Markdown/text chunks, applies the configured demo
+        BM25 score threshold, and returns an answer with source metadata.
+        The 2.30 threshold is only calibrated for the two-file fictional demo
+        corpus and must not be reused for other corpora without evaluation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+                top_k:
+                  type: integer
+                  minimum: 1
+                  maximum: 10
+                  default: 4
+      responses:
+        "200":
+          description: Answer or explicit abstention
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, answer, sources, retrieval]
+                properties:
+                  status:
+                    type: string
+                    enum: [answered, abstained]
+                  answer: { type: string }
+                  model: { type: string }
+                  sources:
+                    type: array
+                    items:
+                      type: object
+                      required: [label, file, chunk, score]
+                      properties:
+                        label: { type: string }
+                        file: { type: string }
+                        chunk: { type: integer }
+                        score: { type: number }
+                  retrieval: { type: object }
+        "400": { description: Invalid question or top_k }
+        "401": { description: Authentication required }
+        "413": { description: Request body or question too large }
+        "429": { description: Rate limit exceeded }
+        "500": { description: Document retrieval unavailable }
+        "502": { description: Inference upstream unavailable }
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
