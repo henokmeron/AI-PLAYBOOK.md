@@ -1,10 +1,11 @@
 openapi: 3.1.0
 info:
   title: Local Business AI Prototype API
-  version: 0.2.0
+  version: 0.3.0
   description: >
-    Development-only, loopback-bound API for vLLM chat completion and
-    document-grounded question answering. Not for public or production exposure.
+    Development-only, loopback-bound API for vLLM chat completion, document-grounded
+    question answering, and collection-scoped document management. Not for public
+    or production exposure.
 servers:
   - url: http://127.0.0.1:8010
     description: Local RunPod Pod only
@@ -26,8 +27,7 @@ paths:
                   status: { type: string, const: ok }
                   upstream: { type: string, const: ok }
                   model_count: { type: integer }
-        "503":
-          description: Upstream unavailable
+        "503": { description: Upstream unavailable }
   /v1/chat/completions:
     post:
       summary: Proxy a non-streaming OpenAI-compatible chat completion
@@ -40,9 +40,7 @@ paths:
               required: [messages]
               properties:
                 model: { type: string }
-                messages:
-                  type: array
-                  items: { type: object }
+                messages: { type: array, items: { type: object } }
                 temperature: { type: number }
                 max_tokens: { type: integer }
                 stream: { type: boolean, default: false }
@@ -55,12 +53,12 @@ paths:
         "502": { description: Inference upstream unavailable }
   /v1/rag/ask:
     post:
-      summary: Answer a question using the configured local document corpus
+      summary: Answer a question using the demo corpus or a selected managed collection
       description: >
-        Retrieves relevant Markdown/text chunks, applies the configured demo
-        BM25 score threshold, and returns an answer with source metadata.
-        The 2.30 threshold is only calibrated for the two-file fictional demo
-        corpus and must not be reused for other corpora without evaluation.
+        Retrieves relevant chunks from the demo corpus by default. A request may
+        specify a validated collection slug to search only that managed collection.
+        BM25 thresholds require corpus-specific calibration; the demo threshold is
+        not a universal setting.
       requestBody:
         required: true
         content:
@@ -69,46 +67,89 @@ paths:
               type: object
               required: [question]
               properties:
-                question:
-                  type: string
-                  minLength: 1
-                  maxLength: 2000
-                top_k:
-                  type: integer
-                  minimum: 1
-                  maximum: 10
-                  default: 4
+                question: { type: string, minLength: 1, maxLength: 2000 }
+                collection: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,39}$" }
+                top_k: { type: integer, minimum: 1, maximum: 10, default: 4 }
       responses:
-        "200":
-          description: Answer or explicit abstention
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [status, answer, sources, retrieval]
-                properties:
-                  status:
-                    type: string
-                    enum: [answered, abstained]
-                  answer: { type: string }
-                  model: { type: string }
-                  sources:
-                    type: array
-                    items:
-                      type: object
-                      required: [label, file, chunk, score]
-                      properties:
-                        label: { type: string }
-                        file: { type: string }
-                        chunk: { type: integer }
-                        score: { type: number }
-                  retrieval: { type: object }
-        "400": { description: Invalid question or top_k }
+        "200": { description: Answer or explicit abstention }
+        "400": { description: Invalid question, collection or top_k }
         "401": { description: Authentication required }
+        "404": { description: Managed collection not found }
         "413": { description: Request body or question too large }
         "429": { description: Rate limit exceeded }
         "500": { description: Document retrieval unavailable }
         "502": { description: Inference upstream unavailable }
+  /v1/rag/documents:
+    get:
+      summary: List documents in one managed collection
+      parameters:
+        - name: collection
+          in: query
+          required: true
+          schema: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,39}$" }
+      responses:
+        "200":
+          description: Document metadata without document contents
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [collection, documents]
+                properties:
+                  collection: { type: string }
+                  documents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        filename: { type: string }
+                        size_bytes: { type: integer }
+                        extension: { type: string }
+        "400": { description: Invalid or missing collection }
+        "401": { description: Authentication required }
+        "429": { description: Rate limit exceeded }
+    post:
+      summary: Upload a supported document to a managed collection
+      description: >
+        Send file bytes as base64. The decoded file is limited to 10 MiB. Collection
+        and filename validation block path traversal; overwrite is false by default.
+        This is local prototype storage, not a multi-tenant production document service.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [collection, filename, content_base64]
+              properties:
+                collection: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,39}$" }
+                filename: { type: string, maxLength: 120 }
+                content_base64: { type: string, format: byte }
+                overwrite: { type: boolean, default: false }
+      responses:
+        "201": { description: Document stored }
+        "400": { description: Invalid upload or filename }
+        "401": { description: Authentication required }
+        "409": { description: File already exists and overwrite was not set }
+        "413": { description: Upload too large }
+        "429": { description: Rate limit exceeded }
+    delete:
+      summary: Delete one document from a managed collection
+      parameters:
+        - name: collection
+          in: query
+          required: true
+          schema: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,39}$" }
+        - name: filename
+          in: query
+          required: true
+          schema: { type: string, maxLength: 120 }
+      responses:
+        "200": { description: Document deleted }
+        "400": { description: Invalid collection or filename }
+        "401": { description: Authentication required }
+        "404": { description: Document not found }
+        "429": { description: Rate limit exceeded }
 components:
   securitySchemes:
     BearerAuth:
