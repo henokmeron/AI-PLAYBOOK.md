@@ -39,3 +39,8 @@ The script discovers the model from `/v1/models` by default. No Python package i
 - Keyword/BM25 retrieval may miss semantically related passages and can retrieve false positives. Check the displayed sources and citations.
 - A model can still make unsupported claims. Evaluate source faithfulness against a labelled test set before any commercial use.
 - The first version only reads plain text and Markdown; PDFs, Office files, OCR, tables, and scanned documents are out of scope.
+
+
+## First end-to-end test result — 2026-10-11
+
+The first question about expense receipt deadlines correctly retrieved `expenses-policy.md` first and returned the supported answer "10 business days" with `[Source 1]`. Reported single-request inference latency was 0.62 seconds. Full evidence and limitations are in [the dated result report](results/rag-demo-2026-10-11.md). This is one successful sample, not a quality or security guarantee.
