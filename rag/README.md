@@ -2,11 +2,11 @@
 
 ## Purpose
 
-This is the first end-to-end RAG slice for the model-independent business AI platform. It reads approved local `.md` and `.txt` files, splits them into chunks, retrieves relevant passages using BM25 keyword ranking, and sends those passages to an OpenAI-compatible LLM endpoint. Answers are instructed to cite source labels and admit when evidence is missing.
+This is the first end-to-end RAG slice for the model-independent business AI platform. It reads approved local TXT, Markdown, CSV, HTML, DOCX, and text-based PDF files, with XLSX support added pending tests; it splits extracted text into chunks, retrieves relevant passages using BM25 keyword ranking, and sends those passages to an OpenAI-compatible LLM endpoint. Answers are instructed to cite source labels and admit when evidence is missing.
 
 ## Architecture
 
-1. **Documents** — `.md` and `.txt` files in the selected folder.
+1. **Documents** — TXT, Markdown, CSV, HTML/HTM, DOCX, searchable PDF and (pending validation) XLSX files in the selected folder.
 2. **Chunking** — split text into overlapping chunks.
 3. **Retrieval** — standard-library BM25 keyword scoring; no external vector database or embedding model required.
 4. **Generation** — send only the selected evidence plus the question to `/v1/chat/completions`.
@@ -222,7 +222,7 @@ The live gateway still needs the guarded upgrade, then the CSV/DOCX/PDF HTTP int
 
 The user confirmed the isolated HTTP integration test returned the correct source-grounded answers for a CSV, a Word DOCX and a text-based PDF. The three source filenames were `visitor-rules.csv`, `launch-review.docx`, and `project-review.pdf`. Full details: [API integration report](../api/results/csv-docx-pdf-integration-2026-10-11.md).
 
-Excel `.xlsx` and scanned PDF OCR remain future work. These example tests do not guarantee extraction quality for arbitrary files.
+Scanned PDF OCR remains future work. XLSX support has now been added in code and has its own parser/setup/test sequence below; until that suite and the four-format API integration pass, XLSX remains pending validation. Example tests do not guarantee extraction quality for arbitrary files.
 
 
 ## Excel XLSX ingestion — code added, validation pending
