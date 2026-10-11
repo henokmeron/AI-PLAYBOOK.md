@@ -881,3 +881,11 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Report: `api/results/csv-docx-pdf-integration-2026-10-11.md`.
 - Coverage boundary: these are fictional, text-based, small samples; not proof every real-world file layout works. Scanned PDF OCR, password-protected PDFs, XLSX spreadsheets and production hardening remain separate work.
 - Next: add business Excel `.xlsx` ingestion using an isolated, pinned parser dependency and tests that preserve sheet names, rows and source attribution; do not install it into the vLLM environment.
+
+
+### 2026-10-11 — Excel XLSX ingestion implemented; tests pending
+- Added `openpyxl==3.1.5`, `et-xmlfile==2.0.0` and `defusedxml==0.7.1` as hash-pinned wheels under `rag/requirements-xlsx.txt`, with a verified isolated setup script `rag/setup_xlsx_support.sh`. Package details and limits: `rag/XLSX_SUPPORT.md`.
+- Updated `rag/document_loaders.py` to read `.xlsx` files using a read-only workbook loader. It preserves sheet name/state, row numbers and cell coordinates; reads cached formula values rather than recalculating formulas; and applies file/uncompressed-size/sheet/row/column/text limits.
+- Added four parser tests for worksheet text, source attribution/retrieval, malformed workbook, and empty workbook.
+- Updated gateway startup/upgrade scripts to require the pinned XLSX dependency alongside pypdf; expanded the isolated format integration test to query CSV, DOCX, PDF and XLSX.
+- Next: run XLSX setup, then syntax compile and the now-16-test parser suite with `PYTHONPATH=/tmp/rag-deps`. Do not alter the live gateway until all parser tests pass. Then run guarded gateway upgrade and combined four-format integration test.
