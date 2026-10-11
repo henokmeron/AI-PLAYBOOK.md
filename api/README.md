@@ -240,3 +240,12 @@ curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/api/
 ```
 
 The managed collection threshold is separately configurable and currently defaults to `0.0` for the prototype, which means any nonzero BM25 match may be sent to the model. This is **not a calibrated relevance threshold**; expand the collection evaluation and calibrate before any customer/business use. The demo corpus keeps its separate 2.30 threshold.
+
+
+## Document management API test passed — 2026-10-11
+
+The user ran `api/test_document_management.sh`; screenshot confirms all tests passed on an isolated gateway at port 8012 using temporary `/tmp` storage. It rejected unauthenticated uploads and path traversal, accepted an authenticated upload, listed metadata, refused duplicate overwrite by default, answered from the uploaded source, deleted it, and confirmed the collection was empty. The isolated gateway and temporary data were cleaned up; main gateway and vLLM remained untouched.
+
+Report: [document-management-api-2026-10-11.md](results/document-management-api-2026-10-11.md).
+
+Next: upgrade the main gateway using the guarded script (it downloads `document_library.py` and sets managed storage to `/workspace/rag-managed-docs`), then verify a controlled upload/list/query/delete against that mounted Global Volume path. This will prove that the persistent storage path works; the temporary API tests alone do not prove cross-Pod persistence.
