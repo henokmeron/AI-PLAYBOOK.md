@@ -28,6 +28,7 @@ def run_case(
     base_url: str,
     must_contain: tuple[str, ...],
     must_not_contain: tuple[str, ...] = (),
+    extra_args: tuple[str, ...] = (),
     expected_exit: int = 0,
 ) -> bool:
     command = [
@@ -40,6 +41,7 @@ def run_case(
         "--base-url",
         base_url,
     ]
+    command.extend(extra_args)
     try:
         completed = subprocess.run(
             command,
@@ -121,12 +123,24 @@ def main() -> int:
         ))
 
     results.append(run_case(
-        "unsupported question is answered with abstention",
+        "low-relevance question is blocked before model call",
+        args.ask_script,
+        args.docs,
+        "What colour is the CEO's private yacht?",
+        args.base_url,
+        must_contain=("No sufficiently relevant evidence was found", "No model answer was generated"),
+        must_not_contain=("=== ANSWER ===",),
+        expected_exit=1,
+    ))
+
+    results.append(run_case(
+        "model abstains if low-relevance evidence is deliberately allowed",
         args.ask_script,
         args.docs,
         "What colour is the CEO's private yacht?",
         args.base_url,
         must_contain=("could not find",),
+        extra_args=("--min-score", "0"),
     ))
 
     results.append(run_case(
