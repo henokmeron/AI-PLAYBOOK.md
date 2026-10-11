@@ -771,3 +771,11 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Added `api/openapi.yaml` as a versioned API contract and documented the guarded upgrade/test in `api/README.md`.
 - Updated gateway has **not yet been run in the live Pod**. The next action is to run `api/upgrade_gateway_with_rag_smoke.sh` in the second terminal. It syntax-checks files, saves a previous gateway copy, restarts only the gateway (not vLLM), and attempts rollback if tests fail.
 - Keep binding to `127.0.0.1`. Do not expose this prototype publicly. The current demo threshold is not suitable for arbitrary customer corpora, and the shared key is only a temporary local development credential.
+
+
+### 2026-10-11 — API gateway RAG endpoint implementation files prepared
+- Added shared BM25 functions in `rag/rag_engine.py` so the CLI and API gateway can use the same retrieval behaviour.
+- Updated `api/local_gateway.py` with authenticated `POST /v1/rag/ask`; the HTTP response includes `status`, answer, model, source metadata, and retrieval score/abstention information.
+- Added OpenAPI 3.1 contract at `api/openapi.yaml`.
+- Added `api/upgrade_gateway_with_rag_smoke.sh` for the existing live gateway and updated `api/run_gateway_smoke.sh` for a fresh start. Both use a loopback listener and check authentication plus an end-to-end document answer. The in-place upgrade script has a rollback path and does not stop vLLM.
+- Code is committed, but the new HTTP endpoint has not yet passed a live test. Run the guarded upgrade script before claiming it works. The previous gateway version is backed up locally at `/tmp/platform_gateway.py.pre-rag` by the script.
