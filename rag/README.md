@@ -257,3 +257,16 @@ Next: guarded gateway upgrade, then the isolated CSV/DOCX/PDF/XLSX API integrati
 ## XLSX-enabled parser test result — 2026-10-11
 
 The user ran the isolated setup and expanded `rag/tests/test_document_loaders.py`. Screenshot confirms `openpyxl 3.1.5`, `et-xmlfile 2.0.0`, and `defusedxml 0.7.1`; the suite completed **16 tests in 0.243 seconds, all OK**. See [the dated result report](results/document-loader-tests-with-xlsx-2026-10-11.md). The vLLM environment was left untouched. Next: run the guarded gateway upgrade, then the four-format API integration test. XLSX remains parser-tested but not end-to-end verified until the API test passes.
+
+
+## Managed document collections (prototype)
+
+The gateway's new document-library module validates a collection slug and filename, allows only supported document extensions, limits decoded uploads to 10 MiB, parses uploaded content before saving, refuses overwrites unless explicitly requested, and offers list and delete operations. The gateway endpoints are protected by the same temporary bearer key:
+- `POST /v1/rag/documents` with `collection`, `filename`, `content_base64`, optional `overwrite`.
+- `GET /v1/rag/documents?collection=...`.
+- `DELETE /v1/rag/documents?collection=...&filename=...`.
+- `POST /v1/rag/ask` with `collection` to query only the uploaded collection.
+
+When the main gateway is upgraded, its configured persistent root will be `/workspace/rag-managed-docs` on the mounted Global Volume. First test the module and endpoints using the no-GPU tests and temporary integration script in [API documentation](../api/README.md). The main gateway hasn't yet been upgraded to this feature, and no real customer documents should be uploaded.
+
+For managed collections, `RAG_MANAGED_MIN_SCORE` defaults to 0.0 in this prototype, so score-based rejection is not calibrated. Do not treat this as safe customer-data behaviour; calibrate on representative positive/negative queries per collection before business use.
