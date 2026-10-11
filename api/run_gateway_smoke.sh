@@ -13,6 +13,7 @@ PID_FILE=/tmp/platform-gateway.pid
 KEY_FILE=/tmp/platform-gateway.key
 DOCS=/workspace/rag-demo-docs
 URL=http://127.0.0.1:8010
+RAG_DEPS=/tmp/rag-deps
 MODEL=/workspace/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it
 
 if [[ ! -x "$PYTHON" ]]; then
@@ -22,6 +23,10 @@ fi
 if [[ ! -d "$DOCS" ]]; then
   echo "ERROR: demo documents not found at $DOCS; fetch the sample documents using rag/README.md first." >&2
   exit 3
+fi
+if ! PYTHONPATH="$RAG_DEPS" "$PYTHON" -c 'import pypdf; assert pypdf.__version__ == "6.20.0"; print("Verified pypdf", pypdf.__version__)'; then
+  echo "ERROR: PDF dependency missing/wrong. Run rag/setup_pdf_support.sh first." >&2
+  exit 4
 fi
 if curl -fsS "$URL/health" >/dev/null 2>&1; then
   echo "ERROR: a gateway already responds at $URL. Reuse it or use the guarded upgrade script; do not start a competing process." >&2
@@ -37,7 +42,7 @@ echo "Python syntax checks passed."
 
 umask 077
 "$PYTHON" -c 'import secrets; print(secrets.token_urlsafe(40))' > "$KEY_FILE"
-PLATFORM_HOST=127.0.0.1 PLATFORM_PORT=8010 PLATFORM_API_KEY="$(cat "$KEY_FILE")" \
+PYTHONPATH="$RAG_DEPS" PLATFORM_HOST=127.0.0.1 PLATFORM_PORT=8010 PLATFORM_API_KEY="$(cat "$KEY_FILE")" \
   RAG_DOCS_DIR="$DOCS" RAG_MIN_SCORE=2.30 \
   UV_CACHE_DIR=/tmp/uv-cache TMPDIR=/tmp \
   nohup "$PYTHON" "$GATEWAY_FILE" > "$LOG_FILE" 2>&1 </dev/null &
