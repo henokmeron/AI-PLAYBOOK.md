@@ -72,3 +72,8 @@ The suite runs four cases:
 4. A query with no overlapping terms should result in no model call.
 
 The first three cases call the model. The fourth exercises the retrieval no-match branch. A successful run only shows these four cases passed on the current sample/model. It does not prove general prompt-injection resistance or production readiness. Inspect failures rather than relaxing expectations blindly.
+
+
+## Automated regression result — 2026-10-11
+
+The first run of `rag/run_rag_regression.py` completed with **4/4 cases passed**. The unsupported yacht question was safely refused, but retrieval still included irrelevant expense/handbook chunks; this remains a known retrieval-relevance issue. See [the dated automated test report](results/rag-regression-run-2026-10-11.md). Do not treat four passing smoke tests as a security certification.
