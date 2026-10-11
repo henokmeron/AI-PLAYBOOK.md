@@ -215,3 +215,10 @@ Do not change the working runtime while it is serving. Keep the serving terminal
 The command `sha256sum vllm-clean-env.tar.zst requirements-frozen.txt runtime-manifest.txt install-vllm.sh > SHA256SUMS` completed and `cat SHA256SUMS` printed SHA-256 entries for all four files. The checksum file exists at `/workspace/runtime-setup/SHA256SUMS` (348 bytes per `ls -lh` screenshot).
 
 Next, verify with `cd /workspace/runtime-setup && sha256sum -c SHA256SUMS && zstd -t vllm-clean-env.tar.zst`. A checksum and compressed-stream test confirm file integrity only; do not describe the environment as restore-tested yet. Python virtual environments commonly contain absolute paths, so a real restore test must use a compatible container and account for the original path `/tmp/vllm-clean-env`; do not extract over the currently serving environment.
+
+
+## Backup integrity verification passed — 2026-10-11 20:37 (user screenshot)
+
+User ran `cd /workspace/runtime-setup && sha256sum -c SHA256SUMS && zstd -t vllm-clean-env.tar.zst`. Screenshot confirms all of the following returned `OK`: `vllm-clean-env.tar.zst`, `requirements-frozen.txt`, `runtime-manifest.txt`, and `install-vllm.sh`. `zstd -t` also passed and reported 8,422,993,920 bytes of uncompressed archive content.
+
+The archive and supporting files are now integrity-verified on Global Volume. **Restoration is not yet tested.** Do not extract it over `/tmp/vllm-clean-env` while the server is running. A safe restore test should be done in a separate compatible Pod/container or another path only after accounting for Python virtualenv absolute shebangs and executable paths. Keep the serving Pod and Global Volume/model intact until there is an explicit decision about the restore test and compute cost.
