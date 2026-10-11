@@ -143,3 +143,12 @@ The updated format integration script checks CSV, DOCX and PDF through an isolat
 The focused document loader suite now reports 12/12 tests passing with `PYTHONPATH=/tmp/rag-deps`. See the [detailed report](../rag/results/document-loader-tests-with-pdf-2026-10-11.md).
 
 Next: run the guarded gateway upgrade, which verifies the exact pinned pypdf version before switching the gateway to the updated loader. Then run `api/test_format_ingestion.sh` for end-to-end CSV, DOCX and PDF tests through an isolated temporary gateway. PDF support is not called fully integrated until this API test passes.
+
+
+## Gateway validation after PDF dependency upgrade — 2026-10-11
+
+The user ran the guarded upgrade script after the 12 PDF-enabled parser tests passed. Screenshot confirms health, unauthenticated rejection, the correct source-cited expense answer, and low-relevance abstention; the script ended with `ALL GATEWAY + RAG API TESTS PASSED`. The model server was not restarted.
+
+Report: [gateway-after-pdf-dependency-upgrade-2026-10-11.md](results/gateway-after-pdf-dependency-upgrade-2026-10-11.md).
+
+Next run `api/test_format_ingestion.sh` to verify CSV, DOCX and PDF questions end to end through an isolated gateway at port 8011. Until that passes, record PDF as parser-tested and gateway-startup-validated, not fully verified end-to-end.
