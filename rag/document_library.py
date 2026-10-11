@@ -10,7 +10,10 @@ import base64
 import binascii
 import re
 from pathlib import Path
+import tempfile
 from typing import Any
+
+from document_loaders import DocumentLoadError, read_document
 
 ALLOWED_EXTENSIONS = {".txt", ".md", ".csv", ".html", ".htm", ".docx", ".pdf", ".xlsx"}
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -85,6 +88,34 @@ def store_document(
     if not isinstance(overwrite, bool):
         raise DocumentLibraryError("overwrite must be true or false")
     content = decode_content(content_base64)
+
+    # Validate the uploaded bytes with the same parser used during RAG retrieval
+    # before storing them, so one corrupt file does not break an entire collection.
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix="rag-upload-validation-",
+            suffix=Path(safe_filename).suffix.casefold(),
+            delete=False,
+        ) as temp_file:
+            temp_file.write(content)
+            temp_path = Path(temp_file.name)
+        extracted = read_document(temp_path)
+        if not extracted.strip():
+            raise DocumentLibraryError("uploaded document contains no extractable text")
+    except DocumentLibraryError:
+        raise
+    except DocumentLoadError as exc:
+        raise DocumentLibraryError(f"uploaded document could not be parsed: {exc}") from exc
+    except OSError as exc:
+        raise DocumentLibraryError(f"could not validate uploaded document: {exc}") from exc
+    finally:
+        if temp_path is not None:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
     folder = _collection_dir(root, collection_name)
     try:
         folder.mkdir(parents=True, exist_ok=True)
