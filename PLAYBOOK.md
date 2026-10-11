@@ -929,3 +929,12 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Updated OpenAPI contract to version 0.3 with document endpoints.
 - The managed collection BM25 threshold defaults to 0.0 in this prototype because the demo threshold is not calibrated for new collections. This is intentionally documented as not production-safe; calibrate per collection before business use.
 - Next: run syntax compilation and all document-library unit tests, then run the isolated API management script. Only after both pass should the main gateway be upgraded and a harmless test document be uploaded to the Global Volume.
+
+
+### 2026-10-11 — Persistent source and runtime archival is now an explicit build requirement
+- User clarified that this is an ongoing reusable platform build, not disposable testing. The permanent requirement is: every meaningful change must be in GitHub version history and backed by a versioned snapshot on the mounted Global Volume; runtime packages/assets must be reconstructible without preserving every ephemeral `/tmp` file.
+- Added `ops/PERSISTENCE.md` documenting the authority and purpose of GitHub, Global Volume, Pod-local temporary storage and the independent Azure backup.
+- Added `ops/sync_global_volume.sh`. It verifies that `/workspace` is mounted as the expected Global Volume, resolves a full GitHub commit SHA, downloads and validates that complete source archive, stores it immutably at `/workspace/ai-platform-backups/source-snapshots/`, verifies its SHA-256, inventories existing runtime backup/wheelhouse/model artifacts, and captures copies/checksums of deployed runtime Python files if present. It does not copy API keys or other secrets.
+- Existing persistent assets already noted: model in `/workspace/gemma-4-31B-it/`; vLLM runtime archive/frozen requirements/manifest/install script in `/workspace/runtime-setup/`; PDF/XLSX wheels and checksums in `/workspace/runtime-setup/rag-wheelhouse/`; Azure remains an independent backup.
+- **Important status:** the new source snapshot script has been committed to GitHub, but the user has not yet run it on the live Pod. Do not claim the complete GitHub source snapshot is already mirrored to the Global Volume until a successful run confirms the archive and manifest paths.
+- Operating rule: after every meaningful code/config/dependency/model/runtime change, commit source/tests/docs in GitHub, run tests, run `ops/sync_global_volume.sh`, and check the checksum output. Do not treat Pod-local `/tmp` content or temporary API keys as persistent assets.
