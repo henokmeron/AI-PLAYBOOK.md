@@ -116,3 +116,16 @@ The user ran the guarded upgrade script after the loader unit tests passed. The 
 Detailed report: [gateway-after-loader-upgrade-2026-10-11.md](results/gateway-after-loader-upgrade-2026-10-11.md).
 
 Scope note: those live RAG smoke tests used the existing Markdown demo files. End-to-end API queries from CSV/HTML/DOCX still need a separate integration test; the parser unit tests passing alone don't prove the gateway's live import and processing path for each format.
+
+
+## Verify CSV/DOCX through the live API
+
+The focused parser unit tests pass. Before claiming those formats work through the HTTP API, run the isolated integration check:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/api/test_format_ingestion.sh -o /tmp/test_format_ingestion.sh && bash /tmp/test_format_ingestion.sh
+```
+
+It starts a temporary gateway on loopback port 8011 using a separate temporary app directory and two temporary sample files, tests CSV and DOCX source attribution, then stops the temporary gateway and cleans up its test files. The existing gateway at 8010 and vLLM on port 8000 are not modified. For this test only, `RAG_MIN_SCORE=0` is used because the demo threshold was calibrated for the two Markdown sample documents, not this different corpus.
+
+The script uses the current local API key but does not print it. Never expose port 8011 publicly.
