@@ -827,3 +827,12 @@ Research should lead to a decision, not a pile of links. Every research report s
 - The new loader has now passed its focused parser suite; the existing 10 retrieval tests were also previously confirmed to pass.
 - Next: run the guarded gateway upgrade script to deploy the updated shared loader/retrieval modules and re-test health, unauthenticated rejection, supported RAG answer/source metadata, and low-relevance abstention. The script upgrades only the gateway and does not restart the model server.
 - PDF/XLSX ingestion remains deferred pending a deliberate parser/dependency choice.
+
+
+### 2026-10-11 — Gateway upgraded after loader tests; smoke tests passed
+- After the dedicated loader suite passed 8/8, the guarded upgrade script fetched and syntax-checked the gateway and shared retrieval module, stopped/restarted only the gateway, and left vLLM running.
+- Health check passed; unauthenticated RAG request was rejected; supported expense question returned "10 business days" with source metadata; low-relevance question was blocked before model generation (score 0.69 < demo threshold 2.30).
+- User screenshot confirms `ALL GATEWAY + RAG API TESTS PASSED`.
+- Detailed result: `api/results/gateway-after-loader-upgrade-2026-10-11.md`.
+- Validation boundary: live smoke tests still use the Markdown demo corpus. Parser unit tests passed for CSV/HTML/DOCX, but actual live RAG API requests against those file types remain unverified.
+- Next: add a separate fictional CSV and DOCX to the configured RAG document folder, ask a question whose answer exists only in each one through `POST /v1/rag/ask`, and confirm source metadata points to the correct source file. Do not expose the gateway or use real customer data.
