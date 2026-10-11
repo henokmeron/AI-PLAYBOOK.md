@@ -81,3 +81,10 @@ Do not copy the temporary API key or other secrets into persistent snapshots. Un
 The user confirmed successful output from `ops/sync_global_volume.sh`. GitHub commit `404dad8e59363ff7882b0cbb05bae1640e1e3d1a` was archived and checksum-verified at `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-404dad8e59363ff7882b0cbb05bae1640e1e3d1a.tar.gz`; manifest at `/workspace/ai-platform-backups/manifests/global-volume-manifest-404dad8e59363ff7882b0cbb05bae1640e1e3d1a.txt`. See [the dated snapshot record](results/global-volume-snapshot-2026-10-11.md).
 
 This is the first confirmed copy, not the latest source after this note. Re-run the sync script after the note is committed to create a newer snapshot that includes it.
+
+
+## Snapshot after document-management tests — 2026-10-11
+
+The user confirmed a newer successful snapshot at commit `bd44a9d3bca78837c039fca140b2d8543b0bab83`; its checksum passed. Archive: `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-bd44a9d3bca78837c039fca140b2d8543b0bab83.tar.gz`. Manifest: `/workspace/ai-platform-backups/manifests/global-volume-manifest-bd44a9d3bca78837c039fca140b2d8543b0bab83.txt`. Full record: [snapshot report](results/global-volume-document-management-snapshot-2026-10-11.md).
+
+Next persistence verification is to deploy the latest gateway and save/read a small, non-sensitive canary document under `/workspace/rag-managed-docs/`. The source snapshot above predates this added snapshot report and any subsequent gateway deployment/test code; run the sync script again after the next verified milestone.
