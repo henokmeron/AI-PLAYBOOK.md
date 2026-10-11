@@ -85,3 +85,6 @@ curl -sS -X POST http://127.0.0.1:8010/v1/rag/ask \
 ```
 
 Do not expose this loopback-only prototype publicly. The shared key is temporary; the BM25 score threshold is demo-corpus-only. Production needs proper identity/tenancy, HTTPS, secret management, access-controlled document sources, durable auditability, calibrated retrieval, monitoring and security review.
+
+
+The fresh deployment smoke script (`api/run_gateway_smoke.sh`) now also downloads the shared `rag_engine.py` module and checks the new `/v1/rag/ask` route, including unauthenticated rejection, supported answer plus source metadata, and low-relevance abstention. For an already-running old gateway, use the guarded `api/upgrade_gateway_with_rag_smoke.sh` instead; it preserves the key and has a rollback path.
