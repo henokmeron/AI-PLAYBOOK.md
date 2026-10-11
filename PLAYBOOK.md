@@ -755,3 +755,11 @@ Research should lead to a decision, not a pile of links. Every research report s
 - The local loopback gateway remains at `http://127.0.0.1:8010`; the ephemeral key is in `/tmp/platform-gateway.key` only. Never commit or print the key. Do not expose port 8010 publicly.
 - Updated `rag/ask_documents.py` to accept `--api-key-file`; when provided, it adds a bearer authorization header to chat requests. The local gateway currently does not proxy `/v1/models`, so `--model` must be supplied with this mode. The old direct-vLLM mode remains the default when the API key file is omitted.
 - Next test: run the RAG question against `http://127.0.0.1:8010/v1` with `--api-key-file /tmp/platform-gateway.key` and the explicit Gemma model ID. Verify the answer and that gateway logs show the request path; this validates the actual document-Q&A -> gateway -> vLLM flow.
+
+
+### 2026-10-11 — RAG → authenticated gateway → Gemma confirmed
+- The user ran `rag/ask_documents.py` through `http://127.0.0.1:8010/v1`, using `--api-key-file /tmp/platform-gateway.key` and explicit model ID.
+- It retrieved the expense policy first (score 5.363), and Gemma answered "10 business days" with `[Source 1]`. Screenshot shows 0.57 s single-request inference latency.
+- Detailed record: `rag/results/rag-through-gateway-2026-10-11.md`.
+- The RAG client now uses the authenticated gateway. This is still a CLI-based prototype; the next milestone is a single authenticated `POST /v1/rag/ask` API for future business apps.
+- Keep gateway and vLLM loopback-only. Do not expose the temporary shared-key gateway publicly; production use requires real identity, HTTPS, tenant isolation, durable auditing, managed secrets, quotas and security review.
