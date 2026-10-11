@@ -196,3 +196,18 @@ The user's screenshot confirms the guarded upgrade verified `pypdf 6.20.0`, `ope
 Detailed report: [gateway-after-pdf-xlsx-upgrade-2026-10-11.md](results/gateway-after-pdf-xlsx-upgrade-2026-10-11.md).
 
 Next: run `api/test_format_ingestion.sh` to validate CSV, DOCX, PDF, and XLSX through an isolated temporary HTTP gateway. XLSX remains not end-to-end verified until that test passes.
+
+
+## CSV/DOCX/PDF/XLSX integration passed — 2026-10-11
+
+The user ran `api/test_format_ingestion.sh` successfully against a temporary gateway on port 8011:
+- CSV returned "Visitors must check in at Gate C" from `visitor-rules.csv`.
+- DOCX returned Project Helios launch review on 18 November from `launch-review.docx`.
+- PDF returned Project Orion purchase order review on 23 November from `project-review.pdf`.
+- XLSX returned "The Q4 marketing budget is 27,500" from `department-budget.xlsx`.
+
+All four API responses were `answered` with source metadata. The test confirmed the temporary gateway stopped and the main gateway at 8010 and vLLM at 8000 were untouched.
+
+Detailed evidence: [csv-docx-pdf-xlsx-integration-2026-10-11.md](results/csv-docx-pdf-xlsx-integration-2026-10-11.md).
+
+Scope: this verifies the specific synthetic sample files through the API, not every real-world layout. OCR, formula recalculation, robust tables/layout, multi-user access and production security remain separate work.
