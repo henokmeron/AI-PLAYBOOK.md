@@ -33,3 +33,8 @@ A non-zero exit code means at least one check failed or the API could not be rea
 ## Baseline recording
 
 Do not mark Gemma as approved/production based on these four checks. Record the date, runtime profile, outputs, pass rate, and known limitations. Run the same tests against each candidate model with the same prompts and comparable settings.
+
+
+## First recorded result — 2026-10-11
+
+The first run against the current Gemma 4 31B-it vLLM server passed all four checks: instruction following, arithmetic, use of supplied information, and JSON output. Recorded results and individual timings are in [the dated baseline report](results/gemma-4-31b-smoke-2026-10-11.md). These are smoke tests, not a production approval; keep the registry at prototype-baseline/pending broader evaluation.
