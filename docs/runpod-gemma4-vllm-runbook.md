@@ -222,3 +222,12 @@ Next, verify with `cd /workspace/runtime-setup && sha256sum -c SHA256SUMS && zst
 User ran `cd /workspace/runtime-setup && sha256sum -c SHA256SUMS && zstd -t vllm-clean-env.tar.zst`. Screenshot confirms all of the following returned `OK`: `vllm-clean-env.tar.zst`, `requirements-frozen.txt`, `runtime-manifest.txt`, and `install-vllm.sh`. `zstd -t` also passed and reported 8,422,993,920 bytes of uncompressed archive content.
 
 The archive and supporting files are now integrity-verified on Global Volume. **Restoration is not yet tested.** Do not extract it over `/tmp/vllm-clean-env` while the server is running. A safe restore test should be done in a separate compatible Pod/container or another path only after accounting for Python virtualenv absolute shebangs and executable paths. Keep the serving Pod and Global Volume/model intact until there is an explicit decision about the restore test and compute cost.
+
+
+## Checksum verification passed — 2026-10-11 20:37 (user screenshot)
+
+Command `sha256sum -c SHA256SUMS && zstd -t vllm-clean-env.tar.zst` succeeded. All four checksum entries are `OK`: the environment archive, frozen requirements, runtime manifest, and install script. The zstd archive test passed and detected 8,422,993,920 uncompressed bytes. This confirms integrity of the persisted copy at this point in time.
+
+### Restore safety rule
+
+Do not restore over an existing `/tmp/vllm-clean-env` while the model server is running. First check if the target path already exists and check local disk space. For a proper recovery test, use a fresh compatible Pod/container with the Global Volume attached, verify the checksum, extract to `/tmp/vllm-clean-env`, then test `vllm --version`, PyTorch CUDA/GPU detection, and an actual chat completion. Until that test passes, label the archive integrity-verified but not restore-verified.
