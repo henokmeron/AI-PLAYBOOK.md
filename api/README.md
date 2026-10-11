@@ -267,3 +267,10 @@ curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/ops/
 ```
 
 This verifies that the Global Volume is mounted, uploads a small fictional canary using the real gateway, checks the file exists at the expected path under `/workspace/rag-managed-docs`, lists it through the API, and asks a question that should retrieve the canary. It deliberately leaves this non-sensitive tiny canary in a uniquely named collection for a later cross-Pod attach test. It does not print the API key or restart vLLM.
+
+
+## Live Global Volume document test passed — 2026-10-11
+
+The user confirmed a live API canary upload/list/query test succeeded on the mounted Global Volume. The fictional file `global-volume-canary.md` (136 bytes) exists at `/workspace/rag-managed-docs/global-canary-1791758676/global-volume-canary.md`, was listed by the API, and the RAG endpoint returned the expected verification code with source metadata. The canary remains intentionally stored for a future cross-Pod re-attach test.
+
+Detailed evidence: [live persistence report](results/live-global-volume-document-persistence-2026-10-11.md). This test does not yet prove survival across Pod recreation/re-attachment.
