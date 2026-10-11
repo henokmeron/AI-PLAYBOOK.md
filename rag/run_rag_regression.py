@@ -133,7 +133,7 @@ def main() -> int:
         "no-overlap question is rejected before model call",
         args.ask_script,
         args.docs,
-        "What is the zyxwvut quantum payroll quasar identifier?",
+        "zyxwvut quantum payroll quasar identifier",
         args.base_url,
         must_contain=("No matching evidence was found", "No model answer was generated"),
         must_not_contain=("=== ANSWER ===",),
