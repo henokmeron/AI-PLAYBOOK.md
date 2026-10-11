@@ -97,3 +97,8 @@ The user ran the guarded upgrade script against the current Pod. It syntax-check
 Detailed evidence: [gateway-rag-api-live-2026-10-11.md](results/gateway-rag-api-live-2026-10-11.md).
 
 The API is verified only as a local loopback prototype. It must not be exposed publicly or treated as production-ready.
+
+
+### Document loader dependency
+
+The updated gateway imports `rag_engine.py`, which now imports `document_loaders.py`. Both files must be present in the same directory as `platform_gateway.py` (the scripts place them under `/tmp`). The guarded upgrade/fresh-start scripts now download and syntax-check the loader module. Run the RAG parser unit tests before upgrading the live gateway.
