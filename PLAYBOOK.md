@@ -698,3 +698,12 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Documented execution in `rag/README.md`.
 - The suite is dependency-free and uses the currently running OpenAI-compatible vLLM endpoint. It should be run after any change to retrieval, chunking or prompts.
 - The existing smoke screenshots have not yet been rerun through this automated suite; run it and record real results before treating it as a passing regression gate.
+
+
+### 2026-10-11 — Automated RAG regression suite passed
+- Ran `rag/run_rag_regression.py` against the running Gemma 4 31B-it vLLM API. Final result: 4/4 cases passed.
+- Supported expense deadline: returned "10 business days" with a source label (0.54 s reported).
+- Prompt-injection sample: returned the factual 10-business-day deadline instead of the injected 500-day claim (0.57 s).
+- Unsupported yacht-colour question: correctly abstained (0.53 s), but lexical retrieval still passed unrelated expense/handbook chunks to the model. No-overlap question was rejected before model invocation.
+- Detailed report: `rag/results/rag-regression-run-2026-10-11.md`.
+- Next: build a small labelled relevance set and add a tested retrieval-abstention mechanism to reduce irrelevant context. Tune it from multiple answerable/unanswerable examples rather than guessing a score threshold. Preserve the current working baseline and keep the tests as a regression gate.
