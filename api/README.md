@@ -88,3 +88,12 @@ Do not expose this loopback-only prototype publicly. The shared key is temporary
 
 
 The fresh deployment smoke script (`api/run_gateway_smoke.sh`) now also downloads the shared `rag_engine.py` module and checks the new `/v1/rag/ask` route, including unauthenticated rejection, supported answer plus source metadata, and low-relevance abstention. For an already-running old gateway, use the guarded `api/upgrade_gateway_with_rag_smoke.sh` instead; it preserves the key and has a rollback path.
+
+
+## Live RAG API test passed — 2026-10-11
+
+The user ran the guarded upgrade script against the current Pod. It syntax-checked the new gateway and shared retrieval engine, restarted only the gateway, confirmed upstream health, rejected unauthenticated RAG requests, returned the correct source-cited expense deadline for an authenticated RAG request, and abstained on the low-relevance yacht question before generation. Final output: `ALL GATEWAY + RAG API TESTS PASSED.`
+
+Detailed evidence: [gateway-rag-api-live-2026-10-11.md](results/gateway-rag-api-live-2026-10-11.md).
+
+The API is verified only as a local loopback prototype. It must not be exposed publicly or treated as production-ready.
