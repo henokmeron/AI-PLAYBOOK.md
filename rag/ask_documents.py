@@ -78,7 +78,7 @@ def load_chunks(folder: Path) -> list[Chunk]:
             if tokens:
                 chunks.append(Chunk(relative, index, part, tokens, Counter(tokens)))
     if not chunks:
-        raise RuntimeError(f"No readable non-empty .txt or .md document chunks found in {folder}")
+        raise RuntimeError(f"No readable non-empty supported document chunks found in {folder}")
     return chunks
 
 
@@ -141,7 +141,7 @@ def request_json(url: str, payload: dict[str, Any] | None = None, timeout: int =
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--docs", type=Path, required=True, help="Folder containing .md/.txt business documents")
+    parser.add_argument("--docs", type=Path, required=True, help="Folder containing supported business documents (.txt, .md, .csv, .html, .docx)")
     parser.add_argument("--question", required=True, help="Question to answer from the supplied documents")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000/v1", help="OpenAI-compatible API base URL")
     parser.add_argument("--model", default=None, help="Model ID; defaults to first ID returned by /models when using direct vLLM")
