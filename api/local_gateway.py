@@ -36,7 +36,9 @@ RAG_MANAGED_DOCS_DIR = Path(os.environ.get("RAG_MANAGED_DOCS_DIR", "/workspace/r
 # 2.30 is calibrated only for the two-file fictional demo corpus. Managed collections
 # inherit it unless explicitly configured; calibrate the threshold for every real corpus.
 RAG_MIN_SCORE = float(os.environ.get("RAG_MIN_SCORE", "2.30"))
-RAG_MANAGED_MIN_SCORE = float(os.environ.get("RAG_MANAGED_MIN_SCORE", str(RAG_MIN_SCORE)))
+# Managed collection score cutoff defaults to 0 until a corpus-specific calibration is run.
+# This is prototype behaviour, not a production quality/safety guarantee.
+RAG_MANAGED_MIN_SCORE = float(os.environ.get("RAG_MANAGED_MIN_SCORE", "0.0"))
 MAX_BODY_BYTES = 1_048_576
 MAX_UPLOAD_BODY_BYTES = 14 * 1024 * 1024
 MAX_QUESTION_CHARS = 2000
