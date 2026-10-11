@@ -173,3 +173,10 @@ This verifies those specific text-based samples end to end, not every real-world
 The shared document loader now accepts `.xlsx` through pinned `openpyxl==3.1.5`, `et-xmlfile==2.0.0` and `defusedxml==0.7.1` extracted to `/tmp/rag-deps`. The guarded gateway upgrade and fresh-start scripts verify the PDF and XLSX package set. The combined format integration script now checks CSV, DOCX, PDF and XLSX through an isolated temporary gateway on port 8011.
 
 See [XLSX support notes](../rag/XLSX_SUPPORT.md). End-to-end XLSX integration remains pending until the parser suite passes, the main gateway is upgraded, and the combined format test passes.
+
+
+## XLSX parser tests passed — 2026-10-11
+
+The user ran `rag/setup_xlsx_support.sh` and then the focused parser suite with `PYTHONPATH=/tmp/rag-deps`. Screenshot confirms expected package versions and **16/16 tests passed**. Detailed report: [document-loader-tests-with-xlsx-2026-10-11.md](../rag/results/document-loader-tests-with-xlsx-2026-10-11.md).
+
+The next step is to run the guarded gateway upgrade, then the four-format API integration test. Do not claim XLSX is live end-to-end until the XLSX HTTP case passes.
