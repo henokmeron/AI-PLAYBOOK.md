@@ -44,6 +44,7 @@ mkdir -p "$APP_DIR" "$DOCS_DIR"
 curl -fsSL "$BASE/api/local_gateway.py" -o "$APP_DIR/local_gateway.py"
 curl -fsSL "$BASE/rag/rag_engine.py" -o "$APP_DIR/rag_engine.py"
 curl -fsSL "$BASE/rag/document_loaders.py" -o "$APP_DIR/document_loaders.py"
+curl -fsSL "$BASE/rag/document_library.py" -o "$APP_DIR/document_library.py"
 
 cat > "$DOCS_DIR/visitor-rules.csv" <<'CSV'
 rule,detail
@@ -113,10 +114,10 @@ workbook.save(path)
 workbook.close()
 PY
 
-"$PYTHON" -m py_compile "$APP_DIR/local_gateway.py" "$APP_DIR/rag_engine.py" "$APP_DIR/document_loaders.py"
+"$PYTHON" -m py_compile "$APP_DIR/local_gateway.py" "$APP_DIR/rag_engine.py" "$APP_DIR/document_loaders.py" "$APP_DIR/document_library.py"
 API_KEY="$(cat "$KEY_FILE")"
 PYTHONPATH=/tmp/rag-deps PLATFORM_HOST=127.0.0.1 PLATFORM_PORT=8011 PLATFORM_API_KEY="$API_KEY" \
-  VLLM_UPSTREAM_URL=http://127.0.0.1:8000/v1 RAG_DOCS_DIR="$DOCS_DIR" RAG_MIN_SCORE=0 \
+  VLLM_UPSTREAM_URL=http://127.0.0.1:8000/v1 RAG_DOCS_DIR="$DOCS_DIR" RAG_MANAGED_DOCS_DIR="$APP_DIR/managed" RAG_MIN_SCORE=0 RAG_MANAGED_MIN_SCORE=0 \
   UV_CACHE_DIR=/tmp/uv-cache TMPDIR=/tmp \
   nohup "$PYTHON" "$APP_DIR/local_gateway.py" > "$LOG_FILE" 2>&1 </dev/null &
 TEST_PID=$!
