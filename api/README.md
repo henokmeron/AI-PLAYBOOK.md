@@ -165,7 +165,7 @@ All three returned `status: answered` with source citations and correct source f
 
 Full report: [csv-docx-pdf-integration-2026-10-11.md](results/csv-docx-pdf-integration-2026-10-11.md).
 
-This verifies those specific text-based samples end to end, not every real-world document layout. Scanned PDFs/OCR, password-protected PDFs, XLSX, and production security remain separate tasks.
+This verifies those specific text-based samples end to end, not every real-world document layout. Scanned PDFs/OCR, password-protected PDFs, and production security remain separate tasks. XLSX has since been added in code and is pending its own parser and API integration tests.
 
 
 ## Excel XLSX support — validation pending
