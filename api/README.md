@@ -211,3 +211,32 @@ All four API responses were `answered` with source metadata. The test confirmed 
 Detailed evidence: [csv-docx-pdf-xlsx-integration-2026-10-11.md](results/csv-docx-pdf-xlsx-integration-2026-10-11.md).
 
 Scope: this verifies the specific synthetic sample files through the API, not every real-world layout. OCR, formula recalculation, robust tables/layout, multi-user access and production security remain separate work.
+
+
+## Persistent document collection management — implementation added, live test pending
+
+The gateway now includes authenticated document operations:
+- `POST /v1/rag/documents`: upload a base64-encoded file to a named collection under `RAG_MANAGED_DOCS_DIR`. Decoded files are limited to 10 MiB. The content is parsed before storing; path-traversal names and unsupported extensions are rejected. Duplicate uploads return 409 by default; explicitly send `overwrite: true` to replace one.
+- `GET /v1/rag/documents?collection=finance`: list filenames, sizes and extensions without exposing document contents.
+- `DELETE /v1/rag/documents?collection=finance&filename=policy.pdf`: delete one validated filename from that collection.
+- `POST /v1/rag/ask` accepts `collection` to query only that collection instead of the demo corpus.
+
+The live gateway is configured to persist managed collections under `/workspace/rag-managed-docs` on the mounted Global Volume when upgraded. For safety, first run the no-GPU document-library unit tests and the isolated API management test before upgrading the main gateway.
+
+### Test first (no model changes)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/document_loaders.py -o /tmp/document_loaders.py
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/document_library.py -o /tmp/document_library.py
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/rag/tests/test_document_library.py -o /tmp/test_document_library.py
+/tmp/vllm-clean-env/bin/python -m py_compile /tmp/document_loaders.py /tmp/document_library.py /tmp/test_document_library.py
+PYTHONPATH=/tmp/rag-deps /tmp/vllm-clean-env/bin/python /tmp/test_document_library.py
+```
+
+Then test all HTTP operations on a temporary loopback gateway and temporary `/tmp` storage; that script will not write to Global Volume or restart the main gateway:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/api/test_document_management.sh -o /tmp/test_document_management.sh && bash /tmp/test_document_management.sh
+```
+
+The managed collection threshold is separately configurable and currently defaults to `0.0` for the prototype, which means any nonzero BM25 match may be sent to the model. This is **not a calibrated relevance threshold**; expand the collection evaluation and calibrate before any customer/business use. The demo corpus keeps its separate 2.30 threshold.
