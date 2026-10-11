@@ -256,3 +256,14 @@ Next: upgrade the main gateway using the guarded script (it downloads `document_
 The guarded gateway upgrade sets `RAG_MANAGED_DOCS_DIR=/workspace/rag-managed-docs`, a path on the mounted Global Volume. After upgrading and passing gateway smoke checks, run `ops/test_persistent_document_storage.sh`. It uploads a small non-sensitive canary document using the live API, verifies the file physically exists under the configured mounted directory, lists it through the API, and asks a question whose answer is in that document. It deliberately leaves the small canary in a uniquely named collection for a future Pod re-attach persistence check.
 
 This test proves live writes and reads on the Global Volume mount; a true cross-Pod persistence check requires attaching the same Global Volume to another Pod later. Do not upload actual customer documents yet.
+
+
+## Live Global Volume canary test — ready to run after gateway upgrade
+
+The guarded gateway upgrade downloads `document_library.py` and sets `RAG_MANAGED_DOCS_DIR=/workspace/rag-managed-docs`. After that upgrade succeeds, run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/henokmeron/AI-PLAYBOOK.md/main/ops/test_persistent_document_storage.sh -o /tmp/test_persistent_document_storage.sh && bash -n /tmp/test_persistent_document_storage.sh && bash /tmp/test_persistent_document_storage.sh
+```
+
+This verifies that the Global Volume is mounted, uploads a small fictional canary using the real gateway, checks the file exists at the expected path under `/workspace/rag-managed-docs`, lists it through the API, and asks a question that should retrieve the canary. It deliberately leaves this non-sensitive tiny canary in a uniquely named collection for a later cross-Pod attach test. It does not print the API key or restart vLLM.
