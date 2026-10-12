@@ -197,6 +197,71 @@ class DocumentLoaderTests(unittest.TestCase):
         self.assertIn("C3/Daily rate=150", text)
         self.assertNotIn("C2/Daily rate=150", text)
 
+    def test_xlsx_stacks_multi_row_headers_for_age_band_tables(self) -> None:
+        path = self.root / "carer-fees.xlsx"
+        self.make_xlsx(
+            path,
+            [
+                [None, None, "Carer fee 2026/27", None, None],
+                [None, "Aged 0-4 Years", "Aged 5-10 Years", "Aged 11-15 Years", "Aged 16-17 Years"],
+                [
+                    "Placement Type",
+                    "New Daily Rate Excl. Respite",
+                    "New Daily Rate Excl. Respite",
+                    "New Daily Rate Excl. Respite",
+                    "New Daily Rate Excl. Respite",
+                ],
+                ["Standard Placements", 66.3, 70.8, 76.5, 83],
+                ["Complex Placements", 99.49800000000002, 106.2, 114.75, 124.5],
+                ["Parent and Child Placements", 122.6, "N/A", "N/A", "N/A"],
+            ],
+            sheet_name="Sheet1",
+        )
+        text = read_document(path)
+        self.assertIn("Aged 0-4 Years", text.split("B4/", 1)[1].split("=", 1)[0])
+        self.assertRegex(text, r"B4/.*=66\.3")
+        self.assertIn("B5/", text)
+        self.assertIn("=99.498", text)
+        self.assertNotIn("99.49800000000002", text)
+        self.assertIn("N/A", text)
+        # Every placement/data row remains present and retrievable as its own line.
+        for row_number in (4, 5, 6):
+            self.assertIn(f"Sheet: Sheet1 | Row {row_number}:", text)
+        chunks = load_chunks(self.root)
+        ranked = retrieve(
+            "List every age band and placement type with daily rates",
+            chunks,
+            top_k=4,
+        )
+        self.assertTrue(ranked)
+        joined = "\n".join(chunk.text for _, chunk in ranked)
+        self.assertIn("Standard Placements", joined)
+        self.assertIn("Complex Placements", joined)
+        self.assertIn("Parent and Child Placements", joined)
+        self.assertIn("Aged 16-17 Years", joined)
+
+    def test_xlsx_float_artefacts_and_money_helpers(self) -> None:
+        from decimal import Decimal
+
+        from document_loaders import (
+            format_money_gbp,
+            render_xlsx_cell_value,
+            sanitize_excel_float,
+            weekly_from_daily,
+        )
+
+        stored = sanitize_excel_float(99.49800000000002)
+        self.assertEqual(stored, Decimal("99.498"))
+        self.assertEqual(render_xlsx_cell_value(99.49800000000002), "99.498")
+        self.assertIn(
+            "workbook displays £99.50",
+            render_xlsx_cell_value(99.49800000000002, '"£"#,##0.00'),
+        )
+        weekly = weekly_from_daily(stored, days=7)
+        self.assertEqual(weekly, Decimal("696.486"))
+        self.assertEqual(format_money_gbp(weekly), "£696.49")
+        self.assertEqual(render_xlsx_cell_value("N/A"), "N/A")
+
     def test_rag_engine_indexes_xlsx_and_preserves_source_name(self) -> None:
         path = self.root / "quarterly-results.xlsx"
         self.make_xlsx(

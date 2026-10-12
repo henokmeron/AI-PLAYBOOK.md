@@ -8,6 +8,7 @@ PDFs containing only scanned images require OCR and are intentionally rejected.
 from __future__ import annotations
 
 import csv
+from decimal import Decimal, ROUND_HALF_UP
 from html.parser import HTMLParser
 import io
 from pathlib import Path
@@ -193,6 +194,131 @@ def _read_pdf(path: Path) -> str:
     return "\\n\\n".join(pages)
 
 
+def sanitize_excel_float(value: float) -> Decimal:
+    """Convert an IEEE float from Excel into a Decimal without binary tails.
+
+    Excel stores many cells as binary floats (for example 99.498 becoming
+    99.49800000000002). This keeps the stored magnitude; it does not invent a
+    different business amount or apply currency rounding.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError("sanitize_excel_float expects a non-bool int or float")
+    if isinstance(value, int):
+        return Decimal(value)
+    text = format(Decimal(str(float(value))), "f")
+    if "000000" in text or "999999" in text:
+        cleaned = Decimal(str(float(value))).quantize(Decimal("1e-10"))
+    else:
+        cleaned = Decimal(str(float(value)))
+    normalized = cleaned.normalize()
+    # Avoid scientific notation for ordinary spreadsheet magnitudes.
+    rendered = format(normalized, "f")
+    if "." in rendered:
+        rendered = rendered.rstrip("0").rstrip(".")
+    return Decimal(rendered or "0")
+
+
+def format_money_gbp(amount: Decimal | float | int | str) -> str:
+    """Format a monetary amount for display as pounds to two decimal places."""
+    value = amount if isinstance(amount, Decimal) else Decimal(str(amount))
+    quantized = value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return f"£{quantized}"
+
+
+def weekly_from_daily(daily: Decimal | float | int | str, days: int = 7) -> Decimal:
+    """Derive a weekly amount as daily × days using decimal arithmetic."""
+    if days <= 0:
+        raise ValueError("days must be a positive integer")
+    if isinstance(daily, Decimal):
+        rate = daily
+    elif isinstance(daily, float):
+        rate = sanitize_excel_float(daily)
+    elif isinstance(daily, bool):
+        raise TypeError("boolean values are not daily rates")
+    else:
+        rate = Decimal(str(daily))
+    return rate * Decimal(days)
+
+
+def _is_numeric_xlsx_value(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _currency_display(value: Decimal, number_format: str | None) -> str | None:
+    if not number_format:
+        return None
+    fmt = number_format.casefold()
+    if "£" in number_format or "[$£" in fmt or "gbp" in fmt:
+        return format_money_gbp(value)
+    if "€" in number_format or "[$€" in fmt:
+        quantized = value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return f"€{quantized}"
+    if "$" in number_format and "red" not in fmt.replace("£", ""):
+        # Conservative: only treat clear currency formats as display money.
+        if '"$"$' in number_format or number_format.startswith("$#") or '"$"#' in number_format:
+            quantized = value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            return f"${quantized}"
+    return None
+
+
+def render_xlsx_cell_value(value: object, number_format: str | None = None) -> str:
+    """Render one workbook cell for retrieval without inventing missing values."""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if hasattr(value, "isoformat") and callable(value.isoformat):
+        return value.isoformat()
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    if isinstance(value, float):
+        stored = sanitize_excel_float(value)
+        rendered = format(stored, "f")
+        if "." in rendered:
+            rendered = rendered.rstrip("0").rstrip(".")
+        display = _currency_display(stored, number_format)
+        if display and display.lstrip("£€$") != rendered:
+            return f"{rendered} (workbook displays {display})"
+        return rendered or "0"
+    text = str(value).strip()
+    return text
+
+
+def _combine_column_headers(header_rows: list[list[str | None]], column_count: int) -> list[str | None]:
+    """Stack label rows above the first numeric data row into one header per column."""
+    combined: list[str | None] = []
+    for column_index in range(column_count):
+        parts: list[str] = []
+        seen: set[str] = set()
+        for row in header_rows:
+            if column_index >= len(row):
+                continue
+            part = row[column_index]
+            if not part:
+                continue
+            key = part.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            parts.append(part)
+        combined.append(" / ".join(parts) if parts else None)
+    return combined
+
+
+def _xlsx_cell_coordinate(cell: object, row_index: int, column_index: int) -> str:
+    """Resolve A1-style coordinates, including openpyxl EmptyCell placeholders."""
+    coordinate = getattr(cell, "coordinate", None)
+    if isinstance(coordinate, str) and coordinate:
+        return coordinate
+    try:
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        return f"C{column_index}R{row_index}"
+    row_number = getattr(cell, "row", None) or row_index
+    column_number = getattr(cell, "column", None) or column_index
+    return f"{get_column_letter(int(column_number))}{int(row_number)}"
+
+
 def _read_xlsx(path: Path) -> str:
     # Optional packages are kept in /tmp/rag-deps, separate from vLLM/PyTorch.
     try:
@@ -256,52 +382,87 @@ def _read_xlsx(path: Path) -> str:
                 )
             sheet_label = f"Sheet: {sheet.title} (state: {sheet.sheet_state})"
             output.append(sheet_label)
-            row_count = 0
-            headers: list[str | None] = []
+            # Buffer rows so multi-line headers (title / age bands / units) can be
+            # stacked before the first numeric data row instead of freezing on row 1.
+            buffered_rows: list[tuple[int, list[tuple[str, object, str | None]]]] = []
             for row_index, row in enumerate(sheet.iter_rows(values_only=False), start=1):
-                row_count = row_index
-                if row_count > MAX_XLSX_ROWS_PER_SHEET:
+                if row_index > MAX_XLSX_ROWS_PER_SHEET:
                     raise DocumentLoadError(
                         f"worksheet {sheet.title!r} in {path.name} exceeds the row limit"
                     )
-                values: list[str] = []
-                row_headers: list[str | None] = []
-                for column_index, cell in enumerate(row):
-                    value = cell.value
+                cells: list[tuple[str, object, str | None]] = []
+                for column_index, cell in enumerate(row, start=1):
+                    coordinate = _xlsx_cell_coordinate(cell, row_index, column_index)
+                    value = getattr(cell, "value", None)
                     if value is None or (isinstance(value, str) and not value.strip()):
-                        row_headers.append(None)
+                        cells.append((coordinate, None, None))
                         continue
-                    if hasattr(value, "isoformat") and callable(value.isoformat):
-                        rendered = value.isoformat()
-                    elif isinstance(value, bool):
-                        rendered = "TRUE" if value else "FALSE"
-                    else:
-                        rendered = str(value).strip()
+                    number_format = getattr(cell, "number_format", None)
+                    cells.append((coordinate, value, number_format))
+                if any(value is not None for _, value, _ in cells):
+                    buffered_rows.append((row_index, cells))
+
+            header_label_rows: list[list[str | None]] = []
+            headers: list[str | None] = []
+            headers_frozen = False
+            for row_index, cells in buffered_rows:
+                column_count = max(len(cells), len(headers), 1)
+                label_row: list[str | None] = [None] * column_count
+                has_numeric = False
+                values: list[str] = []
+                for column_index, (coordinate, value, number_format) in enumerate(cells):
+                    if value is None:
+                        continue
+                    if _is_numeric_xlsx_value(value):
+                        has_numeric = True
+                    rendered = render_xlsx_cell_value(value, number_format)
                     if not rendered:
-                        row_headers.append(None)
                         continue
-                    row_headers.append(rendered)
-                    header = headers[column_index] if column_index < len(headers) else None
-                    if header:
-                        values.append(f"{cell.coordinate}/{header}={rendered}")
+                    label_row[column_index] = rendered
+                    if headers_frozen:
+                        header = headers[column_index] if column_index < len(headers) else None
+                        if header:
+                            values.append(f"{coordinate}/{header}={rendered}")
+                        else:
+                            values.append(f"{coordinate}={rendered}")
+
+                if not headers_frozen:
+                    if has_numeric:
+                        headers = _combine_column_headers(header_label_rows, column_count)
+                        headers_frozen = True
+                        values = []
+                        for column_index, (coordinate, value, number_format) in enumerate(cells):
+                            if value is None:
+                                continue
+                            rendered = render_xlsx_cell_value(value, number_format)
+                            if not rendered:
+                                continue
+                            header = headers[column_index] if column_index < len(headers) else None
+                            if header:
+                                values.append(f"{coordinate}/{header}={rendered}")
+                            else:
+                                values.append(f"{coordinate}={rendered}")
                     else:
-                        values.append(f"{cell.coordinate}={rendered}")
-                if row_index == 1 and any(row_headers):
-                    # Keep the first non-empty row as column headers for later rows so
-                    # age bands, placement types, units and rates stay associated.
-                    headers = row_headers
+                        header_label_rows.append(label_row)
+                        # Still emit label rows so sheet structure remains searchable.
+                        label_values: list[str] = []
+                        for column_index, (coordinate, value, number_format) in enumerate(cells):
+                            if value is None:
+                                continue
+                            rendered = render_xlsx_cell_value(value, number_format)
+                            if rendered:
+                                label_values.append(f"{coordinate}={rendered}")
+                        if label_values:
+                            values = label_values
+
                 if values:
                     line = f"Sheet: {sheet.title} | Row {row_index}: " + " | ".join(values)
-                    total_chars += len(line)
+                    total_chars += len(line) + 1
                     if total_chars > MAX_EXTRACTED_TEXT_CHARS:
                         raise DocumentLoadError(
                             f"extracted worksheet text from {path.name} exceeds the text limit"
                         )
                     output.append(line)
-                if row_count % 1000 == 0 and total_chars > MAX_EXTRACTED_TEXT_CHARS:
-                    raise DocumentLoadError(
-                        f"extracted worksheet text from {path.name} exceeds the text limit"
-                    )
         text = "\n".join(output).strip()
         if not text or not any(line.startswith("Sheet:") and "| Row " in line for line in output):
             raise DocumentLoadError(f"{path.name} contains no searchable worksheet cell values")

@@ -15,7 +15,15 @@ if (HERE / "rag_engine.py").is_file():
 else:
     sys.path.insert(0, str(HERE.parent))
 
-from rag_engine import load_chunks, retrieve, split_chunks, tokenize  # noqa: E402
+from rag_engine import (  # noqa: E402
+    Chunk,
+    dedupe_ranked_chunks,
+    load_chunks,
+    retrieve,
+    split_chunks,
+    tokenize,
+)
+from collections import Counter  # noqa: E402
 
 
 class TokenizerTests(unittest.TestCase):
@@ -39,6 +47,49 @@ class ChunkingTests(unittest.TestCase):
 
     def test_empty_text_has_no_chunks(self) -> None:
         self.assertEqual(split_chunks(" "), [])
+
+    def test_spreadsheet_rows_are_not_split_mid_line(self) -> None:
+        rows = [
+            "Sheet: Rates (state: visible)",
+            "Sheet: Rates | Row 1: A1=Age band | B1=Daily rate",
+        ]
+        for index in range(2, 40):
+            rows.append(
+                f"Sheet: Rates | Row {index}: A{index}=band-{index} | B{index}/Daily rate={index}.5"
+            )
+        text = "\n".join(rows)
+        chunks = split_chunks(text, max_chars=220, overlap=40)
+        self.assertGreater(len(chunks), 1)
+        for chunk in chunks:
+            for line in chunk.splitlines():
+                if "| Row " in line:
+                    self.assertTrue(line.startswith("Sheet:"))
+                    self.assertIn("=", line)
+
+
+class DuplicateEvidenceTests(unittest.TestCase):
+    def test_dedupe_keeps_both_filenames_for_identical_rows(self) -> None:
+        text = (
+            "Sheet: Sheet1 | Row 4: A4=Standard Placements | B4/Aged 0-4 Years=66.3\n"
+            "Sheet: Sheet1 | Row 5: A5=Complex Placements | B5/Aged 0-4 Years=99.498"
+        )
+        left = Chunk("Banya fees.xlsx", 1, text, tokenize(text), Counter(tokenize(text)))
+        right = Chunk("Fee to carers.xlsx", 1, text, tokenize(text), Counter(tokenize(text)))
+        groups = dedupe_ranked_chunks([(1.2, left), (1.1, right)])
+        self.assertEqual(len(groups), 1)
+        score, chunk, files = groups[0]
+        self.assertEqual(score, 1.2)
+        self.assertEqual(chunk.source, "Banya fees.xlsx")
+        self.assertEqual(files, ["Banya fees.xlsx", "Fee to carers.xlsx"])
+
+    def test_dedupe_keeps_conflicting_workbook_chunks_separate(self) -> None:
+        left_text = "Sheet: Sheet1 | Row 4: A4=Standard | B4=66.3"
+        right_text = "Sheet: Sheet1 | Row 4: A4=Standard | B4=70.0"
+        left = Chunk("a.xlsx", 1, left_text, tokenize(left_text), Counter(tokenize(left_text)))
+        right = Chunk("b.xlsx", 1, right_text, tokenize(right_text), Counter(tokenize(right_text)))
+        groups = dedupe_ranked_chunks([(1.0, left), (0.9, right)])
+        self.assertEqual(len(groups), 2)
+        self.assertEqual({files[0] for _, _, files in groups}, {"a.xlsx", "b.xlsx"})
 
 
 class RetrievalTests(unittest.TestCase):

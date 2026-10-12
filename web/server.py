@@ -644,9 +644,9 @@ class Handler(BaseHTTPRequestHandler):
         if len(question) > MAX_QUESTION_CHARS:
             self.send_error_json(413, f"question must not exceed {MAX_QUESTION_CHARS} characters")
             return
-        top_k = payload.get("top_k", 4)
-        if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 1 or top_k > 10:
-            self.send_error_json(400, "top_k must be an integer from 1 to 10")
+        top_k = payload.get("top_k", 8)
+        if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 1 or top_k > 20:
+            self.send_error_json(400, "top_k must be an integer from 1 to 20")
             return
         try:
             history = validate_rag_history(payload.get("history"))

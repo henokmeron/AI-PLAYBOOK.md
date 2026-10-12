@@ -105,6 +105,22 @@ class RagConversationTests(unittest.TestCase):
         self.assertEqual(messages[1]["role"], "user")
         self.assertNotIn("PRIOR CONVERSATION", messages[1]["content"])
 
+    def test_prompt_covers_completeness_na_money_and_duplicate_files(self) -> None:
+        prompt = gateway.RAG_SYSTEM_PROMPT.casefold()
+        self.assertIn("n/a", prompt)
+        self.assertIn("incomplete", prompt)
+        self.assertIn("two decimal places", prompt)
+        self.assertIn("similar names", prompt)
+        self.assertIn("derived values", prompt)
+        self.assertTrue(gateway.question_requests_broad_coverage(
+            "List every age band and placement type with weekly rates"
+        ))
+        self.assertFalse(gateway.question_requests_broad_coverage(
+            "What is the daily rate for standard placements aged 0-4?"
+        ))
+        self.assertGreaterEqual(gateway.RAG_MAX_TOKENS, 1024)
+        self.assertGreaterEqual(gateway.RAG_TOP_K_MAX, 16)
+
 
 if __name__ == "__main__":
     unittest.main()

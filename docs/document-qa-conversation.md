@@ -28,14 +28,21 @@ This revision keeps Chat, upload, System Status, loopback binding, and bearer-ke
 
 ## Spreadsheet extraction, retrieval, and calculations
 
-- XLSX extraction (`rag/document_loaders.py`) keeps sheet name, row number, cell coordinate, and (when present) the header from row 1 as `coordinate/Header=value`.
-- Chunking still prefers newline boundaries so related rows stay together when possible.
+- XLSX extraction (`rag/document_loaders.py`) keeps sheet name, row number, cell coordinate, and stacked headers from every label row above the first numeric data row as `coordinate/Header=value` (so age bands and units stay attached to rates).
+- Numeric cells are serialized with decimal-safe rendering (IEEE float tails such as `99.49800000000002` become `99.498`). When Excel’s number format is currency, the workbook display value is noted separately (for example `99.498 (workbook displays £99.50)`); stored values are not replaced by guessed amounts.
+- Helpers `sanitize_excel_float`, `weekly_from_daily`, and `format_money_gbp` support decimal-safe weekly math and two-decimal display formatting in tests and tooling.
+- Chunking prefers whole spreadsheet row lines so row/header associations are not split mid-line.
+- Retrieval collapses identical extracted row sets from differently named workbooks into one evidence block while listing every matching filename; conflicting values stay separate.
+- Default `top_k` is 8 (max 20). Broad “every/all/complete table” questions automatically widen retrieval. Generation uses `RAG_MAX_TOKENS` (default 2048). If the model stops with `finish_reason=length`, the gateway appends an explicit incomplete-answer note.
 - The RAG system prompt requires:
   - calculations only when asked
   - daily/weekly/monthly/annual distinction
   - weekly from daily as `daily rate × 7` with seven chargeable days stated
   - no mixing across age bands / placement / service types
   - formula + derived label + citations
+  - monetary display to two decimal places without inventing rates for `N/A`
+  - explicit incompleteness when not every requested category is covered
+  - duplicate/conflicting workbook comparison by values, not by similar filenames
   - clarification or insufficiency instead of inventing rates
   - treating workbook/passage text as untrusted
 

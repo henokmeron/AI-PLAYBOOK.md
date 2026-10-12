@@ -24,10 +24,42 @@ def tokenize(text: str) -> list[str]:
 
 
 def split_chunks(text: str, max_chars: int = 1200, overlap: int = 160) -> list[str]:
+    """Split document text into overlapping chunks, preferring spreadsheet row bounds."""
     text = text.strip()
     if not text:
         return []
-    chunks: list[str] = []
+    # Keep each "Sheet: … | Row N:" line intact so age-band/rate associations survive.
+    if "| Row " in text:
+        lines = text.splitlines()
+        chunks: list[str] = []
+        current: list[str] = []
+        current_len = 0
+        for line in lines:
+            line_len = len(line) + (1 if current else 0)
+            if current and current_len + line_len > max_chars:
+                chunks.append("\n".join(current))
+                # Overlap with prior spreadsheet rows when possible.
+                overlap_lines: list[str] = []
+                overlap_len = 0
+                for prior in reversed(current):
+                    add = len(prior) + (1 if overlap_lines else 0)
+                    if overlap_len + add > overlap and overlap_lines:
+                        break
+                    overlap_lines.insert(0, prior)
+                    overlap_len += add
+                current = overlap_lines
+                current_len = overlap_len
+            if current:
+                current.append(line)
+                current_len += line_len
+            else:
+                current = [line]
+                current_len = len(line)
+        if current:
+            chunks.append("\n".join(current))
+        return chunks
+
+    chunks = []
     start = 0
     while start < len(text):
         end = min(start + max_chars, len(text))
@@ -42,6 +74,38 @@ def split_chunks(text: str, max_chars: int = 1200, overlap: int = 160) -> list[s
             break
         start = max(start + 1, end - overlap)
     return chunks
+
+
+def normalize_evidence_text(text: str) -> str:
+    """Normalize chunk text for duplicate-workbook comparison."""
+    rows = [line.strip() for line in text.splitlines() if "| Row " in line]
+    if rows:
+        return "\n".join(rows)
+    return "\n".join(line.strip() for line in text.splitlines() if line.strip())
+
+
+def dedupe_ranked_chunks(
+    ranked: list[tuple[float, Chunk]],
+) -> list[tuple[float, Chunk, list[str]]]:
+    """Collapse identical evidence from different files while retaining filenames.
+
+    Returns (score, representative_chunk, all_matching_filenames).
+    """
+    groups: list[tuple[float, Chunk, list[str]]] = []
+    index_by_key: dict[str, int] = {}
+    for score, chunk in ranked:
+        key = normalize_evidence_text(chunk.text)
+        existing = index_by_key.get(key)
+        if existing is None:
+            index_by_key[key] = len(groups)
+            groups.append((score, chunk, [chunk.source]))
+            continue
+        best_score, best_chunk, files = groups[existing]
+        if chunk.source not in files:
+            files.append(chunk.source)
+        if score > best_score:
+            groups[existing] = (score, chunk, files)
+    return groups
 
 
 def load_chunks(folder: Path) -> list[Chunk]:
