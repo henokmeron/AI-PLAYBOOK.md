@@ -11,10 +11,14 @@ from document_library import (
     DocumentLibraryError,
     delete_document,
     list_documents,
+    sanitize_history_for_collection,
     store_document,
     validate_collection_name,
     validate_filename,
+    verify_document_removed,
+    verify_document_searchable,
 )
+from rag_engine import load_chunks, retrieve
 
 
 class DocumentLibraryTests(unittest.TestCase):
@@ -99,6 +103,81 @@ class DocumentLibraryTests(unittest.TestCase):
         with self.assertRaisesRegex(DocumentLibraryError, "no extractable text"):
             store_document(self.root, "finance", "blank.md", self.encoded("   "))
         self.assertFalse((self.root / "finance" / "blank.md").exists())
+
+    def test_delete_and_replace_remove_old_chunks_from_retrieval(self) -> None:
+        store_document(
+            self.root,
+            "my-docs",
+            "rates-a.md",
+            self.encoded("UNIQUE_TOKEN_ALPHA daily rate for ages 0-4 is 111."),
+        )
+        searchable = verify_document_searchable(self.root, "my-docs", "rates-a.md")
+        self.assertTrue(searchable["searchable"])
+        self.assertGreaterEqual(searchable["chunk_count"], 1)
+        chunks = load_chunks(self.root / "my-docs")
+        ranked = retrieve("UNIQUE_TOKEN_ALPHA ages 0-4 daily rate", chunks, top_k=3)
+        self.assertTrue(ranked)
+        self.assertEqual(ranked[0][1].source, "rates-a.md")
+
+        delete_document(self.root, "my-docs", "rates-a.md")
+        removed = verify_document_removed(self.root, "my-docs", "rates-a.md")
+        self.assertTrue(removed["removed_from_index"])
+        self.assertNotIn("rates-a.md", removed["indexed_sources"])
+
+        store_document(
+            self.root,
+            "my-docs",
+            "rates-b.md",
+            self.encoded("UNIQUE_TOKEN_BETA Surrey Council weekly fee ages 0-4 is 222."),
+        )
+        verify_document_searchable(self.root, "my-docs", "rates-b.md")
+        chunks_after = load_chunks(self.root / "my-docs")
+        sources = {chunk.source for chunk in chunks_after}
+        self.assertEqual(sources, {"rates-b.md"})
+        self.assertFalse(any("UNIQUE_TOKEN_ALPHA" in chunk.text for chunk in chunks_after))
+        ranked_old = retrieve("UNIQUE_TOKEN_ALPHA", chunks_after, top_k=3)
+        self.assertFalse(any("UNIQUE_TOKEN_ALPHA" in chunk.text for _, chunk in ranked_old))
+        self.assertFalse(any(chunk.source == "rates-a.md" for _, chunk in ranked_old))
+        ranked_new = retrieve("UNIQUE_TOKEN_BETA Surrey Council weekly fee", chunks_after, top_k=3)
+        self.assertTrue(ranked_new)
+        self.assertEqual(ranked_new[0][1].source, "rates-b.md")
+
+    def test_overwrite_same_filename_replaces_searchable_content(self) -> None:
+        store_document(self.root, "my-docs", "fees.md", self.encoded("OLD_ONLY_TOKEN fee 10"))
+        store_document(
+            self.root,
+            "my-docs",
+            "fees.md",
+            self.encoded("NEW_ONLY_TOKEN fee 20"),
+            overwrite=True,
+        )
+        verify_document_searchable(self.root, "my-docs", "fees.md")
+        chunks = load_chunks(self.root / "my-docs")
+        joined = "\n".join(chunk.text for chunk in chunks)
+        self.assertIn("NEW_ONLY_TOKEN", joined)
+        self.assertNotIn("OLD_ONLY_TOKEN", joined)
+        ranked = retrieve("OLD_ONLY_TOKEN", chunks, top_k=3)
+        self.assertFalse(any("OLD_ONLY_TOKEN" in chunk.text for _, chunk in ranked))
+
+    def test_history_sanitizer_strips_deleted_document_answers(self) -> None:
+        history = [
+            {"role": "user", "content": "What is the fee?"},
+            {
+                "role": "assistant",
+                "content": (
+                    "The Banya fee is 99.498 from "
+                    "Banya fee to carers – Carer Pay Rates – Effective from 1 April 2026.xlsx "
+                    "[Source 1: file=Banya fee to carers – Carer Pay Rates – Effective from 1 April 2026.xlsx]"
+                ),
+            },
+        ]
+        cleaned = sanitize_history_for_collection(
+            history,
+            ["Placement Fees - Fee to LA (Local authority) -  Effective from 1 July 2026 -.xlsx"],
+        )
+        self.assertEqual(cleaned[0]["role"], "user")
+        self.assertIn("omitted because it cited document", cleaned[1]["content"].casefold())
+        self.assertNotIn("99.498", cleaned[1]["content"])
 
 
 if __name__ == "__main__":

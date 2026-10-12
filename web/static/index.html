@@ -45,12 +45,12 @@
       <section id="documents-view" aria-labelledby="documents-title" hidden>
         <header class="view-head">
           <h1 id="documents-title">Document Q&amp;A</h1>
-          <p>Ask follow-up questions in one conversation. Cited sources stay with each answer. Leave the collection blank to use the gateway demo corpus.</p>
+          <p>Ask follow-up questions in one conversation. Cited sources stay with each answer. Use the same collection name for upload and questions so answers cannot fall back to the demo corpus by accident.</p>
         </header>
         <div id="rag-error" class="banner banner-error" role="alert" hidden></div>
         <section class="composer document-library" aria-labelledby="upload-title">
           <h2 id="upload-title">Your documents</h2>
-          <p class="meta">Upload a document into a persistent collection, then select that collection below to ask questions. Supported: TXT, Markdown, CSV, HTML, DOCX, text-based PDF and XLSX. Maximum 10 MiB per file.</p>
+          <p class="meta">Upload a document into a persistent collection, then ask questions against that same collection. Upload succeeds only after the file is searchable. Deleting a file clears this conversation so old citations cannot linger. Supported: TXT, Markdown, CSV, HTML, DOCX, text-based PDF and XLSX. Maximum 10 MiB per file.</p>
           <form id="upload-form">
             <label for="upload-collection">Collection name</label>
             <input id="upload-collection" type="text" maxlength="40" pattern="[a-z0-9][a-z0-9_-]{0,39}" value="my-docs" required autocomplete="off">
@@ -74,7 +74,7 @@
           <div class="split">
             <div>
               <label for="rag-collection">Collection</label>
-              <input id="rag-collection" type="text" maxlength="40" pattern="[a-z0-9][a-z0-9_-]{0,39}" placeholder="optional slug, such as finance" autocomplete="off">
+              <input id="rag-collection" type="text" maxlength="40" pattern="[a-z0-9][a-z0-9_-]{0,39}" value="my-docs" placeholder="same as upload collection" autocomplete="off">
             </div>
             <div>
               <label for="rag-top-k">Sources to retrieve</label>

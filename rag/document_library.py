@@ -188,3 +188,114 @@ def delete_document(root: Path, collection: Any, filename: Any) -> dict[str, Any
 def get_collection_dir(root: Path, collection: Any) -> Path:
     """Return a validated collection path for use by RAG retrieval."""
     return _collection_dir(root, validate_collection_name(collection))
+
+
+def indexed_source_names(root: Path, collection: Any) -> list[str]:
+    """Return filenames currently loadable as RAG chunks for a collection."""
+    from rag_engine import load_chunks
+
+    folder = get_collection_dir(root, collection)
+    if not folder.is_dir():
+        return []
+    try:
+        chunks = load_chunks(folder)
+    except RuntimeError:
+        return []
+    return sorted({chunk.source for chunk in chunks})
+
+
+def verify_document_searchable(root: Path, collection: Any, filename: Any) -> dict[str, Any]:
+    """Confirm a stored file is present on disk and appears in retrieval chunks."""
+    collection_name = validate_collection_name(collection)
+    safe_filename = validate_filename(filename)
+    folder = get_collection_dir(root, collection_name)
+    target = folder / safe_filename
+    if not target.is_file():
+        raise DocumentLibraryError(f"{safe_filename} is not stored in collection {collection_name}")
+    sources = indexed_source_names(root, collection_name)
+    if safe_filename not in sources:
+        raise DocumentLibraryError(
+            f"{safe_filename} was stored but is not yet searchable in collection {collection_name}"
+        )
+    from rag_engine import load_chunks
+
+    chunk_count = sum(1 for chunk in load_chunks(folder) if chunk.source == safe_filename)
+    return {
+        "collection": collection_name,
+        "filename": safe_filename,
+        "searchable": True,
+        "chunk_count": chunk_count,
+        "indexed_sources": sources,
+    }
+
+
+def verify_document_removed(root: Path, collection: Any, filename: Any) -> dict[str, Any]:
+    """Confirm a deleted file is absent from disk and from retrieval chunks."""
+    collection_name = validate_collection_name(collection)
+    safe_filename = validate_filename(filename)
+    folder = get_collection_dir(root, collection_name)
+    target = folder / safe_filename
+    if target.exists():
+        raise DocumentLibraryError(f"{safe_filename} still exists on disk in collection {collection_name}")
+    sources = indexed_source_names(root, collection_name)
+    if safe_filename in sources:
+        raise DocumentLibraryError(
+            f"{safe_filename} was deleted from disk but still appears in searchable chunks"
+        )
+    return {
+        "collection": collection_name,
+        "filename": safe_filename,
+        "deleted": True,
+        "removed_from_index": True,
+        "indexed_sources": sources,
+    }
+
+
+def sanitize_history_for_collection(
+    history: list[dict[str, str]],
+    current_filenames: list[str],
+) -> list[dict[str, str]]:
+    """Neutralize prior turns that cite documents no longer in the collection."""
+    if not history:
+        return []
+    active = {name.casefold() for name in current_filenames}
+    cleaned: list[dict[str, str]] = []
+    for item in history:
+        role = item["role"]
+        content = item["content"]
+        if role == "assistant":
+            lowered = content.casefold()
+            stale = [
+                name for name in _filenames_mentioned(content)
+                if name.casefold() not in active
+            ]
+            # Also catch common citation shapes that embed the old basename.
+            if stale or _mentions_missing_source_label(lowered, active):
+                content = (
+                    "[Prior assistant answer omitted because it cited document(s) that are "
+                    "no longer in the active collection. Do not reuse rates, tables or "
+                    "citations from omitted turns.]"
+                )
+        cleaned.append({"role": role, "content": content})
+    return cleaned
+
+
+def _filenames_mentioned(text: str) -> list[str]:
+    found: list[str] = []
+    for match in re.finditer(
+        r"([A-Za-z0-9][^\\/:*?\"<>|\r\n]{0,180}\.(?:xlsx|pdf|docx|csv|md|txt|html|htm))",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        name = Path(match.group(1)).name.strip()
+        if name and name not in found:
+            found.append(name)
+    return found
+
+
+def _mentions_missing_source_label(lowered_text: str, active_filenames: set[str]) -> bool:
+    for name in re.findall(r"file=([^;\]]+)", lowered_text):
+        candidate = Path(name.strip()).name.casefold()
+        if candidate and candidate not in active_filenames:
+            return True
+    return False

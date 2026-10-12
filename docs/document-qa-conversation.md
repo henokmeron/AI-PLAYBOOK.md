@@ -50,6 +50,8 @@ This revision keeps Chat, upload, System Status, loopback binding, and bearer-ke
 ## UI behaviour
 
 - Transcript shows chronological questions, answers, badges, and per-answer sources.
+- Upload and Ask share the same collection field value by default (`my-docs`); uploading or changing either field keeps them aligned so questions do not silently fall back to the demo corpus.
+- Upload succeeds only after the gateway confirms the file is searchable (`searchable=true`, chunk count). Delete succeeds only after the file is absent from disk and from indexed sources (`removed_from_index=true`). Both actions clear the Document Q&A conversation so prior citations cannot linger.
 - The question box clears as soon as a request enters the pending flow.
 - While a reply is pending, Ask is locked to prevent duplicate concurrent submissions; the question box stays editable so the next question can be drafted.
 - Loading text is shown in the transcript; controls recover after success and error.

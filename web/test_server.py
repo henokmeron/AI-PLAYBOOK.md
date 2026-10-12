@@ -71,7 +71,11 @@ class FakeGatewayHandler(BaseHTTPRequestHandler):
             self._json(401, {"error": "authentication required"})
             return
         if entry["path"] == "/v1/rag/documents":
-            self._json(200, {"deleted": True})
+            self._json(200, {
+                "deleted": True,
+                "removed_from_index": True,
+                "indexed_sources": [],
+            })
             return
         self._json(404, {"error": "not found"})
 
@@ -98,7 +102,18 @@ class FakeGatewayHandler(BaseHTTPRequestHandler):
             return
         if entry["path"] == "/v1/rag/documents":
             payload = json.loads(entry["body"])
-            self._json(201, {"status": "stored", "document": {"collection": payload["collection"], "filename": payload["filename"], "size_bytes": 12, "extension": ".md"}})
+            self._json(201, {
+                "status": "stored",
+                "document": {
+                    "collection": payload["collection"],
+                    "filename": payload["filename"],
+                    "size_bytes": 12,
+                    "extension": ".md",
+                    "searchable": True,
+                    "chunk_count": 1,
+                    "indexed_sources": [payload["filename"]],
+                },
+            })
             return
         if entry["path"] == "/v1/rag/ask":
             payload = json.loads(entry["body"])
@@ -267,6 +282,10 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("ragSend.disabled = isBusy", script_text)
         self.assertIn("ragQuestion.disabled = false", script_text)
         self.assertIn("Keep collection, top_k, and uploaded docs", script_text)
+        self.assertIn("syncCollectionFields", script_text)
+        self.assertIn("removed_from_index", script_text)
+        self.assertIn("searchable !== true", script_text)
+        self.assertIn('value="my-docs"', text)
         self.assertIn("upload-form", text)
         self.assertIn("document-list", text)
         status, css = self.request(base, "GET", "/static/styles.css")
@@ -424,14 +443,19 @@ class ConsoleTests(unittest.TestCase):
             "overwrite": False,
         })
         self.assertEqual(status, 201)
-        self.assertEqual(json.loads(body)["document"]["filename"], "policy.md")
+        uploaded = json.loads(body)["document"]
+        self.assertEqual(uploaded["filename"], "policy.md")
+        self.assertTrue(uploaded["searchable"])
+        self.assertEqual(uploaded["chunk_count"], 1)
         forwarded = json.loads(gateway.hits[-1]["body"])
         self.assertEqual(forwarded["content_base64"], "UG9saWN5IHRleHQ=")
         self.assertEqual(gateway.hits[-1]["authorization"], f"Bearer {KEY}")
 
         status, body = self.request(base, "DELETE", "/api/documents?collection=my-docs&filename=policy.md")
         self.assertEqual(status, 200)
-        self.assertTrue(json.loads(body)["deleted"])
+        deleted = json.loads(body)
+        self.assertTrue(deleted["deleted"])
+        self.assertTrue(deleted["removed_from_index"])
         self.assertEqual(gateway.hits[-1]["method"], "DELETE")
 
     def test_managed_document_upload_rejects_invalid_collection(self) -> None:

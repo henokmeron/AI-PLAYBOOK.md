@@ -123,6 +123,22 @@ class RagConversationTests(unittest.TestCase):
         self.assertGreaterEqual(gateway.RAG_MAX_TOKENS, 1024)
         self.assertGreaterEqual(gateway.RAG_TOP_K_MAX, 16)
 
+    def test_messages_include_collection_inventory_and_ignore_deleted_docs(self) -> None:
+        messages = gateway.build_rag_completion_messages(
+            "What is the Surrey weekly fee?",
+            ["[Source 1: file=placement.xlsx; chunk=1]\nSheet: South Central | Row 32: Surrey"],
+            [
+                {"role": "user", "content": "old question"},
+                {"role": "assistant", "content": "old banya answer"},
+            ],
+            collection_files=["placement.xlsx"],
+        )
+        user = messages[1]["content"]
+        self.assertIn("CURRENT COLLECTION FILES", user)
+        self.assertIn("- placement.xlsx", user)
+        self.assertIn("ignore prior answers", user.casefold())
+        self.assertIn("council-specific", user.casefold())
+
     def test_weekly_messages_include_deterministic_stored_vs_displayed_aid(self) -> None:
         evidence = [
             "[Source 1: file=fees.xlsx; chunk=1]\n"

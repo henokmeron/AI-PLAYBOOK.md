@@ -412,8 +412,15 @@
       remove.addEventListener("click", function () {
         if (!window.confirm("Delete " + documentInfo.filename + " from collection " + collection + "?")) return;
         request("/api/documents?collection=" + encodeURIComponent(collection) + "&filename=" + encodeURIComponent(documentInfo.filename), { method: "DELETE" })
-          .then(function () {
-            uploadStatus.textContent = "Deleted " + documentInfo.filename + ".";
+          .then(function (body) {
+            if (!body || body.removed_from_index !== true) {
+              throw new Error("Delete completed but the document may still be searchable. Refresh and retry.");
+            }
+            // Clear conversation so prior answers cannot cite the deleted workbook.
+            ragTurns = [];
+            renderRag();
+            uploadStatus.textContent = "Deleted " + documentInfo.filename + " and removed it from search. Conversation cleared.";
+            syncCollectionFields(collection);
             return loadDocuments();
           })
           .catch(function (error) { showError(uploadError, errorMessage(error)); });
@@ -423,15 +430,21 @@
     });
   }
 
+  function syncCollectionFields(collection) {
+    if (!collection) return;
+    uploadCollection.value = collection;
+    ragCollection.value = collection;
+  }
+
   function loadDocuments() {
     var collection = uploadCollection.value.trim();
     if (!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(collection)) {
       showError(uploadError, "Use lowercase letters, numbers, hyphens or underscores for the collection.");
       return Promise.reject(new Error("Invalid collection name"));
     }
+    syncCollectionFields(collection);
     return request("/api/documents?collection=" + encodeURIComponent(collection)).then(function (body) {
       renderDocumentList(body.documents || [], collection);
-      ragCollection.value = collection;
       showError(uploadError, "");
     });
   }
@@ -480,9 +493,15 @@
         method: "POST",
         body: { collection: collection, filename: file.name, content_base64: dataUrl.slice(comma + 1), overwrite: false }
       }).then(function (body) {
-        uploadStatus.textContent = "Saved " + body.document.filename + " to persistent collection " + collection + ".";
+        var documentInfo = body && body.document ? body.document : null;
+        if (!documentInfo || documentInfo.searchable !== true) {
+          throw new Error("Upload finished but the document is not searchable yet. Do not ask questions against it until indexing succeeds.");
+        }
+        syncCollectionFields(collection);
+        ragTurns = [];
+        renderRag();
+        uploadStatus.textContent = "Saved and searchable: " + documentInfo.filename + " (" + Number(documentInfo.chunk_count || 0).toLocaleString() + " chunks) in " + collection + ".";
         uploadFile.value = "";
-        ragCollection.value = collection;
         return loadDocuments();
       }).catch(function (error) {
         showError(uploadError, errorMessage(error));
@@ -501,9 +520,14 @@
   });
 
   uploadCollection.addEventListener("change", function () {
+    syncCollectionFields(uploadCollection.value.trim());
     loadDocuments().catch(function (error) {
       if (error && error.message !== "Invalid collection name") showError(uploadError, errorMessage(error));
     });
+  });
+  ragCollection.addEventListener("change", function () {
+    var collection = ragCollection.value.trim();
+    if (collection) syncCollectionFields(collection);
   });
 
   document.getElementById("status-refresh").addEventListener("click", refreshStatus);
