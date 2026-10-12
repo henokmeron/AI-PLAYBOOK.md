@@ -48,6 +48,25 @@
           <p>Questions use the gateway document endpoint. Cited sources returned with the answer are listed underneath. Leave the collection blank to use the gateway demo corpus.</p>
         </header>
         <div id="rag-error" class="banner banner-error" role="alert" hidden></div>
+        <section class="composer document-library" aria-labelledby="upload-title">
+          <h2 id="upload-title">Your documents</h2>
+          <p class="meta">Upload a document into a persistent collection, then select that collection below to ask questions. Supported: TXT, Markdown, CSV, HTML, DOCX, text-based PDF and XLSX. Maximum 10 MiB per file.</p>
+          <form id="upload-form">
+            <label for="upload-collection">Collection name</label>
+            <input id="upload-collection" type="text" maxlength="40" pattern="[a-z0-9][a-z0-9_-]{0,39}" value="my-docs" required autocomplete="off">
+            <label for="upload-file">Choose a document</label>
+            <input id="upload-file" type="file" accept=".txt,.md,.csv,.html,.htm,.docx,.pdf,.xlsx" required>
+            <div class="form-row">
+              <button type="submit" id="upload-submit">Upload document</button>
+              <button type="button" id="list-documents" class="secondary">Refresh list</button>
+              <span id="upload-loading" class="loading" role="status" hidden>Validating and saving…</span>
+            </div>
+          </form>
+          <div id="upload-error" class="banner banner-error" role="alert" hidden></div>
+          <p id="upload-status" class="meta" role="status"></p>
+          <h3>Files in this collection</h3>
+          <ul id="document-list" class="sources"></ul>
+        </section>
         <form id="rag-form" class="composer">
           <label for="rag-question">Question</label>
           <textarea id="rag-question" rows="3" maxlength="2000" required placeholder="Ask about the documents available to the gateway."></textarea>
