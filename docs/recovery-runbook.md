@@ -1,9 +1,19 @@
 # AI Platform Recovery Runbook
 
-Status: **recovery inventory documented; full cold-start recovery not yet verified**  
+Status: **idempotent same-Pod restart helpers available; full Pod-recreation cold-start not yet verified**  
 Last updated: 2026-10-12
 
-This runbook records observed facts from the working RunPod prototype. It deliberately distinguishes verified facts from steps that still need a controlled test. Do not treat the system as fully reproducible until the cold-start test at the end passes.
+This runbook records observed facts from the working RunPod prototype. It deliberately distinguishes verified facts from steps that still need a controlled test. Do not treat the system as fully reproducible across Pod replacement until a cold-start drill passes.
+
+## Restart versus Pod recreation
+
+| Scenario | What survives | What to run |
+|----------|---------------|-------------|
+| **Service restart** (same Pod) | `/workspace` assets, usually `/tmp` env if Pod stayed up | `ops/preflight-recovery.sh` then `ops/start-platform.sh --check` / `--start` |
+| **Isolated Document Q&A test stack** | Main `:8010`/`:8080` untouched | `ops/start-test-console-8082.sh` (reuses healthy `:8012`/`:8082`) |
+| **Pod recreation** | Only Global Volume `/workspace` | Attach volume → preflight → restore `/tmp` via `start-platform.sh --start` → recreate key if missing → optional test console |
+
+`ops/start-platform.sh --start` is a **same-Pod service recovery** helper: it reuses healthy listeners and never force-restarts them. It is **not** a Pod recreation script and must not be confused with `install-vllm.sh` (installer only; destructive to `/tmp/vllm-clean-env` if misused).
 
 ## Verified working path
 
@@ -94,19 +104,60 @@ The demo threshold `2.30` is explicitly calibrated only for the two-file demo co
 - A cold-start recovery test from the persistent volume without relying on `/tmp`.
 - RAG accuracy across paraphrases, multi-document questions, unsupported questions, conflicting versions, long files, and citation correctness.
 
-## Required next engineering task
+## Exact recovery commands (same Pod)
 
-Create one idempotent startup/recovery entry point that:
+Prerequisites: SSH into the Pod as root; Global Volume mounted at `/workspace`; do not print `/tmp/platform-gateway.key`.
 
-1. Verifies the persistent model and runtime archive checksums before starting anything.
-2. Restores the vLLM environment from the existing archive to `/tmp` only if missing or invalid; does not reinstall when a valid environment exists.
-3. Restores the gateway source and its dependencies from a chosen, manifest-verified backup into a deterministic temporary runtime directory.
-4. obtains/creates the gateway key securely without echoing it or putting it in Git; ensures the gateway and console receive it only server-side.
-5. Starts vLLM, waits for `http://127.0.0.1:8000/v1/models` to respond, starts the gateway, waits for `http://127.0.0.1:8010/health` to report healthy, then starts the console on `127.0.0.1:8080`.
-6. Is safe to run twice, checks for already-running healthy services, and fails with actionable errors rather than silently launching duplicates.
-7. Writes non-secret logs and status to a persistent diagnostics folder under `/workspace`.
+From a checkout that contains these scripts (for example `/tmp/AI-PLAYBOOK-upload-test` on branch `cursor/local-web-console`):
 
-After creating it, test on the current Pod without interrupting the working services first (dry-run / validation mode), then schedule a controlled stop/start test. Do not claim cold-start recovery works until the test passes.
+```bash
+cd /tmp/AI-PLAYBOOK-upload-test
+# 1) Read-only artifact + reachability preflight (never restarts services)
+bash ops/preflight-recovery.sh
+
+# 2) Read-only main-stack summary (never restarts services)
+bash ops/start-platform.sh --check
+
+# 3) Idempotent main-stack recovery: start only unhealthy/missing services
+#    Order inside the script: vLLM :8000 → gateway :8010 → console :8080
+#    Restores /tmp/vllm-clean-env from the checksummed archive only if needed.
+#    Ensures pinned /tmp/rag-deps via rag/setup_*.sh before starting a new gateway.
+bash ops/start-platform.sh --start
+
+# 4) Optional isolated Document Q&A test stack (does not touch :8010/:8080)
+bash ops/start-test-console-8082.sh
+
+# 5) Optional dated source snapshot under Global Volume (no secrets/model weights)
+bash ops/snapshot-document-qa-test.sh
+```
+
+Windows browser tunnel for the **test** console:
+
+```powershell
+ssh -i "$env:USERPROFILE\.ssh\id_ed25519" -p 48480 -N -L 18082:127.0.0.1:8082 root@216.81.245.29
+```
+
+Then open `http://localhost:18082/`. Keep the SSH window open. Host/port may change after Pod replacement.
+
+Windows tunnel for the **main** console (existing verified path):
+
+```powershell
+ssh -N -o ConnectTimeout=10 -o ExitOnForwardFailure=yes -i "$env:USERPROFILE\.ssh\id_ed25519" -p 48480 -L 18080:127.0.0.1:8080 root@216.81.245.29
+```
+
+### Document Q&A recovery snapshot (observed)
+
+Latest reported snapshot path:
+
+`/workspace/runtime-setup/web-console-backups/document-qa-conversation-20261012T220858Z`
+
+Pinned application commit referenced by that milestone: `d54f1cb61de72a43b90412a02545f1472a59bee7` on `cursor/local-web-console`.
+
+### Safe validation already required before claiming cold-start
+
+1. Run `ops/preflight-recovery.sh` with zero FAIL lines.
+2. Run `ops/start-platform.sh --check` while the live stack is up; confirm healthy reuse messaging.
+3. Only later schedule a controlled stop/start or Pod-recreation drill. Do not claim cold-start recovery works until that drill passes.
 
 ## RAG quality gate
 
@@ -121,3 +172,10 @@ bash /tmp/AI-PLAYBOOK-upload-test/ops/snapshot-document-qa-test.sh
 ```
 
 Snapshots land under `/workspace/runtime-setup/web-console-backups/document-qa-conversation-<UTC-stamp>/` and must never include API keys, `.env` files, model weights, or caches. Prefer a separate test console on `127.0.0.1:8082` (optional companion gateway on `8012`) before touching the main console on `8080` / gateway on `8010`.
+
+## Remaining limitations
+
+- Full Pod-recreation cold-start (empty `/tmp`, new key, archive extract, full stack) has **not** been executed on a replacement Pod.
+- `ops/start-platform.sh` restores gateway source from timestamped files under `/workspace/ai-platform-backups/deployed-runtime/`; those backups may lag the latest GitHub commit until a deliberate redeploy/sync.
+- Parser wheels are checksum-verified on Global Volume; `/tmp/rag-deps` must be re-extracted after Pod recreation.
+- Live Document Q&A quality still depends on the model and corpus; recovery scripts only prove process/health reproducibility.

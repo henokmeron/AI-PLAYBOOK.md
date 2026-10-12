@@ -14,6 +14,23 @@ cd "$ROOT"
 test -x "$PYTHON"
 test -f /tmp/platform-gateway.key
 
+# Reuse a healthy isolated stack instead of killing it.
+if curl -fsS --max-time 3 "http://127.0.0.1:${TEST_GW_PORT}/health" >/tmp/platform-gateway-8082-health.json \
+  && STATUS_JSON="$(curl -fsS --max-time 3 "http://127.0.0.1:${TEST_WEB_PORT}/api/status")" \
+  && echo "$STATUS_JSON" | grep -q "http://127.0.0.1:${TEST_GW_PORT}" \
+  && echo "$STATUS_JSON" | grep -q '"connection":"ready"'; then
+  echo "Reusing healthy test gateway :${TEST_GW_PORT} and console :${TEST_WEB_PORT}; no restart."
+  echo "Test gateway health:"
+  cat /tmp/platform-gateway-8082-health.json
+  echo
+  echo "Test console status:"
+  echo "$STATUS_JSON"
+  echo
+  echo "DEPLOY_VERIFIED test gateway :${TEST_GW_PORT} console :${TEST_WEB_PORT}"
+  echo "Main services on :8010 / :8080 were not modified by this script."
+  exit 0
+fi
+
 bash "$ROOT/rag/setup_pdf_support.sh" >/tmp/setup-pdf-8082.log
 bash "$ROOT/rag/setup_xlsx_support.sh" >/tmp/setup-xlsx-8082.log
 PYTHONPATH=/tmp/rag-deps "$PYTHON" -c 'import importlib.metadata as m; assert m.version("pypdf")=="6.20.0"; assert m.version("openpyxl")=="3.1.5"'
@@ -22,7 +39,7 @@ mkdir -p "$TEST_GW_DIR"
 cp -f "$ROOT/api/local_gateway.py" "$TEST_GW_DIR/platform_gateway.py"
 cp -f "$ROOT/rag/rag_engine.py" "$ROOT/rag/document_loaders.py" "$ROOT/rag/document_library.py" "$TEST_GW_DIR/"
 
-# Stop previous test processes only.
+# Stop previous test processes only (never 8010/8080).
 if [[ -f /tmp/web-console-8082.pid ]]; then
   kill "$(cat /tmp/web-console-8082.pid)" 2>/dev/null || true
   rm -f /tmp/web-console-8082.pid
