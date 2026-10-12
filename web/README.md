@@ -82,6 +82,9 @@ The browser routes are:
 - `GET /api/status` gateway health, key presence, and model configuration
 - `POST /api/chat` forwards a cleaned message list to `/v1/chat/completions`
 - `POST /api/rag` forwards `question`, optional `collection`, and `top_k` to `/v1/rag/ask`
+- `GET /api/documents?collection=slug` lists files in a managed collection
+- `POST /api/documents` uploads a validated base64-encoded document to the selected managed collection (maximum 10 MiB file)
+- `DELETE /api/documents?collection=slug&filename=name` deletes a file after explicit user confirmation in the UI
 
 Chat requests sent upstream use temperature `0.2` and `max_tokens` `512`. The gateway still rejects streaming. Document answers keep the gateway's own prompt and token limit.
 
@@ -104,3 +107,12 @@ The unit tests start a fake loopback gateway. They do not contact RunPod, vLLM, 
 - `web/static/styles.css` — layout
 - `web/test_server.py` — proxy and page checks
 - `web/.env.example` — variable reference
+
+
+## Managed document upload in the web console
+
+The Document Q&A view includes a document-library section. Enter a collection slug (lowercase letters/numbers/hyphens/underscores), choose a supported file, and upload. The browser sends the file through the loopback web server; the web server adds the gateway key server-side; the gateway validates and stores the document under `/workspace/rag-managed-docs/<collection>/`. The console can list and delete files in that collection. The file is not added to GitHub.
+
+Supported extensions are TXT, Markdown, CSV, HTML/HTM, DOCX, text-based PDF and XLSX. The per-file limit is 10 MiB. Scanned PDFs without extractable text are rejected. Duplicate filenames are rejected by default; delete the old file first before re-uploading. The upload feature requires a deployed gateway version that supports `/v1/rag/documents`; the current repository gateway source has that API, but the running Pod must be verified after deployment.
+
+To ask about uploaded documents, use the same collection name in Document Q&A. Leaving the collection blank uses the demo corpus. Uploading is for authorized, non-sensitive test documents only: this prototype has no user login or tenant-level access control, so do not upload confidential/customer documents.
