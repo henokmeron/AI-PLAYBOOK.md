@@ -22,6 +22,14 @@
   var ragLoading = document.getElementById("rag-loading");
   var ragSend = document.getElementById("rag-send");
   var ragResult = document.getElementById("rag-result");
+  var uploadForm = document.getElementById("upload-form");
+  var uploadCollection = document.getElementById("upload-collection");
+  var uploadFile = document.getElementById("upload-file");
+  var uploadSubmit = document.getElementById("upload-submit");
+  var uploadLoading = document.getElementById("upload-loading");
+  var uploadError = document.getElementById("upload-error");
+  var uploadStatus = document.getElementById("upload-status");
+  var documentList = document.getElementById("document-list");
   var statusPanel = document.getElementById("status-panel");
 
   function el(tag, className, text) {
@@ -307,10 +315,121 @@
     });
   });
 
+
+  function renderDocumentList(documents, collection) {
+    documentList.textContent = "";
+    if (!documents || !documents.length) {
+      documentList.appendChild(el("li", null, "No documents in this collection yet."));
+      return;
+    }
+    documents.forEach(function (documentInfo) {
+      var item = el("li");
+      item.appendChild(el("strong", null, documentInfo.filename));
+      item.appendChild(el("span", null, documentInfo.extension + " · " + Number(documentInfo.size_bytes).toLocaleString() + " bytes"));
+      var remove = el("button", "secondary", "Delete");
+      remove.type = "button";
+      remove.addEventListener("click", function () {
+        if (!window.confirm("Delete " + documentInfo.filename + " from collection " + collection + "?")) return;
+        request("/api/documents?collection=" + encodeURIComponent(collection) + "&filename=" + encodeURIComponent(documentInfo.filename), { method: "DELETE" })
+          .then(function () {
+            uploadStatus.textContent = "Deleted " + documentInfo.filename + ".";
+            return loadDocuments();
+          })
+          .catch(function (error) { showError(uploadError, errorMessage(error)); });
+      });
+      item.appendChild(remove);
+      documentList.appendChild(item);
+    });
+  }
+
+  function loadDocuments() {
+    var collection = uploadCollection.value.trim();
+    if (!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(collection)) {
+      showError(uploadError, "Use lowercase letters, numbers, hyphens or underscores for the collection.");
+      return Promise.reject(new Error("Invalid collection name"));
+    }
+    return request("/api/documents?collection=" + encodeURIComponent(collection)).then(function (body) {
+      renderDocumentList(body.documents || [], collection);
+      ragCollection.value = collection;
+      showError(uploadError, "");
+    });
+  }
+
+  uploadForm.addEventListener("submit", function (event) {
+    event.preventDefault();
+    var collection = uploadCollection.value.trim();
+    var file = uploadFile.files && uploadFile.files[0];
+    if (!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(collection)) {
+      showError(uploadError, "Collection must be a lowercase slug (letters, numbers, hyphens or underscores).");
+      return;
+    }
+    if (!file) {
+      showError(uploadError, "Choose a document first.");
+      return;
+    }
+    if (file.size < 1 || file.size > 10 * 1024 * 1024) {
+      showError(uploadError, "Choose a non-empty file no larger than 10 MiB.");
+      return;
+    }
+    var ext = file.name.indexOf(".") >= 0 ? file.name.slice(file.name.lastIndexOf(".")).toLowerCase() : "";
+    if ([".txt", ".md", ".csv", ".html", ".htm", ".docx", ".pdf", ".xlsx"].indexOf(ext) < 0) {
+      showError(uploadError, "This file type is not supported.");
+      return;
+    }
+    showError(uploadError, "");
+    uploadStatus.textContent = "";
+    uploadSubmit.disabled = true;
+    uploadLoading.hidden = false;
+    var reader = new FileReader();
+    reader.onerror = function () {
+      showError(uploadError, "The browser could not read this file.");
+      uploadSubmit.disabled = false;
+      uploadLoading.hidden = true;
+    };
+    reader.onload = function () {
+      var dataUrl = String(reader.result || "");
+      var comma = dataUrl.indexOf(",");
+      if (comma < 0) {
+        showError(uploadError, "The browser returned an invalid file encoding.");
+        uploadSubmit.disabled = false;
+        uploadLoading.hidden = true;
+        return;
+      }
+      request("/api/documents", {
+        method: "POST",
+        body: { collection: collection, filename: file.name, content_base64: dataUrl.slice(comma + 1), overwrite: false }
+      }).then(function (body) {
+        uploadStatus.textContent = "Saved " + body.document.filename + " to persistent collection " + collection + ".";
+        uploadFile.value = "";
+        ragCollection.value = collection;
+        return loadDocuments();
+      }).catch(function (error) {
+        showError(uploadError, errorMessage(error));
+      }).finally(function () {
+        uploadSubmit.disabled = false;
+        uploadLoading.hidden = true;
+      });
+    };
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById("list-documents").addEventListener("click", function () {
+    loadDocuments().catch(function (error) {
+      if (error && error.message !== "Invalid collection name") showError(uploadError, errorMessage(error));
+    });
+  });
+
+  uploadCollection.addEventListener("change", function () {
+    loadDocuments().catch(function (error) {
+      if (error && error.message !== "Invalid collection name") showError(uploadError, errorMessage(error));
+    });
+  });
+
   document.getElementById("status-refresh").addEventListener("click", refreshStatus);
 
   renderChat();
   showView(location.hash.replace("#", "") || "chat");
+  loadDocuments().catch(function () {});
   refreshStatus();
   window.setInterval(refreshStatus, 15000);
 })();
