@@ -48,16 +48,19 @@ This revision keeps Chat, upload, System Status, loopback binding, and bearer-ke
 
 ## Reproduce tests
 
-From the repository root:
+From the repository root on the RunPod Pod, use the same Python as the isolated parsers (`/tmp/vllm-clean-env/bin/python`) and the pinned wheels extracted to `/tmp/rag-deps`. Do **not** run the RAG suite with bare `python3` and `PYTHONPATH=rag` only — that omits `pypdf` / `openpyxl` and fails the PDF/XLSX loader tests.
 
 ```bash
-python3 -m py_compile web/server.py web/test_server.py api/local_gateway.py api/test_rag_conversation.py rag/document_loaders.py
-python3 -m unittest discover -s web -v
-python3 -m unittest discover -s api -p 'test_*.py' -v
-PYTHONPATH=rag python3 -m unittest discover -s rag/tests -v
+PYTHON=/tmp/vllm-clean-env/bin/python
+$PYTHON -m py_compile web/server.py web/test_server.py api/local_gateway.py api/test_rag_conversation.py rag/document_loaders.py
+$PYTHON -m unittest discover -s web -v
+$PYTHON -m unittest discover -s api -p 'test_*.py' -v
+bash rag/run_parser_tests.sh
 ```
 
-These suites use a fake gateway / in-process helpers. They do not contact RunPod, vLLM, or a live model.
+`rag/run_parser_tests.sh` runs `rag/setup_pdf_support.sh` and `rag/setup_xlsx_support.sh` (checksum-pinned wheels from `/workspace/runtime-setup/rag-wheelhouse` into `/tmp/rag-deps`), verifies versions (`pypdf==6.20.0`, `openpyxl==3.1.5`, `et-xmlfile==2.0.0`, `defusedxml==0.7.1`), then runs `unittest discover -s rag/tests` with `PYTHONPATH=/tmp/rag-deps:<repo>/rag`.
+
+These suites use a fake gateway / in-process helpers. They do not contact the live model for generation, and they do not modify the main gateway or console.
 
 ## Known limitations
 

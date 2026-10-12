@@ -93,12 +93,14 @@ Chat requests sent upstream use temperature `0.2` and `max_tokens` `512`. The ga
 From the repository root:
 
 ```bash
-python -m py_compile web/server.py web/test_server.py api/local_gateway.py api/test_rag_conversation.py
-python -m unittest discover -s web -v
-python -m unittest discover -s api -p 'test_*.py' -v
+PYTHON=/tmp/vllm-clean-env/bin/python
+$PYTHON -m py_compile web/server.py web/test_server.py api/local_gateway.py api/test_rag_conversation.py
+$PYTHON -m unittest discover -s web -v
+$PYTHON -m unittest discover -s api -p 'test_*.py' -v
+bash rag/run_parser_tests.sh
 ```
 
-The web unit tests start a fake loopback gateway. The API conversation tests cover history validation and calculation prompting without contacting RunPod or vLLM.
+The web unit tests start a fake loopback gateway. The API conversation tests cover history validation and calculation prompting without contacting RunPod or vLLM. The RAG suite must use `/tmp/rag-deps` via `rag/run_parser_tests.sh` (pinned `pypdf` / `openpyxl` from the Global Volume wheelhouse); do not rely on system `python3` alone for those tests.
 
 ## Files
 
