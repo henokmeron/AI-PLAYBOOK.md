@@ -77,6 +77,7 @@ These suites use a fake gateway / in-process helpers. They do not contact the li
 - Live spreadsheet calculation quality still depends on retrieval hitting the right rows and on the model following the prompt. That requires a live gateway + vLLM check on the Pod.
 - Concurrent Document Q&A asks are intentionally serialised (Ask disabled while pending) to avoid mis-ordered transcript updates.
 - `/tmp` is not durable. Persist recovery snapshots under `/workspace`.
+- **Deferred:** advanced manual-guided reasoning across local-authority fee frameworks (operations-manual Process E / framework-tab navigation combined with Fee-to-LA worksheet LA lists and age-band rates). Not in the Document Q&A/recovery milestone; do not treat as shipped.
 
 ## Safe test-console deploy (port 8082)
 

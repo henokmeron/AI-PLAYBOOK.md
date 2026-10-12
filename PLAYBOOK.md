@@ -1005,3 +1005,21 @@ Research should lead to a decision, not a pile of links. Every research report s
 - The canary is intentionally retained for a future Pod re-attach persistence test.
 - Detailed report: `ops/results/live-global-volume-document-storage-2026-10-11.md`.
 - Remaining: sync this latest report/source to the Global Volume; later test re-attachment to a fresh Pod. Do not use real customer documents until tenant isolation, access control, encryption, retention, backup and audit controls are implemented and tested.
+
+
+### 2026-10-13 — Document Q&A and same-Pod recovery milestone closed
+- Branch `cursor/local-web-console` milestone commit family through `9d35189` (lifecycle), with prior calc/recovery commits `d54f1cb` and `b782f7b`.
+- **Document Q&A (completed for this milestone):**
+  - Conversational Document Q&A with bounded, validated, untrusted client history.
+  - Managed collections: upload/list/query/delete with searchable confirmation and index removal.
+  - Deleted-document leakage hardened: history sanitisation strips answers that cite files no longer in the collection; answers are scoped to the current collection inventory.
+  - Spreadsheet extraction keeps sheet/row/cell/header context; decimal-safe numeric rendering; stored vs displayed currency for weekly calculations (`stored=` / `displayed=` / deterministic weekly aid).
+  - Duplicate workbook evidence collapsed by identical extracted rows while listing filenames; conflicting values stay separate.
+  - Isolated test stack supported on `:8012` / `:8082` without touching main `:8010` / `:8080` or restarting the model.
+- **Recovery (completed for this milestone):**
+  - `ops/preflight-recovery.sh` and `ops/start-platform.sh` provide idempotent same-Pod restart helpers (reuse healthy listeners; do not force-restart).
+  - `ops/start-test-console-8082.sh` recovers the isolated Document Q&A test console.
+  - Runbook: `docs/recovery-runbook.md`. Persistent assets and source snapshots live under `/workspace` (including `/workspace/ai-platform-backups/source-snapshots/` and `/workspace/rag-managed-docs/`).
+  - Full Pod-recreation / cold-start restore remains unverified until a controlled drill passes.
+- **Validation evidence (local unit suites at milestone close):** `python -m unittest rag.tests.test_rag_engine rag.tests.test_document_loaders rag.tests.test_document_library api.test_rag_conversation` → **62 tests OK**.
+- **Deferred (explicit):** advanced manual-guided reasoning across local-authority fee frameworks (combining operations-manual Process E guidance with Fee-to-LA worksheet membership, framework-tab navigation, and age-band/placement rate selection when the authority appears only on a framework sheet’s LA list). Incomplete WIP for that feature was reverted and is not part of this milestone.
