@@ -50,7 +50,13 @@ class FakeGatewayHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
-        self._record()
+        entry = self._record()
+        if urlsplit(self.path).path == "/v1/rag/documents":
+            if entry["authorization"] != f"Bearer {self.server.key}":
+                self._json(401, {"error": "authentication required"})
+                return
+            self._json(200, {"collection": "my-docs", "documents": [{"filename": "policy.md", "size_bytes": 22, "extension": ".md"}]})
+            return
         if urlsplit(self.path).path != "/health":
             self._json(404, {"error": "not found"})
             return
@@ -58,6 +64,16 @@ class FakeGatewayHandler(BaseHTTPRequestHandler):
             self._json(503, {"status": "degraded", "upstream": "unavailable"})
             return
         self._json(200, {"status": "ok", "upstream": "ok", "model_count": 1, "secret": self.server.key})
+
+    def do_DELETE(self) -> None:
+        entry = self._record()
+        if entry["authorization"] != f"Bearer {self.server.key}":
+            self._json(401, {"error": "authentication required"})
+            return
+        if entry["path"] == "/v1/rag/documents":
+            self._json(200, {"deleted": True})
+            return
+        self._json(404, {"error": "not found"})
 
     def do_POST(self) -> None:
         entry = self._record()
@@ -79,6 +95,10 @@ class FakeGatewayHandler(BaseHTTPRequestHandler):
                 "model": payload.get("model"),
                 "choices": [{"message": {"role": "assistant", "content": "gateway works"}}],
             })
+            return
+        if entry["path"] == "/v1/rag/documents":
+            payload = json.loads(entry["body"])
+            self._json(201, {"status": "stored", "document": {"collection": payload["collection"], "filename": payload["filename"], "size_bytes": 12, "extension": ".md"}})
             return
         if entry["path"] == "/v1/rag/ask":
             payload = json.loads(entry["body"])
@@ -369,6 +389,41 @@ class ConsoleTests(unittest.TestCase):
 
         before = len(gateway.hits)
         status, _ = self.request(base, "POST", "/api/rag", {"question": "hello", "collection": "../secrets"})
+        self.assertEqual(status, 400)
+        self.assertEqual(len(gateway.hits), before)
+
+
+    def test_managed_document_list_upload_and_delete_proxy(self) -> None:
+        gateway = FakeGateway()
+        base = self.web(gateway)
+        status, body = self.request(base, "GET", "/api/documents?collection=my-docs")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["documents"][0]["filename"], "policy.md")
+        self.assertEqual(gateway.hits[-1]["authorization"], f"Bearer {KEY}")
+        self.assertEqual(gateway.hits[-1]["path"], "/v1/rag/documents")
+
+        status, body = self.request(base, "POST", "/api/documents", {
+            "collection": "my-docs", "filename": "policy.md", "content_base64": "UG9saWN5IHRleHQ=",
+            "overwrite": False,
+        })
+        self.assertEqual(status, 201)
+        self.assertEqual(json.loads(body)["document"]["filename"], "policy.md")
+        forwarded = json.loads(gateway.hits[-1]["body"])
+        self.assertEqual(forwarded["content_base64"], "UG9saWN5IHRleHQ=")
+        self.assertEqual(gateway.hits[-1]["authorization"], f"Bearer {KEY}")
+
+        status, body = self.request(base, "DELETE", "/api/documents?collection=my-docs&filename=policy.md")
+        self.assertEqual(status, 200)
+        self.assertTrue(json.loads(body)["deleted"])
+        self.assertEqual(gateway.hits[-1]["method"], "DELETE")
+
+    def test_managed_document_upload_rejects_invalid_collection(self) -> None:
+        gateway = FakeGateway()
+        base = self.web(gateway)
+        before = len(gateway.hits)
+        status, _ = self.request(base, "POST", "/api/documents", {
+            "collection": "../private", "filename": "policy.md", "content_base64": "UG9saWN5IHRleHQ=",
+        })
         self.assertEqual(status, 400)
         self.assertEqual(len(gateway.hits), before)
 
