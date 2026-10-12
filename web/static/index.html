@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Business AI</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="mark" aria-hidden="true">AI</span>
+        <div>
+          <strong>Business AI</strong>
+          <small>Local console</small>
+        </div>
+      </div>
+      <nav class="nav-list" aria-label="Primary">
+        <button type="button" data-view="chat" id="nav-chat">Chat</button>
+        <button type="button" data-view="documents" id="nav-documents">Document Q&amp;A</button>
+        <button type="button" data-view="status" id="nav-status-tab">System Status</button>
+      </nav>
+      <p class="nav-status" id="nav-status" role="status">Checking gateway…</p>
+    </aside>
+    <main>
+      <section id="chat-view" aria-labelledby="chat-title">
+        <header class="view-head">
+          <h1 id="chat-title">Chat</h1>
+          <p>Messages go to the local web server, which calls the authenticated gateway. This page does not receive the API key.</p>
+        </header>
+        <div id="chat-error" class="banner banner-error" role="alert" hidden></div>
+        <div id="chat-log" class="log" aria-live="polite"></div>
+        <form id="chat-form" class="composer">
+          <label for="chat-input">Message</label>
+          <textarea id="chat-input" rows="3" maxlength="8000" required placeholder="Ask the model. Enter sends; Shift+Enter adds a line."></textarea>
+          <div class="form-row">
+            <button type="submit" id="chat-send">Send</button>
+            <button type="button" id="chat-clear" class="secondary">Clear</button>
+            <span id="chat-loading" class="loading" role="status" hidden>Generating a reply…</span>
+          </div>
+        </form>
+      </section>
+
+      <section id="documents-view" aria-labelledby="documents-title" hidden>
+        <header class="view-head">
+          <h1 id="documents-title">Document Q&amp;A</h1>
+          <p>Questions use the gateway document endpoint. Cited sources returned with the answer are listed underneath. Leave the collection blank to use the gateway demo corpus.</p>
+        </header>
+        <div id="rag-error" class="banner banner-error" role="alert" hidden></div>
+        <form id="rag-form" class="composer">
+          <label for="rag-question">Question</label>
+          <textarea id="rag-question" rows="3" maxlength="2000" required placeholder="Ask about the documents available to the gateway."></textarea>
+          <div class="split">
+            <div>
+              <label for="rag-collection">Collection</label>
+              <input id="rag-collection" type="text" maxlength="40" pattern="[a-z0-9][a-z0-9_-]{0,39}" placeholder="optional slug, such as finance" autocomplete="off">
+            </div>
+            <div>
+              <label for="rag-top-k">Sources to retrieve</label>
+              <select id="rag-top-k">
+                <option>1</option>
+                <option>2</option>
+                <option>3</option>
+                <option selected>4</option>
+                <option>5</option>
+                <option>6</option>
+                <option>7</option>
+                <option>8</option>
+                <option>9</option>
+                <option>10</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <button type="submit" id="rag-send">Ask</button>
+            <span id="rag-loading" class="loading" role="status" hidden>Searching documents…</span>
+          </div>
+        </form>
+        <article id="rag-result" class="result" hidden></article>
+      </section>
+
+      <section id="status-view" aria-labelledby="status-title" hidden>
+        <header class="view-head">
+          <h1 id="status-title">System Status</h1>
+          <p>A successful check means this web server reached the loopback gateway configured for it. It is not a verified RunPod connection.</p>
+        </header>
+        <div id="status-panel" class="result">Checking the gateway…</div>
+        <div class="form-row">
+          <button type="button" id="status-refresh">Check again</button>
+        </div>
+      </section>
+      <noscript class="banner banner-error">This console needs JavaScript to reach the local web server.</noscript>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

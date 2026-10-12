@@ -1,0 +1,415 @@
+#!/usr/bin/env python3
+"""Checks for the loopback web console and its gateway proxy."""
+from __future__ import annotations
+
+import json
+import os
+import sys
+import tempfile
+import threading
+import unittest
+import urllib.error
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import urlsplit
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import server
+
+KEY = "unit-test-only-not-a-gateway-secret-0123456789"
+MODEL = "/workspace/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it"
+OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPHandler())
+
+
+class FakeGatewayHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, format_string: str, *args: object) -> None:
+        return
+
+    def _record(self) -> dict[str, str]:
+        length = int(self.headers.get("Content-Length", "0") or 0)
+        raw = self.rfile.read(length) if length else b""
+        entry = {
+            "method": self.command,
+            "path": urlsplit(self.path).path,
+            "authorization": self.headers.get("Authorization") or "",
+            "body": raw.decode("utf-8"),
+        }
+        with self.server.lock:
+            self.server.hits.append(entry)
+        return entry
+
+    def _json(self, status: int, payload: dict[str, object]) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:
+        self._record()
+        if urlsplit(self.path).path != "/health":
+            self._json(404, {"error": "not found"})
+            return
+        if self.server.health_code == 503:
+            self._json(503, {"status": "degraded", "upstream": "unavailable"})
+            return
+        self._json(200, {"status": "ok", "upstream": "ok", "model_count": 1, "secret": self.server.key})
+
+    def do_POST(self) -> None:
+        entry = self._record()
+        if self.server.mode == "redirect":
+            self.send_response(302)
+            self.send_header("Location", self.server.redirect_to)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if entry["authorization"] != f"Bearer {self.server.key}":
+            self._json(401, {"error": "authentication required"})
+            return
+        if self.server.mode == "reflect-key":
+            self._json(500, {"error": f"boom {self.server.key}"})
+            return
+        if entry["path"] == "/v1/chat/completions":
+            payload = json.loads(entry["body"])
+            self._json(200, {
+                "model": payload.get("model"),
+                "choices": [{"message": {"role": "assistant", "content": "gateway works"}}],
+            })
+            return
+        if entry["path"] == "/v1/rag/ask":
+            payload = json.loads(entry["body"])
+            if "yacht" in payload.get("question", "").lower():
+                self._json(200, {
+                    "status": "abstained",
+                    "answer": "No sufficiently relevant evidence was found in the supplied documents.",
+                    "sources": [],
+                    "retrieval": {"matched": True, "reason": "below_min_score", "top_score": 0.1, "minimum_score": 2.3},
+                })
+                return
+            self._json(200, {
+                "status": "answered",
+                "answer": "Employees have 10 business days [Source 1].",
+                "model": MODEL,
+                "collection": payload.get("collection"),
+                "sources": [{"label": "Source 1", "file": "expenses-policy.md", "chunk": 2, "score": 4.2}],
+                "retrieval": {"matched": True, "top_score": 4.2, "minimum_score": 2.3},
+            })
+            return
+        self._json(404, {"error": "not found"})
+
+
+class FakeGateway(ThreadingHTTPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+    def __init__(self, key: str = KEY) -> None:
+        self.key = key
+        self.hits: list[dict[str, str]] = []
+        self.lock = threading.Lock()
+        self.health_code = 200
+        self.mode = "ok"
+        self.redirect_to = ""
+        super().__init__(("127.0.0.1", 0), FakeGatewayHandler)
+
+
+class RecorderHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, format_string: str, *args: object) -> None:
+        return
+
+    def _hit(self) -> None:
+        length = int(self.headers.get("Content-Length", "0") or 0)
+        if length:
+            self.rfile.read(length)
+        with self.server.lock:
+            self.server.hits.append(self.path)
+        body = b'{"error":"proxy received a request"}'
+        self.send_response(500)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:
+        self._hit()
+
+    def do_POST(self) -> None:
+        self._hit()
+
+
+class Recorder(ThreadingHTTPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+    def __init__(self) -> None:
+        self.hits: list[str] = []
+        self.lock = threading.Lock()
+        super().__init__(("127.0.0.1", 0), RecorderHandler)
+
+
+class ConsoleTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.servers: list[ThreadingHTTPServer] = []
+
+    def tearDown(self) -> None:
+        for item in self.servers:
+            item.shutdown()
+        for item in self.servers:
+            item.server_close()
+
+    def start(self, instance: ThreadingHTTPServer) -> ThreadingHTTPServer:
+        self.servers.append(instance)
+        threading.Thread(target=instance.serve_forever, daemon=True).start()
+        return instance
+
+    def web(
+        self,
+        gateway: FakeGateway | None,
+        *,
+        api_key: str = KEY,
+        api_key_file: str = "",
+        model_id: str = MODEL,
+        gateway_url: str | None = None,
+    ) -> str:
+        if gateway is not None:
+            self.start(gateway)
+            gateway_url = f"http://127.0.0.1:{gateway.server_address[1]}"
+        httpd = self.start(server.WebServer(server.Config(
+            host="127.0.0.1",
+            port=0,
+            gateway_url=gateway_url or "http://127.0.0.1:9",
+            model_id=model_id,
+            api_key=api_key,
+            api_key_file=api_key_file,
+            upstream_timeout=5,
+            health_timeout=1,
+        )))
+        return f"http://127.0.0.1:{httpd.server_address[1]}"
+
+    def request(self, base: str, method: str, path: str, payload: dict | None = None, headers: dict | None = None) -> tuple[int, bytes]:
+        data = None if payload is None else json.dumps(payload).encode("utf-8")
+        request_headers = dict(headers or {})
+        if data is not None:
+            request_headers.setdefault("Content-Type", "application/json")
+        request = urllib.request.Request(base + path, data=data, headers=request_headers, method=method)
+        try:
+            with OPENER.open(request, timeout=5) as response:
+                return int(response.getcode()), response.read()
+        except urllib.error.HTTPError as exc:
+            return exc.code, exc.read()
+
+    def test_config_rejects_public_targets_and_hides_key(self) -> None:
+        with self.assertRaises(ValueError):
+            server.build_config({"PLATFORM_GATEWAY_URL": "http://example.com:8010", "PLATFORM_API_KEY_FILE": ""})
+        with self.assertRaises(ValueError):
+            server.build_config({"WEB_HOST": "0.0.0.0", "PLATFORM_API_KEY_FILE": ""})
+        with self.assertRaises(ValueError):
+            server.build_config({"PLATFORM_GATEWAY_URL": f"http://user:{KEY}@127.0.0.1:8010", "PLATFORM_API_KEY_FILE": ""})
+        with self.assertRaises(ValueError):
+            server.build_config({"PLATFORM_GATEWAY_URL": "http://127.0.0.1:8010/v1", "PLATFORM_API_KEY_FILE": ""})
+        config = server.build_config({"PLATFORM_API_KEY": KEY, "PLATFORM_API_KEY_FILE": "", "PLATFORM_MODEL_ID": MODEL})
+        self.assertNotIn(KEY, repr(config))
+        self.assertEqual(config.host, "127.0.0.1")
+
+    def test_pages_do_not_contain_the_key_or_gateway_calls(self) -> None:
+        base = self.web(FakeGateway())
+        status, body = self.request(base, "GET", "/")
+        text = body.decode("utf-8")
+        self.assertEqual(status, 200)
+        self.assertIn("Chat", text)
+        self.assertIn("Document Q&amp;A", text)
+        self.assertIn("System Status", text)
+        self.assertNotIn(KEY, text)
+        self.assertNotIn("/v1/chat", text)
+        status, script = self.request(base, "GET", "/static/app.js")
+        script_text = script.decode("utf-8")
+        self.assertEqual(status, 200)
+        self.assertNotIn(KEY, script_text)
+        self.assertNotIn("Authorization", script_text)
+        self.assertNotIn("/v1/", script_text)
+        status, css = self.request(base, "GET", "/static/styles.css")
+        self.assertEqual(status, 200)
+        self.assertIn("@media (max-width: 800px)", css.decode("utf-8"))
+        status, _ = self.request(base, "GET", "/favicon.ico")
+        self.assertEqual(status, 204)
+        status, _ = self.request(base, "GET", "/static/%2e%2e/server.py")
+        self.assertEqual(status, 404)
+
+    def test_status_reports_ready_without_leaking_health_extras(self) -> None:
+        gateway = FakeGateway()
+        base = self.web(gateway)
+        status, body = self.request(base, "GET", "/api/status")
+        payload = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["connection"], "ready")
+        self.assertTrue(payload["gateway_reachable"])
+        self.assertEqual(payload["health"]["model_count"], 1)
+        self.assertNotIn("secret", payload["health"])
+        self.assertFalse(payload["runpod_verified"])
+        self.assertNotIn(KEY, body.decode("utf-8"))
+
+    def test_status_reports_unreachable_degraded_and_missing_key(self) -> None:
+        base = self.web(None, gateway_url="http://127.0.0.1:9")
+        payload = json.loads(self.request(base, "GET", "/api/status")[1])
+        self.assertEqual(payload["connection"], "unreachable")
+        self.assertFalse(payload["runpod_verified"])
+
+        degraded = FakeGateway()
+        degraded.health_code = 503
+        base = self.web(degraded)
+        payload = json.loads(self.request(base, "GET", "/api/status")[1])
+        self.assertEqual(payload["connection"], "degraded")
+        self.assertEqual(payload["upstream"], "unavailable")
+
+        gateway = FakeGateway()
+        base = self.web(gateway, api_key="")
+        payload = json.loads(self.request(base, "GET", "/api/status")[1])
+        self.assertEqual(payload["connection"], "key_missing")
+        status, body = self.request(base, "POST", "/api/chat", {"messages": [{"role": "user", "content": "hello"}]})
+        self.assertEqual(status, 503)
+        self.assertNotIn(KEY, body.decode("utf-8"))
+        self.assertFalse(any(hit["path"] == "/v1/chat/completions" for hit in gateway.hits))
+
+    def test_key_file_is_read_and_missing_file_does_not_fall_back(self) -> None:
+        gateway = FakeGateway()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "platform-gateway.key"
+            path.write_text(KEY + "\n", encoding="utf-8")
+            base = self.web(gateway, api_key="env-key-should-not-be-used-0123456789", api_key_file=str(path))
+            status, body = self.request(base, "POST", "/api/chat", {"messages": [{"role": "user", "content": "hello"}]})
+        self.assertEqual(status, 200)
+        self.assertEqual(gateway.hits[-1]["authorization"], f"Bearer {KEY}")
+        self.assertNotIn(KEY, body.decode("utf-8"))
+
+        gateway = FakeGateway()
+        base = self.web(gateway, api_key=KEY, api_key_file=str(Path(tempfile.gettempdir()) / "missing-platform-gateway.key"))
+        payload = json.loads(self.request(base, "GET", "/api/status")[1])
+        self.assertFalse(payload["key_configured"])
+
+    def test_chat_injects_model_and_ignores_client_credentials(self) -> None:
+        gateway = FakeGateway()
+        base = self.web(gateway)
+        status, body = self.request(
+            base,
+            "POST",
+            "/api/chat",
+            {"model": "client-override", "messages": [{"role": "user", "content": "Reply with exactly: gateway works"}]},
+            headers={"Authorization": "Bearer client-supplied-token"},
+        )
+        payload = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["choices"][0]["message"]["content"], "gateway works")
+        forwarded = json.loads(gateway.hits[-1]["body"])
+        self.assertEqual(forwarded["model"], MODEL)
+        self.assertNotIn("client-override", gateway.hits[-1]["body"])
+        self.assertEqual(gateway.hits[-1]["authorization"], f"Bearer {KEY}")
+        self.assertNotIn(KEY, body.decode("utf-8"))
+
+        stdout = sys.stdout
+        captured: list[str] = []
+
+        class Capture:
+            def write(self, text: str) -> int:
+                captured.append(text)
+                return len(text)
+
+            def flush(self) -> None:
+                return
+
+        sys.stdout = Capture()
+        try:
+            self.request(base, "POST", "/api/chat", {"messages": [{"role": "user", "content": "hello again"}]})
+        finally:
+            sys.stdout = stdout
+        self.assertNotIn(KEY, "".join(captured))
+
+    def test_chat_validation_and_missing_model(self) -> None:
+        gateway = FakeGateway()
+        base = self.web(gateway)
+        status, _ = self.request(base, "POST", "/api/chat", {"messages": []})
+        self.assertEqual(status, 400)
+        status, _ = self.request(base, "POST", "/api/chat", {"messages": [{"role": "assistant", "content": "hi"}]})
+        self.assertEqual(status, 400)
+
+        gateway = FakeGateway()
+        base = self.web(gateway, model_id="")
+        status, body = self.request(base, "POST", "/api/chat", {"messages": [{"role": "user", "content": "hello"}]})
+        self.assertEqual(status, 503)
+        self.assertIn("PLATFORM_MODEL_ID", body.decode("utf-8"))
+        self.assertFalse(any(hit["path"] == "/v1/chat/completions" for hit in gateway.hits))
+
+    def test_rag_returns_sources_and_abstention(self) -> None:
+        gateway = FakeGateway()
+        base = self.web(gateway)
+        status, body = self.request(base, "POST", "/api/rag", {
+            "question": "How many business days do employees have to submit expense receipts?",
+            "collection": "finance",
+            "top_k": 4,
+            "ignore": "do not forward",
+        })
+        payload = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["status"], "answered")
+        self.assertEqual(payload["sources"][0]["file"], "expenses-policy.md")
+        self.assertEqual(payload["sources"][0]["chunk"], 2)
+        forwarded = json.loads(gateway.hits[-1]["body"])
+        self.assertEqual(forwarded["collection"], "finance")
+        self.assertNotIn("ignore", forwarded)
+
+        status, body = self.request(base, "POST", "/api/rag", {"question": "What colour is the CEO private yacht?"})
+        payload = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["status"], "abstained")
+        self.assertEqual(payload["sources"], [])
+
+        before = len(gateway.hits)
+        status, _ = self.request(base, "POST", "/api/rag", {"question": "hello", "collection": "../secrets"})
+        self.assertEqual(status, 400)
+        self.assertEqual(len(gateway.hits), before)
+
+    def test_gateway_errors_do_not_reflect_the_key_or_follow_redirects(self) -> None:
+        gateway = FakeGateway()
+        gateway.mode = "reflect-key"
+        base = self.web(gateway)
+        status, body = self.request(base, "POST", "/api/chat", {"messages": [{"role": "user", "content": "hello"}]})
+        text = body.decode("utf-8")
+        self.assertEqual(status, 500)
+        self.assertNotIn(KEY, text)
+
+        target = self.start(Recorder())
+        gateway = FakeGateway()
+        gateway.mode = "redirect"
+        gateway.redirect_to = f"http://127.0.0.1:{target.server_address[1]}/stolen"
+        base = self.web(gateway)
+        status, body = self.request(base, "POST", "/api/chat", {"messages": [{"role": "user", "content": "hello"}]})
+        self.assertGreaterEqual(status, 300)
+        self.assertEqual(target.hits, [])
+        self.assertNotIn(KEY, body.decode("utf-8"))
+
+    def test_requests_do_not_honor_http_proxy(self) -> None:
+        proxy = self.start(Recorder())
+        gateway = FakeGateway()
+        base = self.web(gateway)
+        previous = {name: os.environ.get(name) for name in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")}
+        os.environ["HTTP_PROXY"] = f"http://127.0.0.1:{proxy.server_address[1]}"
+        os.environ["http_proxy"] = os.environ["HTTP_PROXY"]
+        try:
+            status, _ = self.request(base, "POST", "/api/chat", {"messages": [{"role": "user", "content": "hello"}]})
+        finally:
+            for name, value in previous.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+        self.assertEqual(status, 200)
+        self.assertEqual(proxy.hits, [])
+        self.assertTrue(any(hit["path"] == "/v1/chat/completions" for hit in gateway.hits))
+
+
+if __name__ == "__main__":
+    unittest.main()
