@@ -257,6 +257,7 @@ def _read_xlsx(path: Path) -> str:
             sheet_label = f"Sheet: {sheet.title} (state: {sheet.sheet_state})"
             output.append(sheet_label)
             row_count = 0
+            headers: list[str | None] = []
             for row_index, row in enumerate(sheet.iter_rows(values_only=False), start=1):
                 row_count = row_index
                 if row_count > MAX_XLSX_ROWS_PER_SHEET:
@@ -264,9 +265,11 @@ def _read_xlsx(path: Path) -> str:
                         f"worksheet {sheet.title!r} in {path.name} exceeds the row limit"
                     )
                 values: list[str] = []
-                for cell in row:
+                row_headers: list[str | None] = []
+                for column_index, cell in enumerate(row):
                     value = cell.value
                     if value is None or (isinstance(value, str) and not value.strip()):
+                        row_headers.append(None)
                         continue
                     if hasattr(value, "isoformat") and callable(value.isoformat):
                         rendered = value.isoformat()
@@ -274,8 +277,19 @@ def _read_xlsx(path: Path) -> str:
                         rendered = "TRUE" if value else "FALSE"
                     else:
                         rendered = str(value).strip()
-                    if rendered:
+                    if not rendered:
+                        row_headers.append(None)
+                        continue
+                    row_headers.append(rendered)
+                    header = headers[column_index] if column_index < len(headers) else None
+                    if header:
+                        values.append(f"{cell.coordinate}/{header}={rendered}")
+                    else:
                         values.append(f"{cell.coordinate}={rendered}")
+                if row_index == 1 and any(row_headers):
+                    # Keep the first non-empty row as column headers for later rows so
+                    # age bands, placement types, units and rates stay associated.
+                    headers = row_headers
                 if values:
                     line = f"Sheet: {sheet.title} | Row {row_index}: " + " | ".join(values)
                     total_chars += len(line)

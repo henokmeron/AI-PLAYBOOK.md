@@ -86,7 +86,7 @@ The browser routes are:
 - `POST /api/documents` uploads a validated base64-encoded document to the selected managed collection (maximum 10 MiB file)
 - `DELETE /api/documents?collection=slug&filename=name` deletes a file after explicit user confirmation in the UI
 
-Chat requests sent upstream use temperature `0.2` and `max_tokens` `512`. The gateway still rejects streaming. Document Q&A is conversational in the browser: the transcript keeps prior turns, clears the question box after each submit, and re-enables the form after success or failure. The gateway prompt requires spreadsheet calculations (including daily × 7 for weekly fees) and labels derived values.
+Chat requests sent upstream use temperature `0.2` and `max_tokens` `512`. The gateway still rejects streaming. Document Q&A is conversational: the transcript keeps prior turns with citations, clears the question box when a request becomes pending, keeps the question box editable while Ask is locked to prevent duplicate concurrent submits, and recovers after success or failure. Clear conversation clears the transcript only (not uploads or the selected collection). History is bounded and validated server-side and framed as untrusted context, not as evidence. The gateway prompt requires spreadsheet calculations when asked (including daily × 7 for a seven-day week), preserves row/column relationships, and forbids inventing missing rates. See [docs/document-qa-conversation.md](../docs/document-qa-conversation.md).
 
 ## Checks
 

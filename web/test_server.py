@@ -264,6 +264,11 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("ragQuestion.value = \"\"", script_text)
         self.assertIn("setRagBusy(false)", script_text)
         self.assertIn("ragTurns", script_text)
+        self.assertIn("ragSend.disabled = isBusy", script_text)
+        self.assertIn("ragQuestion.disabled = false", script_text)
+        self.assertIn("Keep collection, top_k, and uploaded docs", script_text)
+        self.assertIn("upload-form", text)
+        self.assertIn("document-list", text)
         status, css = self.request(base, "GET", "/static/styles.css")
         self.assertEqual(status, 200)
         self.assertIn("@media (max-width: 800px)", css.decode("utf-8"))
@@ -480,6 +485,24 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(server.validate_rag_history(None), [])
         with self.assertRaises(ValueError):
             server.validate_rag_history([{"role": "user", "content": "q"}])
+        with self.assertRaises(ValueError):
+            server.validate_rag_history([
+                {"role": "user", "content": "u" * 2000},
+                {"role": "assistant", "content": "a" * 2000},
+            ] * 4)
+
+    def test_rag_without_history_still_works(self) -> None:
+        gateway = FakeGateway()
+        base = self.web(gateway)
+        status, body = self.request(base, "POST", "/api/rag", {
+            "question": "How many business days?",
+            "top_k": 2,
+        })
+        self.assertEqual(status, 200)
+        payload = json.loads(body)
+        self.assertEqual(payload["status"], "answered")
+        forwarded = json.loads(gateway.hits[-1]["body"])
+        self.assertNotIn("history", forwarded)
     def test_gateway_errors_do_not_reflect_the_key_or_follow_redirects(self) -> None:
         gateway = FakeGateway()
         gateway.mode = "reflect-key"

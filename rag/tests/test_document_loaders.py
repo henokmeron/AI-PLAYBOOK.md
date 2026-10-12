@@ -176,7 +176,26 @@ class DocumentLoaderTests(unittest.TestCase):
         self.assertIn("Sheet: Budget", text)
         self.assertIn("Marketing", text)
         self.assertIn("27500", text)
-        self.assertIn("C2=27500", text)
+        self.assertIn("C2/Q4 budget=27500", text)
+        self.assertIn("A2/Department=Marketing", text)
+
+    def test_xlsx_keeps_headers_with_row_values_for_rate_tables(self) -> None:
+        path = self.root / "placement-rates.xlsx"
+        self.make_xlsx(
+            path,
+            [
+                ["Age band", "Placement type", "Daily rate"],
+                ["0-4", "foster", 100],
+                ["5-10", "residential", 150],
+            ],
+            sheet_name="Rates",
+        )
+        text = read_document(path)
+        self.assertIn("Sheet: Rates | Row 2:", text)
+        self.assertIn("B2/Placement type=foster", text)
+        self.assertIn("C2/Daily rate=100", text)
+        self.assertIn("C3/Daily rate=150", text)
+        self.assertNotIn("C2/Daily rate=150", text)
 
     def test_rag_engine_indexes_xlsx_and_preserves_source_name(self) -> None:
         path = self.root / "quarterly-results.xlsx"

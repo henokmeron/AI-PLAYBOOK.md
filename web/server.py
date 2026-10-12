@@ -32,6 +32,7 @@ MAX_MESSAGE_CHARS = 8000
 MAX_QUESTION_CHARS = 2000
 MAX_RAG_HISTORY_MESSAGES = 12
 MAX_RAG_HISTORY_CHARS = 2000
+MAX_RAG_HISTORY_TOTAL_CHARS = 12000
 COLLECTION_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 SAFE_ERROR_RE = re.compile(r"^[A-Za-z0-9 ,.'():_-]{1,160}$")
 CONTENT_TYPES = {
@@ -225,6 +226,7 @@ def validate_rag_history(value: Any) -> list[dict[str, str]]:
             f"history must contain at most {MAX_RAG_HISTORY_MESSAGES} messages"
         )
     cleaned: list[dict[str, str]] = []
+    total_chars = 0
     for item in value:
         if not isinstance(item, dict):
             raise ValueError("each history item must be an object")
@@ -234,13 +236,19 @@ def validate_rag_history(value: Any) -> list[dict[str, str]]:
             raise ValueError("history roles must be user or assistant")
         if not isinstance(content, str) or not content.strip():
             raise ValueError("each history message needs non-empty content")
-        if len(content) > MAX_RAG_HISTORY_CHARS:
+        stripped = content.strip()
+        if len(stripped) > MAX_RAG_HISTORY_CHARS:
             raise ValueError(
                 f"history message must not exceed {MAX_RAG_HISTORY_CHARS} characters"
             )
         if cleaned and cleaned[-1]["role"] == role:
             raise ValueError("history roles must alternate between user and assistant")
-        cleaned.append({"role": role, "content": content.strip()})
+        total_chars += len(stripped)
+        if total_chars > MAX_RAG_HISTORY_TOTAL_CHARS:
+            raise ValueError(
+                f"history total text must not exceed {MAX_RAG_HISTORY_TOTAL_CHARS} characters"
+            )
+        cleaned.append({"role": role, "content": stripped})
     if cleaned and cleaned[0]["role"] != "user":
         raise ValueError("history must start with a user turn")
     if cleaned and cleaned[-1]["role"] != "assistant":

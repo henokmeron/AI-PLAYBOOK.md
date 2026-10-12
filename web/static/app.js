@@ -60,10 +60,13 @@
 
   function setRagBusy(isBusy) {
     ragBusy = isBusy;
+    // Keep the question box editable so the user can draft the next question.
+    // Disable Ask only to prevent duplicate concurrent submissions that could
+    // mis-order answers. Collection and top_k stay usable for the next ask.
     ragSend.disabled = isBusy;
-    ragQuestion.disabled = isBusy;
-    ragCollection.disabled = isBusy;
-    ragTopK.disabled = isBusy;
+    ragQuestion.disabled = false;
+    ragCollection.disabled = false;
+    ragTopK.disabled = false;
     ragClear.disabled = isBusy;
     ragLoading.hidden = !isBusy;
   }
@@ -273,7 +276,7 @@
     if (ragBusy) {
       var pending = el("article", "message message-assistant");
       pending.appendChild(el("div", "message-label", "Assistant"));
-      pending.appendChild(el("p", null, "Searching documents…"));
+      pending.appendChild(el("p", null, "Searching documents… You can type the next question now; Ask stays locked until this reply finishes."));
       ragLog.appendChild(pending);
     }
     ragLog.scrollTop = ragLog.scrollHeight;
@@ -387,6 +390,7 @@
 
   ragClear.addEventListener("click", function () {
     if (ragBusy) return;
+    // Clear transcript/history only. Keep collection, top_k, and uploaded docs.
     ragTurns = [];
     showError(ragError, "");
     renderRag();

@@ -111,3 +111,13 @@ After creating it, test on the current Pod without interrupting the working serv
 ## RAG quality gate
 
 Before calling RAG business-grade, create a version-controlled benchmark with known-answer cases and source spans. Include exact wording, paraphrases, synonyms, multi-document synthesis, irrelevant/no-answer queries, conflicting/dated policies, long documents, and prompt-injection content in retrieved files. Measure retrieval recall at k, answer correctness, citation precision, unsupported-claim rate, and appropriate abstention. Establish a baseline for BM25 before changing it; compare a hybrid BM25 + semantic retrieval and reranking candidate against the same tests. Keep thresholds corpus-specific and require citations to retrieved source chunks.
+
+## Document Q&A conversation (2026-10-12)
+
+Conversational Document Q&A, bounded history validation, untrusted history framing, and spreadsheet calculation prompting are documented in [document-qa-conversation.md](document-qa-conversation.md). Create dated Global Volume snapshots with:
+
+```bash
+bash /tmp/AI-PLAYBOOK-upload-test/ops/snapshot-document-qa-test.sh
+```
+
+Snapshots land under `/workspace/runtime-setup/web-console-backups/document-qa-conversation-<UTC-stamp>/` and must never include API keys, `.env` files, model weights, or caches. Prefer a separate test console on `127.0.0.1:8082` (optional companion gateway on `8012`) before touching the main console on `8080` / gateway on `8010`.
