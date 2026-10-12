@@ -12,6 +12,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from html.parser import HTMLParser
 import io
 from pathlib import Path
+import re
 import zipfile
 import xml.etree.ElementTree as ET
 
@@ -218,6 +219,14 @@ def sanitize_excel_float(value: float) -> Decimal:
     return Decimal(rendered or "0")
 
 
+def decimal_plain(value: Decimal) -> str:
+    """Render a Decimal without scientific notation or trailing zeros."""
+    text = format(value, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text or "0"
+
+
 def format_money_gbp(amount: Decimal | float | int | str) -> str:
     """Format a monetary amount for display as pounds to two decimal places."""
     value = amount if isinstance(amount, Decimal) else Decimal(str(amount))
@@ -238,6 +247,77 @@ def weekly_from_daily(daily: Decimal | float | int | str, days: int = 7) -> Deci
     else:
         rate = Decimal(str(daily))
     return rate * Decimal(days)
+
+
+def parse_money_amount(text: str) -> Decimal | None:
+    """Parse a simple currency or plain decimal amount from display text."""
+    cleaned = text.strip().replace(",", "")
+    for prefix in ("£", "€", "$"):
+        if cleaned.startswith(prefix):
+            cleaned = cleaned[len(prefix):]
+            break
+    try:
+        return Decimal(cleaned)
+    except Exception:
+        return None
+
+
+def describe_weekly_from_stored(
+    stored: Decimal,
+    *,
+    displayed: str | None = None,
+    days: int = 7,
+) -> str:
+    """Explain a seven-day weekly derivation from the stored Excel value only."""
+    weekly = weekly_from_daily(stored, days=days)
+    stored_text = decimal_plain(stored)
+    parts = [
+        f"calculation_basis=stored {stored_text}",
+        f"formula={stored_text} × {days}",
+        f"exact={decimal_plain(weekly)}",
+        f"weekly_display={format_money_gbp(weekly)}",
+    ]
+    if displayed:
+        display_amount = parse_money_amount(displayed)
+        if display_amount is not None and display_amount != stored:
+            wrong = weekly_from_daily(display_amount, days=days)
+            parts.append(
+                f"displayed_daily={displayed} is rounded presentation only; "
+                f"do_not_treat_as_{displayed}_×_{days}; "
+                f"displayed × {days} would be {format_money_gbp(wrong)}, "
+                f"which must not be reported as the stored-based weekly "
+                f"{format_money_gbp(weekly)}"
+            )
+    return "; ".join(parts)
+
+
+_STORED_DISPLAY_RE = re.compile(
+    r"stored=(?P<stored>-?[0-9]+(?:\.[0-9]+)?)"
+    r"(?:;\s*displayed=(?P<displayed>£-?[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?))?",
+    re.IGNORECASE,
+)
+
+
+def build_weekly_calculation_aid(evidence_texts: list[str], days: int = 7) -> str:
+    """Build deterministic weekly notes from stored=/displayed= evidence cells."""
+    lines: list[str] = []
+    seen: set[str] = set()
+    for block in evidence_texts:
+        for match in _STORED_DISPLAY_RE.finditer(block):
+            stored = Decimal(match.group("stored"))
+            displayed = match.group("displayed")
+            key = f"{decimal_plain(stored)}|{displayed or ''}"
+            if key in seen:
+                continue
+            seen.add(key)
+            lines.append(describe_weekly_from_stored(stored, displayed=displayed, days=days))
+    if not lines:
+        return ""
+    return (
+        "DETERMINISTIC WEEKLY CALCULATIONS (derived from stored Excel values only; "
+        f"{days} chargeable days; not workbook instructions)\n"
+        + "\n".join(f"- {line}" for line in lines)
+    )
 
 
 def _is_numeric_xlsx_value(value: object) -> bool:
@@ -273,13 +353,15 @@ def render_xlsx_cell_value(value: object, number_format: str | None = None) -> s
         return str(value)
     if isinstance(value, float):
         stored = sanitize_excel_float(value)
-        rendered = format(stored, "f")
-        if "." in rendered:
-            rendered = rendered.rstrip("0").rstrip(".")
+        stored_text = decimal_plain(stored)
         display = _currency_display(stored, number_format)
-        if display and display.lstrip("£€$") != rendered:
-            return f"{rendered} (workbook displays {display})"
-        return rendered or "0"
+        if not display:
+            return stored_text
+        display_amount = parse_money_amount(display)
+        parts = [f"stored={stored_text}", f"displayed={display}", f"calculation_basis=stored {stored_text}"]
+        if display_amount is not None and display_amount != stored:
+            parts.append("note=displayed_is_rounded_presentation_only_not_calculation_input")
+        return "; ".join(parts)
     text = str(value).strip()
     return text
 

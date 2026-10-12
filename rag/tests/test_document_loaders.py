@@ -244,6 +244,8 @@ class DocumentLoaderTests(unittest.TestCase):
         from decimal import Decimal
 
         from document_loaders import (
+            build_weekly_calculation_aid,
+            describe_weekly_from_stored,
             format_money_gbp,
             render_xlsx_cell_value,
             sanitize_excel_float,
@@ -253,14 +255,65 @@ class DocumentLoaderTests(unittest.TestCase):
         stored = sanitize_excel_float(99.49800000000002)
         self.assertEqual(stored, Decimal("99.498"))
         self.assertEqual(render_xlsx_cell_value(99.49800000000002), "99.498")
-        self.assertIn(
-            "workbook displays £99.50",
-            render_xlsx_cell_value(99.49800000000002, '"£"#,##0.00'),
-        )
+        mismatched = render_xlsx_cell_value(99.49800000000002, '"£"#,##0.00')
+        self.assertIn("stored=99.498", mismatched)
+        self.assertIn("displayed=£99.50", mismatched)
+        self.assertIn("calculation_basis=stored 99.498", mismatched)
+        self.assertIn("displayed_is_rounded_presentation_only", mismatched)
+        self.assertNotIn("99.49800000000002", mismatched)
         weekly = weekly_from_daily(stored, days=7)
         self.assertEqual(weekly, Decimal("696.486"))
         self.assertEqual(format_money_gbp(weekly), "£696.49")
+        note = describe_weekly_from_stored(stored, displayed="£99.50", days=7)
+        self.assertIn("99.498 × 7", note)
+        self.assertIn("weekly_display=£696.49", note)
+        self.assertIn("do_not_treat_as_£99.50_×_7", note)
+        self.assertIn("£696.50", note)
+        self.assertIn("must not be reported as the stored-based weekly £696.49", note)
+        # Ordinary two-decimal currency rate: stored equals displayed magnitude.
+        ordinary = render_xlsx_cell_value(66.3, '"£"#,##0.00')
+        self.assertIn("stored=66.3", ordinary)
+        self.assertIn("displayed=£66.30", ordinary)
+        self.assertIn("calculation_basis=stored 66.3", ordinary)
+        self.assertNotIn("displayed_is_rounded_presentation_only", ordinary)
+        ordinary_note = describe_weekly_from_stored(Decimal("66.3"), displayed="£66.30", days=7)
+        self.assertIn("weekly_display=£464.10", ordinary_note)
+        self.assertNotIn("do_not_treat_as_", ordinary_note)
         self.assertEqual(render_xlsx_cell_value("N/A"), "N/A")
+        aid = build_weekly_calculation_aid([
+            "B6/Aged 0-4 Years=stored=99.498; displayed=£99.50; calculation_basis=stored 99.498",
+            "C8=N/A",
+        ])
+        self.assertIn("DETERMINISTIC WEEKLY CALCULATIONS", aid)
+        self.assertIn("weekly_display=£696.49", aid)
+        self.assertNotIn("N/A ×", aid)
+
+    def test_xlsx_currency_cells_preserve_stored_vs_displayed_in_workbook(self) -> None:
+        import openpyxl
+
+        path = self.root / "complex-rate.xlsx"
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet.title = "Rates"
+        sheet["A1"] = "Placement"
+        sheet["B1"] = "Daily rate"
+        sheet["A2"] = "Complex"
+        sheet["B2"] = 99.49800000000002
+        sheet["B2"].number_format = '"£"#,##0.00'
+        sheet["A3"] = "Standard"
+        sheet["B3"] = 66.3
+        sheet["B3"].number_format = '"£"#,##0.00'
+        sheet["A4"] = "Parent"
+        sheet["B4"] = "N/A"
+        workbook.save(path)
+        workbook.close()
+        text = read_document(path)
+        self.assertIn("stored=99.498", text)
+        self.assertIn("displayed=£99.50", text)
+        self.assertIn("stored=66.3", text)
+        self.assertIn("displayed=£66.30", text)
+        self.assertIn("N/A", text)
+        self.assertNotIn("99.49800000000002", text)
 
     def test_rag_engine_indexes_xlsx_and_preserves_source_name(self) -> None:
         path = self.root / "quarterly-results.xlsx"

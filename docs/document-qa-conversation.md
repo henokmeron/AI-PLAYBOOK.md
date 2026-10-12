@@ -29,8 +29,9 @@ This revision keeps Chat, upload, System Status, loopback binding, and bearer-ke
 ## Spreadsheet extraction, retrieval, and calculations
 
 - XLSX extraction (`rag/document_loaders.py`) keeps sheet name, row number, cell coordinate, and stacked headers from every label row above the first numeric data row as `coordinate/Header=value` (so age bands and units stay attached to rates).
-- Numeric cells are serialized with decimal-safe rendering (IEEE float tails such as `99.49800000000002` become `99.498`). When Excel’s number format is currency, the workbook display value is noted separately (for example `99.498 (workbook displays £99.50)`); stored values are not replaced by guessed amounts.
-- Helpers `sanitize_excel_float`, `weekly_from_daily`, and `format_money_gbp` support decimal-safe weekly math and two-decimal display formatting in tests and tooling.
+- Numeric cells are serialized with decimal-safe rendering (IEEE float tails such as `99.49800000000002` become `99.498`). Currency cells keep both forms explicitly: `stored=99.498; displayed=£99.50; calculation_basis=stored 99.498` when the workbook display rounds differently.
+- For weekly questions, the gateway appends a deterministic `DETERMINISTIC WEEKLY CALCULATIONS` block derived from stored values only (for example `99.498 × 7 → £696.49`), and warns that `£99.50 × 7` must not be treated as that stored-based weekly total.
+- Helpers `sanitize_excel_float`, `weekly_from_daily`, `format_money_gbp`, `describe_weekly_from_stored`, and `build_weekly_calculation_aid` support decimal-safe weekly math and two-decimal display formatting.
 - Chunking prefers whole spreadsheet row lines so row/header associations are not split mid-line.
 - Retrieval collapses identical extracted row sets from differently named workbooks into one evidence block while listing every matching filename; conflicting values stay separate.
 - Default `top_k` is 8 (max 20). Broad “every/all/complete table” questions automatically widen retrieval. Generation uses `RAG_MAX_TOKENS` (default 2048). If the model stops with `finish_reason=length`, the gateway appends an explicit incomplete-answer note.

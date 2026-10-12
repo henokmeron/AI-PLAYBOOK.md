@@ -112,6 +112,8 @@ class RagConversationTests(unittest.TestCase):
         self.assertIn("two decimal places", prompt)
         self.assertIn("similar names", prompt)
         self.assertIn("derived values", prompt)
+        self.assertIn("stored=99.498", prompt)
+        self.assertIn("displayed £99.50", prompt)
         self.assertTrue(gateway.question_requests_broad_coverage(
             "List every age band and placement type with weekly rates"
         ))
@@ -120,6 +122,30 @@ class RagConversationTests(unittest.TestCase):
         ))
         self.assertGreaterEqual(gateway.RAG_MAX_TOKENS, 1024)
         self.assertGreaterEqual(gateway.RAG_TOP_K_MAX, 16)
+
+    def test_weekly_messages_include_deterministic_stored_vs_displayed_aid(self) -> None:
+        evidence = [
+            "[Source 1: file=fees.xlsx; chunk=1]\n"
+            "Sheet: Rates | Row 6: A6=Complex Placements | "
+            "B6/Aged 0-4 Years=stored=99.498; displayed=£99.50; "
+            "calculation_basis=stored 99.498; "
+            "note=displayed_is_rounded_presentation_only_not_calculation_input"
+        ]
+        messages = gateway.build_rag_completion_messages(
+            "What is the weekly rate for seven chargeable days?",
+            evidence,
+        )
+        user = messages[1]["content"]
+        self.assertIn("DETERMINISTIC WEEKLY CALCULATIONS", user)
+        self.assertIn("weekly_display=£696.49", user)
+        self.assertIn("do_not_treat_as_£99.50_×_7", user)
+        self.assertIn("stored value only", user.casefold())
+        # Non-weekly factual questions should not inject the weekly aid block.
+        daily_only = gateway.build_rag_completion_messages(
+            "What is the daily rate for Complex Placements aged 0-4?",
+            evidence,
+        )
+        self.assertNotIn("DETERMINISTIC WEEKLY CALCULATIONS", daily_only[1]["content"])
 
 
 if __name__ == "__main__":
