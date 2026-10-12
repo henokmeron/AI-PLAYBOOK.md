@@ -219,12 +219,13 @@ def call_gateway(
     payload: dict[str, Any] | None,
     timeout: float,
     include_key: bool,
+    max_request_bytes: int = MAX_BODY_BYTES,
 ) -> GatewayResult:
     key = config.resolve_api_key() if include_key else ""
     if include_key and len(key) < 32:
         return GatewayResult(False, 0, None)
     data = None if payload is None else json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    if data is not None and len(data) > MAX_BODY_BYTES:
+    if data is not None and len(data) > max_request_bytes:
         return GatewayResult(True, 413, {"error": "request body too large"})
     headers = {"Accept": "application/json"}
     if data is not None:
@@ -514,7 +515,7 @@ class Handler(BaseHTTPRequestHandler):
         result = call_gateway(
             self.config, "POST", "/v1/rag/documents",
             {"collection": collection, "filename": filename, "content_base64": content_base64, "overwrite": overwrite},
-            self.config.upstream_timeout, include_key=True,
+            self.config.upstream_timeout, include_key=True, max_request_bytes=MAX_UPLOAD_BODY_BYTES,
         )
         self.forward_result(result)
 
