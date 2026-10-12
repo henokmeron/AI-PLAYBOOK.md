@@ -194,10 +194,19 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .answer { margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
 .meta { margin: 0 0 12px; color: var(--muted); font-size: 0.9rem; }
 
-.sources { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.sources { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
 .sources li { padding: 10px 12px; border-radius: 10px; background: #f7f4ef; }
 .sources strong, .sources span { display: block; }
 .sources span { color: var(--muted); font-size: 0.88rem; }
+.message-sources { margin-top: 10px; }
+.message-sources h3 {
+  margin: 0 0 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
 
 .status-list { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 12px; margin: 0; }
 .status-list dt { color: var(--muted); }

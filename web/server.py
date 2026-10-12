@@ -30,6 +30,8 @@ MAX_KEY_FILE_BYTES = 4096
 MAX_MESSAGES = 40
 MAX_MESSAGE_CHARS = 8000
 MAX_QUESTION_CHARS = 2000
+MAX_RAG_HISTORY_MESSAGES = 12
+MAX_RAG_HISTORY_CHARS = 2000
 COLLECTION_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 SAFE_ERROR_RE = re.compile(r"^[A-Za-z0-9 ,.'():_-]{1,160}$")
 CONTENT_TYPES = {
@@ -210,6 +212,40 @@ def public_health(payload: dict[str, Any] | None) -> dict[str, Any] | None:
     if isinstance(count, int) and not isinstance(count, bool) and 0 <= count <= 100:
         public["model_count"] = count
     return public
+
+
+def validate_rag_history(value: Any) -> list[dict[str, str]]:
+    """Validate optional prior Document Q&A turns. Raises ValueError on bad input."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("history must be an array of prior user and assistant turns")
+    if len(value) > MAX_RAG_HISTORY_MESSAGES:
+        raise ValueError(
+            f"history must contain at most {MAX_RAG_HISTORY_MESSAGES} messages"
+        )
+    cleaned: list[dict[str, str]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("each history item must be an object")
+        role = item.get("role")
+        content = item.get("content")
+        if role not in {"user", "assistant"}:
+            raise ValueError("history roles must be user or assistant")
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("each history message needs non-empty content")
+        if len(content) > MAX_RAG_HISTORY_CHARS:
+            raise ValueError(
+                f"history message must not exceed {MAX_RAG_HISTORY_CHARS} characters"
+            )
+        if cleaned and cleaned[-1]["role"] == role:
+            raise ValueError("history roles must alternate between user and assistant")
+        cleaned.append({"role": role, "content": content.strip()})
+    if cleaned and cleaned[0]["role"] != "user":
+        raise ValueError("history must start with a user turn")
+    if cleaned and cleaned[-1]["role"] != "assistant":
+        raise ValueError("history must end with an assistant turn")
+    return cleaned
 
 
 def call_gateway(
@@ -604,7 +640,14 @@ class Handler(BaseHTTPRequestHandler):
         if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 1 or top_k > 10:
             self.send_error_json(400, "top_k must be an integer from 1 to 10")
             return
+        try:
+            history = validate_rag_history(payload.get("history"))
+        except ValueError as exc:
+            self.send_error_json(400, str(exc))
+            return
         upstream: dict[str, Any] = {"question": question, "top_k": top_k}
+        if history:
+            upstream["history"] = history
         if "collection" in payload and payload.get("collection") not in {None, ""}:
             collection = payload.get("collection")
             if not isinstance(collection, str) or not COLLECTION_RE.fullmatch(collection):

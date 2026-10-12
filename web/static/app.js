@@ -3,9 +3,11 @@
 
   var views = ["chat", "documents", "status"];
   var messages = [];
+  var ragTurns = [];
   var busy = false;
   var ragBusy = false;
   var lastStatus = null;
+  var MAX_RAG_HISTORY_MESSAGES = 12;
 
   var navStatus = document.getElementById("nav-status");
   var chatLog = document.getElementById("chat-log");
@@ -21,7 +23,8 @@
   var ragError = document.getElementById("rag-error");
   var ragLoading = document.getElementById("rag-loading");
   var ragSend = document.getElementById("rag-send");
-  var ragResult = document.getElementById("rag-result");
+  var ragClear = document.getElementById("rag-clear");
+  var ragLog = document.getElementById("rag-log");
   var uploadForm = document.getElementById("upload-form");
   var uploadCollection = document.getElementById("upload-collection");
   var uploadFile = document.getElementById("upload-file");
@@ -53,6 +56,16 @@
     if (error && error.name === "TimeoutError") return "The gateway took too long to respond.";
     if (error && error.name === "AbortError") return "The request was cancelled.";
     return error && error.message ? error.message : "The request failed.";
+  }
+
+  function setRagBusy(isBusy) {
+    ragBusy = isBusy;
+    ragSend.disabled = isBusy;
+    ragQuestion.disabled = isBusy;
+    ragCollection.disabled = isBusy;
+    ragTopK.disabled = isBusy;
+    ragClear.disabled = isBusy;
+    ragLoading.hidden = !isBusy;
   }
 
   function request(path, options) {
@@ -215,20 +228,55 @@
     return list;
   }
 
-  function renderRag(body) {
-    ragResult.hidden = false;
-    ragResult.textContent = "";
-    var answered = body.status === "answered";
-    ragResult.appendChild(el("div", "badge " + (answered ? "badge-answered" : "badge-abstained"), answered ? "Answered" : "Abstained"));
-    ragResult.appendChild(el("p", "answer", typeof body.answer === "string" ? body.answer : ""));
-    var notes = [];
-    if (body.collection) notes.push("Collection " + body.collection + ".");
-    if (body.model) notes.push("Model " + body.model + ".");
-    var retrieval = retrievalText(body.retrieval);
-    if (retrieval) notes.push(retrieval);
-    if (notes.length) ragResult.appendChild(el("p", "meta", notes.join(" ")));
-    ragResult.appendChild(el("h2", null, "Sources"));
-    ragResult.appendChild(renderSources(body.sources));
+  function historyPayload() {
+    var pairs = [];
+    ragTurns.forEach(function (turn) {
+      if (!turn || typeof turn.question !== "string" || typeof turn.answer !== "string") return;
+      pairs.push({ role: "user", content: turn.question });
+      pairs.push({ role: "assistant", content: turn.answer });
+    });
+    if (pairs.length > MAX_RAG_HISTORY_MESSAGES) {
+      return pairs.slice(pairs.length - MAX_RAG_HISTORY_MESSAGES);
+    }
+    return pairs;
+  }
+
+  function renderRag() {
+    ragLog.textContent = "";
+    if (!ragTurns.length && !ragBusy) {
+      ragLog.appendChild(el("p", "placeholder", "Ask a document question. Follow-ups stay in this conversation."));
+      return;
+    }
+    ragTurns.forEach(function (turn) {
+      var userBlock = el("article", "message message-user");
+      userBlock.appendChild(el("div", "message-label", "You"));
+      userBlock.appendChild(el("p", null, turn.question));
+      ragLog.appendChild(userBlock);
+
+      var assistantBlock = el("article", "message message-assistant");
+      assistantBlock.appendChild(el("div", "message-label", "Assistant"));
+      var answered = turn.status === "answered";
+      assistantBlock.appendChild(el("div", "badge " + (answered ? "badge-answered" : "badge-abstained"), answered ? "Answered" : "Abstained"));
+      assistantBlock.appendChild(el("p", "answer", turn.answer || ""));
+      var notes = [];
+      if (turn.collection) notes.push("Collection " + turn.collection + ".");
+      if (turn.model) notes.push("Model " + turn.model + ".");
+      var retrieval = retrievalText(turn.retrieval);
+      if (retrieval) notes.push(retrieval);
+      if (notes.length) assistantBlock.appendChild(el("p", "meta", notes.join(" ")));
+      var sourcesWrap = el("div", "message-sources");
+      sourcesWrap.appendChild(el("h3", null, "Sources"));
+      sourcesWrap.appendChild(renderSources(turn.sources));
+      assistantBlock.appendChild(sourcesWrap);
+      ragLog.appendChild(assistantBlock);
+    });
+    if (ragBusy) {
+      var pending = el("article", "message message-assistant");
+      pending.appendChild(el("div", "message-label", "Assistant"));
+      pending.appendChild(el("p", null, "Searching documents…"));
+      ragLog.appendChild(pending);
+    }
+    ragLog.scrollTop = ragLog.scrollHeight;
   }
 
   document.querySelectorAll("[data-view]").forEach(function (button) {
@@ -245,6 +293,13 @@
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       chatForm.requestSubmit();
+    }
+  });
+
+  ragQuestion.addEventListener("keydown", function (event) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      ragForm.requestSubmit();
     }
   });
 
@@ -296,25 +351,47 @@
       showError(ragError, "Collection must be a lowercase slug using letters, numbers, hyphens, or underscores.");
       return;
     }
-    var body = { question: question, top_k: Number(ragTopK.value) };
+    var body = {
+      question: question,
+      top_k: Number(ragTopK.value),
+      history: historyPayload()
+    };
     if (collection) body.collection = collection;
-    ragBusy = true;
-    ragSend.disabled = true;
-    ragLoading.hidden = false;
+    ragQuestion.value = "";
+    setRagBusy(true);
     showError(ragError, "");
+    renderRag();
     request("/api/rag", { method: "POST", body: body }).then(function (result) {
-      renderRag(result);
+      var answer = typeof result.answer === "string" ? result.answer : "";
+      if (!answer.trim()) {
+        throw new Error("The document endpoint returned an empty answer.");
+      }
+      ragTurns.push({
+        question: question,
+        answer: answer.trim(),
+        status: result.status === "answered" ? "answered" : "abstained",
+        sources: Array.isArray(result.sources) ? result.sources : [],
+        retrieval: result.retrieval || null,
+        collection: result.collection || collection || null,
+        model: result.model || null
+      });
     }).catch(function (error) {
-      ragResult.hidden = true;
       showError(ragError, errorMessage(error));
     }).finally(function () {
-      ragBusy = false;
-      ragSend.disabled = false;
-      ragLoading.hidden = true;
+      setRagBusy(false);
+      renderRag();
       refreshStatus();
+      ragQuestion.focus();
     });
   });
 
+  ragClear.addEventListener("click", function () {
+    if (ragBusy) return;
+    ragTurns = [];
+    showError(ragError, "");
+    renderRag();
+    ragQuestion.focus();
+  });
 
   function renderDocumentList(documents, collection) {
     documentList.textContent = "";
@@ -428,6 +505,7 @@
   document.getElementById("status-refresh").addEventListener("click", refreshStatus);
 
   renderChat();
+  renderRag();
   showView(location.hash.replace("#", "") || "chat");
   loadDocuments().catch(function () {});
   refreshStatus();

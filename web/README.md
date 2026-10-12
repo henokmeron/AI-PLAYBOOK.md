@@ -81,23 +81,24 @@ The browser routes are:
 - `GET /` the dashboard
 - `GET /api/status` gateway health, key presence, and model configuration
 - `POST /api/chat` forwards a cleaned message list to `/v1/chat/completions`
-- `POST /api/rag` forwards `question`, optional `collection`, and `top_k` to `/v1/rag/ask`
+- `POST /api/rag` forwards `question`, optional `collection`, `top_k`, and a bounded validated `history` of prior user/assistant turns to `/v1/rag/ask`
 - `GET /api/documents?collection=slug` lists files in a managed collection
 - `POST /api/documents` uploads a validated base64-encoded document to the selected managed collection (maximum 10 MiB file)
 - `DELETE /api/documents?collection=slug&filename=name` deletes a file after explicit user confirmation in the UI
 
-Chat requests sent upstream use temperature `0.2` and `max_tokens` `512`. The gateway still rejects streaming. Document answers keep the gateway's own prompt and token limit.
+Chat requests sent upstream use temperature `0.2` and `max_tokens` `512`. The gateway still rejects streaming. Document Q&A is conversational in the browser: the transcript keeps prior turns, clears the question box after each submit, and re-enables the form after success or failure. The gateway prompt requires spreadsheet calculations (including daily × 7 for weekly fees) and labels derived values.
 
 ## Checks
 
 From the repository root:
 
 ```bash
-python -m py_compile web/server.py web/test_server.py
+python -m py_compile web/server.py web/test_server.py api/local_gateway.py api/test_rag_conversation.py
 python -m unittest discover -s web -v
+python -m unittest discover -s api -p 'test_*.py' -v
 ```
 
-The unit tests start a fake loopback gateway. They do not contact RunPod, vLLM, or the real gateway.
+The web unit tests start a fake loopback gateway. The API conversation tests cover history validation and calculation prompting without contacting RunPod or vLLM.
 
 ## Files
 

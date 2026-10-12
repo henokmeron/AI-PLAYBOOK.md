@@ -102,6 +102,7 @@ class FakeGatewayHandler(BaseHTTPRequestHandler):
             return
         if entry["path"] == "/v1/rag/ask":
             payload = json.loads(entry["body"])
+            history = payload.get("history") or []
             if "yacht" in payload.get("question", "").lower():
                 self._json(200, {
                     "status": "abstained",
@@ -110,9 +111,12 @@ class FakeGatewayHandler(BaseHTTPRequestHandler):
                     "retrieval": {"matched": True, "reason": "below_min_score", "top_score": 0.1, "minimum_score": 2.3},
                 })
                 return
+            answer = "Employees have 10 business days [Source 1]."
+            if history:
+                answer = "Follow-up: weekly fee is daily × 7 = 700 (derived) [Source 1]."
             self._json(200, {
                 "status": "answered",
-                "answer": "Employees have 10 business days [Source 1].",
+                "answer": answer,
                 "model": MODEL,
                 "collection": payload.get("collection"),
                 "sources": [{"label": "Source 1", "file": "expenses-policy.md", "chunk": 2, "score": 4.2}],
@@ -244,6 +248,10 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("Chat", text)
         self.assertIn("Document Q&amp;A", text)
         self.assertIn("System Status", text)
+        self.assertIn('id="rag-log"', text)
+        self.assertIn('id="rag-clear"', text)
+        self.assertIn("Clear conversation", text)
+        self.assertNotIn('id="rag-result"', text)
         self.assertNotIn(KEY, text)
         self.assertNotIn("/v1/chat", text)
         status, script = self.request(base, "GET", "/static/app.js")
@@ -252,6 +260,10 @@ class ConsoleTests(unittest.TestCase):
         self.assertNotIn(KEY, script_text)
         self.assertNotIn("Authorization", script_text)
         self.assertNotIn("/v1/", script_text)
+        self.assertIn("historyPayload", script_text)
+        self.assertIn("ragQuestion.value = \"\"", script_text)
+        self.assertIn("setRagBusy(false)", script_text)
+        self.assertIn("ragTurns", script_text)
         status, css = self.request(base, "GET", "/static/styles.css")
         self.assertEqual(status, 200)
         self.assertIn("@media (max-width: 800px)", css.decode("utf-8"))
@@ -380,6 +392,7 @@ class ConsoleTests(unittest.TestCase):
         forwarded = json.loads(gateway.hits[-1]["body"])
         self.assertEqual(forwarded["collection"], "finance")
         self.assertNotIn("ignore", forwarded)
+        self.assertNotIn("history", forwarded)
 
         status, body = self.request(base, "POST", "/api/rag", {"question": "What colour is the CEO private yacht?"})
         payload = json.loads(body)
@@ -391,7 +404,6 @@ class ConsoleTests(unittest.TestCase):
         status, _ = self.request(base, "POST", "/api/rag", {"question": "hello", "collection": "../secrets"})
         self.assertEqual(status, 400)
         self.assertEqual(len(gateway.hits), before)
-
 
     def test_managed_document_list_upload_and_delete_proxy(self) -> None:
         gateway = FakeGateway()
@@ -427,6 +439,47 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(len(gateway.hits), before)
 
+    def test_rag_history_is_validated_and_forwarded(self) -> None:
+        gateway = FakeGateway()
+        base = self.web(gateway)
+        history = [
+            {"role": "user", "content": "What is the daily fee?"},
+            {"role": "assistant", "content": "The daily fee is 100 [Source 1]."},
+        ]
+        status, body = self.request(base, "POST", "/api/rag", {
+            "question": "What is the weekly fee?",
+            "collection": "finance",
+            "top_k": 3,
+            "history": history,
+            "extra": "drop-me",
+        })
+        payload = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertIn("weekly fee is daily × 7", payload["answer"])
+        self.assertEqual(payload["sources"][0]["file"], "expenses-policy.md")
+        forwarded = json.loads(gateway.hits[-1]["body"])
+        self.assertEqual(forwarded["question"], "What is the weekly fee?")
+        self.assertEqual(forwarded["collection"], "finance")
+        self.assertEqual(forwarded["history"], history)
+        self.assertNotIn("extra", forwarded)
+
+        before = len(gateway.hits)
+        bad_cases = [
+            {"question": "follow up", "history": "nope"},
+            {"question": "follow up", "history": [{"role": "assistant", "content": "alone"}]},
+            {"question": "follow up", "history": [{"role": "user", "content": "only"}]},
+            {"question": "follow up", "history": [{"role": "user", "content": "q"}, {"role": "user", "content": "q2"}]},
+        ]
+        for case in bad_cases:
+            status, err = self.request(base, "POST", "/api/rag", case)
+            self.assertEqual(status, 400, case)
+            self.assertIn("history", json.loads(err)["error"])
+        self.assertEqual(len(gateway.hits), before)
+
+    def test_validate_rag_history_helper(self) -> None:
+        self.assertEqual(server.validate_rag_history(None), [])
+        with self.assertRaises(ValueError):
+            server.validate_rag_history([{"role": "user", "content": "q"}])
     def test_gateway_errors_do_not_reflect_the_key_or_follow_redirects(self) -> None:
         gateway = FakeGateway()
         gateway.mode = "reflect-key"

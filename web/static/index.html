@@ -45,7 +45,7 @@
       <section id="documents-view" aria-labelledby="documents-title" hidden>
         <header class="view-head">
           <h1 id="documents-title">Document Q&amp;A</h1>
-          <p>Questions use the gateway document endpoint. Cited sources returned with the answer are listed underneath. Leave the collection blank to use the gateway demo corpus.</p>
+          <p>Ask follow-up questions in one conversation. Cited sources stay with each answer. Leave the collection blank to use the gateway demo corpus.</p>
         </header>
         <div id="rag-error" class="banner banner-error" role="alert" hidden></div>
         <section class="composer document-library" aria-labelledby="upload-title">
@@ -67,9 +67,10 @@
           <h3>Files in this collection</h3>
           <ul id="document-list" class="sources"></ul>
         </section>
+        <div id="rag-log" class="log" aria-live="polite"></div>
         <form id="rag-form" class="composer">
           <label for="rag-question">Question</label>
-          <textarea id="rag-question" rows="3" maxlength="2000" required placeholder="Ask about the documents available to the gateway."></textarea>
+          <textarea id="rag-question" rows="3" maxlength="2000" required placeholder="Ask about the documents. Enter sends; Shift+Enter adds a line."></textarea>
           <div class="split">
             <div>
               <label for="rag-collection">Collection</label>
@@ -93,10 +94,10 @@
           </div>
           <div class="form-row">
             <button type="submit" id="rag-send">Ask</button>
+            <button type="button" id="rag-clear" class="secondary">Clear conversation</button>
             <span id="rag-loading" class="loading" role="status" hidden>Searching documents…</span>
           </div>
         </form>
-        <article id="rag-result" class="result" hidden></article>
       </section>
 
       <section id="status-view" aria-labelledby="status-title" hidden>

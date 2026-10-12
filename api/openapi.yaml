@@ -70,9 +70,21 @@ paths:
                 question: { type: string, minLength: 1, maxLength: 2000 }
                 collection: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,39}$" }
                 top_k: { type: integer, minimum: 1, maximum: 10, default: 4 }
+                history:
+                  type: array
+                  maxItems: 12
+                  description: >
+                    Optional prior user/assistant turns for follow-up questions.
+                    Must start with user, end with assistant, and alternate roles.
+                  items:
+                    type: object
+                    required: [role, content]
+                    properties:
+                      role: { type: string, enum: [user, assistant] }
+                      content: { type: string, minLength: 1, maxLength: 2000 }
       responses:
         "200": { description: Answer or explicit abstention }
-        "400": { description: Invalid question, collection or top_k }
+        "400": { description: Invalid question, collection, top_k or history }
         "401": { description: Authentication required }
         "404": { description: Managed collection not found }
         "413": { description: Request body or question too large }
