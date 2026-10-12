@@ -24,6 +24,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 DEFAULT_KEY_FILE = "/tmp/platform-gateway.key"
 DEFAULT_GATEWAY_URL = "http://127.0.0.1:8010"
 MAX_BODY_BYTES = 1_048_576
+MAX_UPLOAD_BODY_BYTES = 14 * 1024 * 1024
 MAX_RESPONSE_BYTES = 2_000_000
 MAX_KEY_FILE_BYTES = 4096
 MAX_MESSAGES = 40
@@ -334,6 +335,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/status":
             self.handle_status()
             return
+        if path == "/api/documents":
+            self.handle_document_list(parsed)
+            return
         static_file = resolve_static(self.config.static_dir, path)
         if static_file is None:
             self.send_error_json(404, "not found")
@@ -354,6 +358,8 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_chat()
         elif path == "/api/rag":
             self.handle_rag()
+        elif path == "/api/documents":
+            self.handle_document_upload()
         else:
             self.send_error_json(404, "not found")
 
@@ -361,9 +367,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error_json(405, "method not allowed")
 
     def do_DELETE(self) -> None:
-        self.send_error_json(405, "method not allowed")
+        parsed = urlsplit(self.path)
+        if parsed.path != "/api/documents":
+            self.send_error_json(404, "not found")
+            return
+        self.handle_document_delete(parsed)
 
-    def read_json_object(self) -> dict[str, Any] | None:
+    def read_json_object(self, max_bytes: int = MAX_BODY_BYTES) -> dict[str, Any] | None:
         content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
         if content_type != "application/json":
             self.send_error_json(415, "content type must be application/json")
@@ -376,7 +386,7 @@ class Handler(BaseHTTPRequestHandler):
         if length <= 0:
             self.send_error_json(400, "request body required")
             return None
-        if length > MAX_BODY_BYTES:
+        if length > max_bytes:
             self.send_error_json(413, "request body too large")
             return None
         try:
@@ -459,6 +469,76 @@ class Handler(BaseHTTPRequestHandler):
             "runpod_verified": False,
             "detail": detail,
         })
+
+
+    def handle_document_list(self, parsed: Any) -> None:
+        from urllib.parse import parse_qs
+        values = parse_qs(parsed.query, keep_blank_values=True)
+        if set(values) != {"collection"} or len(values.get("collection", [])) != 1:
+            self.send_error_json(400, "one collection query parameter is required")
+            return
+        collection = values["collection"][0]
+        if not COLLECTION_RE.fullmatch(collection):
+            self.send_error_json(400, "collection must be a lowercase slug")
+            return
+        if not self.require_key():
+            return
+        result = call_gateway(
+            self.config, "GET", "/v1/rag/documents?collection=" + collection,
+            None, self.config.upstream_timeout, include_key=True,
+        )
+        self.forward_result(result)
+
+    def handle_document_upload(self) -> None:
+        payload = self.read_json_object(max_bytes=MAX_UPLOAD_BODY_BYTES)
+        if payload is None:
+            return
+        if not self.require_key():
+            return
+        collection = payload.get("collection")
+        filename = payload.get("filename")
+        content_base64 = payload.get("content_base64")
+        overwrite = payload.get("overwrite", False)
+        if not isinstance(collection, str) or not COLLECTION_RE.fullmatch(collection):
+            self.send_error_json(400, "collection must be a lowercase slug")
+            return
+        if not isinstance(filename, str) or not filename:
+            self.send_error_json(400, "filename is required")
+            return
+        if not isinstance(content_base64, str) or not content_base64:
+            self.send_error_json(400, "document content is required")
+            return
+        if not isinstance(overwrite, bool):
+            self.send_error_json(400, "overwrite must be true or false")
+            return
+        result = call_gateway(
+            self.config, "POST", "/v1/rag/documents",
+            {"collection": collection, "filename": filename, "content_base64": content_base64, "overwrite": overwrite},
+            self.config.upstream_timeout, include_key=True,
+        )
+        self.forward_result(result)
+
+    def handle_document_delete(self, parsed: Any) -> None:
+        from urllib.parse import parse_qs, quote
+        values = parse_qs(parsed.query, keep_blank_values=True)
+        if set(values) != {"collection", "filename"} or any(len(values.get(k, [])) != 1 for k in ("collection", "filename")):
+            self.send_error_json(400, "one collection and filename parameter are required")
+            return
+        collection, filename = values["collection"][0], values["filename"][0]
+        if not COLLECTION_RE.fullmatch(collection):
+            self.send_error_json(400, "collection must be a lowercase slug")
+            return
+        if not filename or len(filename) > 120 or "/" in filename or "\\" in filename:
+            self.send_error_json(400, "invalid filename")
+            return
+        if not self.require_key():
+            return
+        result = call_gateway(
+            self.config, "DELETE",
+            "/v1/rag/documents?collection=" + quote(collection, safe="") + "&filename=" + quote(filename, safe=""),
+            None, self.config.upstream_timeout, include_key=True,
+        )
+        self.forward_result(result)
 
     def handle_chat(self) -> None:
         payload = self.read_json_object()
