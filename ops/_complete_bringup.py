@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import time
 import urllib.error
@@ -58,46 +57,27 @@ def http_json(method: str, url: str, payload: dict | None = None, headers: dict 
         return exc.code, parsed
 
 
-def _lf(path: Path) -> None:
-    if path.is_file():
-        path.write_bytes(path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n"))
-
-
-def overlay_volume_release_ops() -> None:
-    """Prefer durable ops copies from /workspace/ai-platform-release/ops when present."""
-    src = RELEASE / "ops"
-    if not src.is_dir():
-        return
-    for path in src.rglob("*"):
-        if not path.is_file():
-            continue
-        rel = path.relative_to(src)
-        dest = REPO / "ops" / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(path.read_bytes())
-        _lf(dest)
-    print(f"OVERLAY_OPS_FROM={src}", flush=True)
+def git(*args: str) -> list[str]:
+    return ["git", "-c", f"safe.directory={REPO}", "-C", str(REPO), *args]
 
 
 def ensure_repo() -> None:
     if not (REPO / ".git").is_dir():
         sh(["git", "clone", "--branch", BRANCH, "--single-branch", REMOTE, str(REPO)])
-    else:
-        sh(["git", "-C", str(REPO), "fetch", "origin", BRANCH])
-        sh(["git", "-C", str(REPO), "checkout", BRANCH])
-        # Soft update: keep local ops overlays from the volume release folder.
-        sh(["git", "-C", str(REPO), "reset", "--hard", f"origin/{BRANCH}"])
-    overlay_volume_release_ops()
-    for rel in (
-        "ops/start-first-release.sh",
-        "ops/restore-qwen-runtime.sh",
-        "ops/archive-qwen-runtime.sh",
-        "ops/_complete_bringup.py",
-        "scripts/restore-vllm-environment.sh",
-        "rag/setup_pypdf.sh",
-        "rag/setup_openpyxl.sh",
-    ):
-        _lf(REPO / rel)
+        return
+    if REPO.stat().st_uid != os.getuid():
+        sh(["chown", "-R", f"{os.getuid()}:{os.getgid()}", str(REPO)])
+    sh(git("fetch", "origin", BRANCH))
+    dirty = subprocess.run(
+        git("status", "--porcelain", "--untracked-files=no"),
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    if dirty:
+        print(f"WARN: {REPO} has local tracked edits; not updating", flush=True)
+        return
+    sh(git("checkout", BRANCH))
+    if subprocess.call(git("merge", "--ff-only", f"origin/{BRANCH}")) != 0:
+        print(f"WARN: cannot fast-forward {REPO}; using current checkout", flush=True)
 
 
 def build_ld_path() -> str:
@@ -276,123 +256,8 @@ def start_console() -> None:
 
 
 def write_release_launcher() -> None:
-    """Durable on-volume launcher directory (not a zip; scripts + pointers only)."""
-    RELEASE.mkdir(parents=True, exist_ok=True)
-    ops_out = RELEASE / "ops"
-    ops_out.mkdir(parents=True, exist_ok=True)
-    for name in (
-        "_complete_bringup.py",
-        "start-first-release.sh",
-        "restore-qwen-runtime.sh",
-        "archive-qwen-runtime.sh",
-        "start-qwen-isolated.sh",
-        "switch-gpu-model.sh",
-        "_pod_e2e_verify.py",
-    ):
-        src = REPO / "ops" / name
-        # Prefer the currently executing bring-up script when syncing itself.
-        if name == "_complete_bringup.py":
-            here = Path(__file__).resolve()
-            if here.is_file():
-                src = here
-        if src.is_file():
-            dest = ops_out / name
-            dest.write_bytes(src.read_bytes())
-            _lf(dest)
-    # Also keep gateway/console patches that matter for recovery without git.
-    for rel in ("api/local_gateway.py", "models/registry.yaml", "web/server.py"):
-        src = REPO / rel
-        if src.is_file():
-            dest = RELEASE / "tree" / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(src.read_bytes())
-            _lf(dest)
-    (RELEASE / "VERSION.txt").write_text(
-        "first-release-qwen-primary\n"
-        f"branch={BRANCH}\n"
-        "entry=START.sh\n"
-        "venv_policy=archive_on_volume_extract_to_tmp\n",
-        encoding="utf-8",
-    )
-    start = RELEASE / "START.sh"
-    start.write_text(
-        """#!/usr/bin/env bash
-# One-command first-release start from the Global Volume.
-# Does not unzip a venv onto FUSE. Restores/runs from /tmp using volume archives.
-set -Eeuo pipefail
-RELEASE_DIR="$(cd "$(dirname "$0")" && pwd)"
-export REPO_ROOT="${REPO_ROOT:-/tmp/AI-PLAYBOOK}"
-BRANCH=feature/qwen3.5-27b-integration
-if [[ ! -d "$REPO_ROOT/.git" ]]; then
-  git clone --branch "$BRANCH" --single-branch https://github.com/henokmeron/AI-PLAYBOOK.md.git "$REPO_ROOT"
-else
-  git -C "$REPO_ROOT" fetch origin "$BRANCH" || true
-  git -C "$REPO_ROOT" checkout "$BRANCH" || true
-  git -C "$REPO_ROOT" reset --hard "origin/$BRANCH" || true
-fi
-# Overlay durable ops + critical tree files from this volume folder (source of recovery).
-if [[ -d "$RELEASE_DIR/ops" ]]; then
-  mkdir -p "$REPO_ROOT/ops"
-  cp -a "$RELEASE_DIR/ops/." "$REPO_ROOT/ops/"
-fi
-if [[ -d "$RELEASE_DIR/tree" ]]; then
-  cp -a "$RELEASE_DIR/tree/." "$REPO_ROOT/"
-fi
-if [[ -f "$REPO_ROOT/ops/_complete_bringup.py" ]]; then
-  exec /usr/bin/python3 "$REPO_ROOT/ops/_complete_bringup.py"
-fi
-exec bash "$REPO_ROOT/ops/start-first-release.sh" --start
-""",
-        encoding="utf-8",
-    )
-    try:
-        start.chmod(0o755)
-    except OSError:
-        # Global Volume FUSE often rejects chmod; bash START.sh still works.
-        pass
-    readme = RELEASE / "README.md"
-    readme.write_text(
-        """# AI Platform Release (Global Volume)
-
-This directory is the durable entrypoint on `/workspace`. It is **not** a zipped
-Python environment (FUSE cannot run those reliably).
-
-## What lives where
-
-| Asset | Location |
-| --- | --- |
-| This launcher | `/workspace/ai-platform-release/START.sh` |
-| Ops scripts (volume copy) | `/workspace/ai-platform-release/ops/` |
-| Critical source overlays | `/workspace/ai-platform-release/tree/` |
-| Model weights | `/workspace/models/…` and Gemma path |
-| Runtime archives | `/workspace/runtime-setup/` (`tar.zst` → extract to `/tmp`) |
-| Managed docs | `/workspace/rag-managed-docs` |
-| Git source | cloned to `/tmp/AI-PLAYBOOK` then overlaid |
-
-## Start (after SSH into a Pod with the Global Volume attached)
-
-```bash
-bash /workspace/ai-platform-release/START.sh
-```
-
-Then tunnel the console:
-
-```bash
-ssh -N -L 18080:127.0.0.1:8080 -p <tcp-port> -i <key> root@<pod-ip>
-```
-
-Open `http://127.0.0.1:18080`
-
-## Requirements
-
-- NVIDIA driver **≥580** (CUDA 13-capable) for current vLLM wheels
-- Global Volume mounted at `/workspace`
-- Do not extract venvs onto `/workspace`; always `/tmp`
-- Qwen serve uses `--max-num-seqs 256` (Mamba cache limit)
-""",
-        encoding="utf-8",
-    )
-    print(f"RELEASE_DIR={RELEASE}", flush=True)
+    """Install the canonical launcher (ops/release/START.sh); VERSION.txt is left alone."""
+    sh(["bash", str(REPO / "ops" / "release" / "install-to-volume.sh")])
 
 
 def e2e(key: str) -> dict:
@@ -505,6 +370,7 @@ def main() -> int:
     if not MODEL.is_dir():
         raise SystemExit(f"missing model {MODEL}")
     ensure_repo()
+    sh(["bash", str(REPO / "ops" / "start-first-release.sh"), "--preflight"])
     write_release_launcher()
     info = ensure_qwen_env()
     env = os.environ.copy()

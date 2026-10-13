@@ -3,17 +3,17 @@
 # then extract it to an isolated Pod-local directory without altering vLLM's venv.
 set -euo pipefail
 
-PYTHON=/tmp/vllm-clean-env/bin/python
+PYTHON="${RAG_SETUP_PYTHON:-/tmp/vllm-clean-env/bin/python}"
 WHEEL_DIR=/workspace/runtime-setup/rag-wheelhouse
 WHEEL_NAME=pypdf-6.20.0-py3-none-any.whl
 WHEEL="$WHEEL_DIR/$WHEEL_NAME"
 DOWNLOAD=/tmp/$WHEEL_NAME.download
-DEPS_DIR=/tmp/rag-deps
+DEPS_DIR="${RAG_DEPS_DIR:-/tmp/rag-deps}"
 EXPECTED_SHA256=f003fc2014814d264fe7dd3f9d435c158e23e1a85a2233f87a0a2d6d21c914ad
 WHEEL_URL=https://files.pythonhosted.org/packages/18/42/a945f65cc61c739ec80f4112c4b78ed1791f25d33f45f19389c9c9e247e2/pypdf-6.20.0-py3-none-any.whl
 
 if [[ ! -x "$PYTHON" ]]; then
-  echo "ERROR: current vLLM Python environment not found; PDF setup aborted." >&2
+  echo "ERROR: Python interpreter $PYTHON not found; PDF setup aborted (set RAG_SETUP_PYTHON)." >&2
   exit 2
 fi
 
@@ -39,7 +39,7 @@ echo "$EXPECTED_SHA256  $WHEEL" | sha256sum -c -
   sha256sum -c SHA256SUMS
 )
 
-# Avoid modifying /tmp/vllm-clean-env. Clear only the separate parser target.
+# Avoid modifying the model runtime environment. Clear only the separate parser target.
 rm -rf "$DEPS_DIR/pypdf" "$DEPS_DIR/pypdf-6.20.0.dist-info" "$DEPS_DIR/pypdf-6.20.0.data"
 
 "$PYTHON" - "$WHEEL" "$DEPS_DIR" <<'PY'
@@ -67,4 +67,4 @@ echo
 echo "Persistent wheel: $WHEEL"
 echo "Persistent checksum: $WHEEL_DIR/SHA256SUMS"
 echo "Isolated import path: $DEPS_DIR"
-echo "The vLLM environment at /tmp/vllm-clean-env has not been modified."
+echo "The runtime environment behind $PYTHON has not been modified."

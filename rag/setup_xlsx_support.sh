@@ -3,9 +3,9 @@
 # /tmp/rag-deps separately from the working vLLM/PyTorch environment.
 set -euo pipefail
 
-PYTHON=/tmp/vllm-clean-env/bin/python
+PYTHON="${RAG_SETUP_PYTHON:-/tmp/vllm-clean-env/bin/python}"
 WHEEL_DIR=/workspace/runtime-setup/rag-wheelhouse
-DEPS_DIR=/tmp/rag-deps
+DEPS_DIR="${RAG_DEPS_DIR:-/tmp/rag-deps}"
 
 OPENPYXL_NAME=openpyxl-3.1.5-py2.py3-none-any.whl
 OPENPYXL_SHA=5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2
@@ -20,7 +20,7 @@ DEFUSED_SHA=a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61
 DEFUSED_URL=https://files.pythonhosted.org/packages/07/6c/aa3f2f849e01cb6a001cd8554a88d4c77c5c1a31c95bdf1cf9301e6d9ef4/defusedxml-0.7.1-py2.py3-none-any.whl
 
 if [[ ! -x "$PYTHON" ]]; then
-  echo "ERROR: current vLLM Python environment not found. XLSX setup aborted." >&2
+  echo "ERROR: Python interpreter $PYTHON not found. XLSX setup aborted (set RAG_SETUP_PYTHON)." >&2
   exit 2
 fi
 mkdir -p "$WHEEL_DIR" "$DEPS_DIR"
@@ -86,4 +86,4 @@ echo
 echo "Wheels persisted at: $WHEEL_DIR"
 echo "Checksum list: $WHEEL_DIR/XLSX-SHA256SUMS"
 echo "Isolated import path: $DEPS_DIR"
-echo "Existing pypdf in that directory is left untouched; vLLM environment has not been modified."
+echo "Existing pypdf in that directory is left untouched; the runtime behind $PYTHON has not been modified."

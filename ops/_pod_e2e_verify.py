@@ -4,23 +4,26 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import traceback
 import urllib.error
 import urllib.request
 from pathlib import Path
 
-KEY = Path("/tmp/platform-gateway.key").read_text(encoding="utf-8").strip()
+KEY = Path(os.environ.get("PLATFORM_API_KEY_FILE", "/tmp/platform-gateway.key")).read_text(encoding="utf-8").strip()
 H = {"Authorization": f"Bearer {KEY}", "Content-Type": "application/json"}
-OUT = Path("/workspace/platform-diagnostics/complete/manual-e2e.json")
+OUT = Path(os.environ.get("E2E_OUT", "/workspace/platform-diagnostics/complete/manual-e2e.json"))
+# Defaults target the main stack; override to test an isolated stack on other ports.
+GATEWAY_BASE = os.environ.get("E2E_GATEWAY_URL", "http://127.0.0.1:8010").rstrip("/")
+CONSOLE_BASE = os.environ.get("E2E_CONSOLE_URL", "http://127.0.0.1:8080").rstrip("/")
 
 
 def req(method: str, url: str, payload: dict | None = None, timeout: float = 180):
     data = None if payload is None else json.dumps(payload).encode()
-    headers = H if "8010" in url else {"Content-Type": "application/json"}
-    if "8010" in url:
-        headers = H
-    else:
-        headers = {}
+    url = url.replace("http://127.0.0.1:8010", GATEWAY_BASE, 1).replace(
+        "http://127.0.0.1:8080", CONSOLE_BASE, 1
+    )
+    headers = H if url.startswith(GATEWAY_BASE) else {}
     r = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(r, timeout=timeout) as resp:
