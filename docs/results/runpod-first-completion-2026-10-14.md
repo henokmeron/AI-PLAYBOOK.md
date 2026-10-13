@@ -5,7 +5,7 @@
 - Branch: `feature/qwen3.5-27b-integration`
 - Base tip before this finish pass: `d748762`
 - Functional finish commit: `5281ab3`
-- Docs stamp tip: `dcb2d5d`
+- Branch tip: `91b5bbc`
 
 ## 2. Qwen as default
 
