@@ -13,7 +13,7 @@
 | Planned Qwen ports | inference `:8002`, gateway `:8013`, console `:8083` |
 | Official model | `Qwen/Qwen3.5-27B`, license Apache-2.0 |
 | Pinned revision | `fc05daec18b0a78c049392ed2e771dde82bdf654` |
-| Files | 11 `model-*.safetensors` shards + tokenizer/config |
+| Files | 11 `model.safetensors-*-of-*.safetensors` shards + tokenizer/config |
 | Official serving note | Qwen card asks for vLLM **main/nightly** in a **fresh** environment |
 
 ## Safest implementation (chosen)
@@ -26,13 +26,23 @@
 6. Serve Qwen only on `:8002` after confirming `:8000` is down / GPU free.
 7. Use isolated gateway `:8013` for Qwen validation; leave `:8010`/`:8080` untouched.
 
-## Blockers recorded during this pass
+## Live validation (2026-10-13) — download + serve + smoke complete
 
-1. **RunPod SSH unreachable** (`216.81.245.29:48480` connection refused). Host still pings; the Pod/SSH service appears stopped. Starting the Pod is a billed action and requires operator approval/start.
-2. **Cursor-browser probe (2026-10-13):** console visible and logged in; **no running Pod** / no web terminal; Global Volume **New model container** (`cmv2p5m0d000007jk9o3931ea`, ~66.4 GB) still present; account balance was **−$0.23**. See `ops/results/runpod-browser-probe-2026-10-13.md`.
-3. **Live Qwen serve** needs either explicit approval to stop Gemma on `:8000`, or additional GPU capacity. Concurrent loading is refused by `ops/start-qwen-isolated.sh`.
-4. Until the Pod is up with positive balance, weights cannot be downloaded and live chat cannot be proven.
-5. Tracking: GitHub issue [#1](https://github.com/henokmeron/AI-PLAYBOOK.md/issues/1) + `AUTONOMOUS_WORK_QUEUE.md`.
+| Item | Observed |
+| --- | --- |
+| Weights | `/workspace/models/Qwen3.5-27B/fc05daec18b0a78c049392ed2e771dde82bdf654` (11 shards) |
+| vLLM | `/tmp/vllm-qwen-env`, `127.0.0.1:8002`, smoke content `QWEN_OK` |
+| Gateway / console | `127.0.0.1:8013` / `127.0.0.1:8083` (gateway smoke `QWEN_OK`) |
+| Production default | Still Gemma (`models/registry.yaml` → `production: gemma-4-31b-it`) |
+| Main ports | `:8010` / `:8080` **untouched** (not listening during this validation) |
+| Evidence | `ops/results/qwen-live-stack-2026-10-13.md`, `/workspace/platform-diagnostics/qwen/` |
+
+## Prior blockers (cleared for live serve; retained for history)
+
+1. Earlier SSH endpoint `216.81.245.29:48480` was refused when the Pod was stopped; later session used a reachable SSH endpoint after the operator started the Pod.
+2. **Cursor-browser probe (2026-10-13):** see `ops/results/runpod-browser-probe-2026-10-13.md` (balance/Pod-stop context at that time).
+3. Concurrent Gemma+Qwen on one GPU remains refused by `ops/start-qwen-isolated.sh`.
+4. Tracking: GitHub issue [#1](https://github.com/henokmeron/AI-PLAYBOOK.md/issues/1) + `AUTONOMOUS_WORK_QUEUE.md`.
 
 ## Operator sequence (after Pod is running)
 

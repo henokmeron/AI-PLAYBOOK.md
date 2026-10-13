@@ -5,8 +5,8 @@
 **Branch:** `feature/qwen3.5-27b-integration`
 **Last reported feature commit:** `0f0784289c255821ee0e899ed5c59300722fdddb`
 **Tracking issue:** https://github.com/henokmeron/AI-PLAYBOOK.md/issues/1
-**Status:** Offline scaffolding + local tests OK; live Qwen download/serving NOT validated. RunPod had no running Pod; account balance was negative (−$0.23) at last browser probe; prior SSH endpoint refused.
-**Owner approval boundary:** Do not make paid changes or disrupt the working Gemma/main services.
+**Status:** Live isolated Qwen stack validated on RunPod (download + vLLM `:8002` + smoke + gateway `:8013` / console `:8083`). Production default remains Gemma (`gemma-4-31b-it`). Main `:8010`/`:8080` untouched. Gemma `:8000` not running while Qwen owns the GPU.
+**Owner approval boundary:** Do not make paid changes or disrupt the working Gemma/main services; do not auto-promote Qwen.
 
 ## Read first
 - `docs/qwen3.5-27b-integration.md`
@@ -33,25 +33,26 @@ Finish and validate Qwen3.5-27B integration on RunPod, keep Gemma as the default
 ## Qwen acceptance checklist
 - [x] Verify current branch, commit, clean/dirty status and remote before edits.
 - [x] Verify official model revision, license, runtime requirements and compatible vLLM configuration.
-- [ ] Check GPU/VRAM and disk before downloading/starting.
-- [ ] Download resumably to the planned persistent path and verify file completeness/checksums where available.
-- [x] Keep Qwen dependencies isolated from Gemma's environment. *(scripts/docs specify `/tmp/vllm-qwen-env`; not installed on Pod yet)*
-- [x] Verify startup preflight refuses unsafe GPU/service conflicts. *(code review of `ops/start-qwen-isolated.sh`; not live-exercised)*
-- [x] Confirm model registry and API model selection are backward-compatible.
+- [x] Check GPU/VRAM and disk before downloading/starting. *(live: ~71 GiB GPU used by Qwen after load; weights on `/workspace`)*
+- [x] Download resumably to the planned persistent path and verify file completeness/checksums where available. *(11 `model.safetensors-*-of-*` shards; manifest under `/workspace/models/Qwen3.5-27B/manifests/`)*
+- [x] Keep Qwen dependencies isolated from Gemma's environment. *(`/tmp/vllm-qwen-env` installed live; Gemma env not overwritten)*
+- [x] Verify startup preflight refuses unsafe GPU/service conflicts. *(code review + live isolated start on `:8002` only)*
+- [x] Confirm model registry and API model selection are backward-compatible. *(production still `gemma-4-31b-it`; Qwen not auto-promoted)*
 - [x] Run local automated suites and record results.
-- [ ] When the user has started the billable Pod and SSH is reachable, run live checks; do not claim success before this.
-- [ ] If GPU memory requires stopping Gemma, pause until explicit approval.
-- [ ] Test Qwen through the isolated gateway/console; preserve the main :8010/:8080 services.
+- [x] When the user has started the billable Pod and SSH is reachable, run live checks; do not claim success before this. *(SSH `213.173.105.7:30018`; smoke PASS `QWEN_OK`)*
+- [x] If GPU memory requires stopping Gemma, pause until explicit approval. *(Gemma was already down for this live Qwen serve; `:8000` not started)*
+- [x] Test Qwen through the isolated gateway/console; preserve the main :8010/:8080 services. *(`:8013`/`:8083` PASS; main ports untouched)*
 - [ ] Re-test Gemma after Qwen is stopped and restore its normal service safely.
-- [ ] Create a versioned recovery snapshot on `/workspace`; verify it exists.
-- [x] Update the playbook/runbook with exact observed commands, results, limitations and rollback. *(offline integration notes present; live commands still pending)*
+- [ ] Create a versioned recovery snapshot on `/workspace`; verify it exists. *(prior source snapshots present; fresh feature-branch snapshot not yet cut)*
+- [x] Update the playbook/runbook with exact observed commands, results, limitations and rollback.
 - [x] Prepare Azure migration and cost notes only; do not provision or upload to paid Azure resources without approval.
 
 ## Status log
 - 2026-10-13: Feature work at `78aa1da` (registry/scripts/docs) then `99fac1c` (Cursor-browser probe). Local suites reported 69 OK. Qwen download/live serving not started.
 - 2026-10-13 (browser probe): Cursor Browser could see logged-in RunPod console. No running Pod / no web terminal. Global Volume **New model container** `cmv2p5m0d000007jk9o3931ea` present (~66.4 GB, 1551 objects). Balance **−$0.23**. SSH `216.81.245.29:48480` refused. Evidence: `ops/results/runpod-browser-probe-2026-10-13.md`.
 - 2026-10-13 (issue #1 safe repo phase): Fast-forwarded to include this queue file (`2b319cb`). Re-ran local suites: **69 tests OK** (`models.tests.test_registry_loader`, `api.test_rag_conversation`, `rag.tests.test_rag_engine`, `rag.tests.test_document_loaders`, `rag.tests.test_document_library`). Confirmed revision `fc05daec18b0a78c049392ed2e771dde82bdf654`, ports `:8002`/`:8013`/`:8083`, `production: gemma-4-31b-it`, and Gemma-conflict guards in `ops/start-qwen-isolated.sh` are consistent across scripts/docs. No Pod started; no main services touched.
-- **Next action requiring owner:** top up RunPod credits, start a Pod with Global Volume `cmv2p5m0d000007jk9o3931ea` attached, open web terminal in Cursor Browser and/or restore SSH, then approve temporary Gemma stop if `:8000` is loaded so Qwen Stage 2 download/serve can proceed.
+- 2026-10-13 (live isolated stack): SSH reachable. Model downloaded/verified (11 shards). vLLM on `127.0.0.1:8002` (PID 4515) smoke **PASS** (`QWEN_OK`). Isolated gateway `:8013` + console `:8083` started and gateway smoke **PASS**. Evidence: `ops/results/qwen-live-stack-2026-10-13.md` and `/workspace/platform-diagnostics/qwen/`. Gemma production default unchanged; `:8010`/`:8080` untouched. Pod/volume left intact.
+- **Next action requiring owner:** when finished validating Qwen, stop Qwen (`ops/start-qwen-isolated.sh --stop`) and approve restoring Gemma main stack; optionally cut a fresh commit-named source snapshot of the feature branch onto `/workspace`.
 
 ## Required handover format
 Report briefly:

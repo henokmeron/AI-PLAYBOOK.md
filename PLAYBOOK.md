@@ -1041,3 +1041,10 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Synced feature branch through remote queue commit `2b319cb`; revalidated local suites (**69 OK**); refreshed queue checklist for offline-complete items only.
 - Cursor-browser probe evidence retained: Global Volume `cmv2p5m0d000007jk9o3931ea` (~66.4 GB); no running Pod; balance was −$0.23; SSH refused.
 - Live Qwen download/serve/snapshot still blocked pending credits + running Pod + optional Gemma-stop approval. Main `:8010`/`:8080` untouched.
+
+### 2026-10-13 — Qwen3.5-27B live isolated stack validated
+- Download + isolated vLLM serve on `127.0.0.1:8002` (revision `fc05daec…`, 11 shards) succeeded; chat smoke returned **`QWEN_OK`**.
+- Isolated gateway `127.0.0.1:8013` and console `127.0.0.1:8083` started; authenticated gateway smoke also **`QWEN_OK`**.
+- Production default left as Gemma; main `:8010`/`:8080` not modified. Gemma `:8000` was not running while Qwen owned the GPU.
+- Evidence: `ops/results/qwen-live-stack-2026-10-13.md` and `/workspace/platform-diagnostics/qwen/`.
+- Still deferred: restore Gemma after Qwen stop; promote Qwen; Azure spend; fresh feature-branch volume source snapshot.

@@ -88,6 +88,12 @@ case "$MODE" in
     export PATH="$ENV_DIR/bin:$PATH"
     export TMPDIR=/tmp
     export VLLM_RPC_BASE_PATH=/tmp
+    # CUDA 13 libs live under the venv nvidia packages; without this, libcudart.so.13 may be missing.
+    if [[ -d "$ENV_DIR/lib/python3.12/site-packages/nvidia" ]]; then
+      _qwen_ld=$(find "$ENV_DIR/lib/python3.12/site-packages/nvidia" -type f -name 'lib*.so*' -printf '%h\n' 2>/dev/null | sort -u | paste -sd: -)
+      export LD_LIBRARY_PATH="${_qwen_ld}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+      unset _qwen_ld
+    fi
     log "Starting isolated Qwen on ${HOST}:${PORT} from $MODEL"
     nohup "$ENV_DIR/bin/python" "$ENV_DIR/bin/vllm" serve "$MODEL" \
       --host "$HOST" \

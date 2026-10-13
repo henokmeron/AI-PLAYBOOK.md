@@ -27,20 +27,24 @@ export HUGGINGFACE_HUB_CACHE="${HUGGINGFACE_HUB_CACHE:-$HF_HOME/hub}"
 mkdir -p "$HF_HOME" "$HUGGINGFACE_HUB_CACHE"
 
 expected_shards=11
+# HF layout uses model.safetensors-NNNN-of-NNNN.safetensors (not only model-NNNN...).
+shard_count() {
+  find "$DEST" -maxdepth 1 -type f \( -name 'model.safetensors-*-of-*.safetensors' -o -name 'model-*.safetensors' \) 2>/dev/null | wc -l
+}
 check_complete() {
   local count
-  count=$(find "$DEST" -maxdepth 1 -type f -name 'model-*.safetensors' 2>/dev/null | wc -l)
+  count=$(shard_count)
   [[ -f "$DEST/config.json" && -f "$DEST/model.safetensors.index.json" && "$count" -ge "$expected_shards" ]]
 }
 
 if [[ "$MODE" == "--check" ]]; then
   if check_complete; then
-    log "PASS: Qwen weights look complete under $DEST (shards=$(find "$DEST" -maxdepth 1 -type f -name 'model-*.safetensors' | wc -l))"
+    log "PASS: Qwen weights look complete under $DEST (shards=$(shard_count))"
     (cd "$DEST" && find . -type f | sort | sha256sum > "$VOL/models/Qwen3.5-27B/manifests/${REVISION}.sha256sums")
     log "Wrote checksum inventory $VOL/models/Qwen3.5-27B/manifests/${REVISION}.sha256sums"
     exit 0
   fi
-  fail "Qwen download incomplete under $DEST"
+  fail "Qwen download incomplete under $DEST (shards=$(shard_count)/$expected_shards)"
 fi
 
 if [[ "$MODE" != "--download" ]]; then

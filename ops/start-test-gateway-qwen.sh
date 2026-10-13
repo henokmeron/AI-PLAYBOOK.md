@@ -6,8 +6,18 @@ umask 077
 
 REPO="${REPO_ROOT:-/tmp/AI-PLAYBOOK}"
 RUNTIME="${QWEN_VLLM_ENV:-/tmp/vllm-qwen-env}"
-# Prefer Gemma python for gateway code if Qwen env lacks deps; gateway is pure stdlib+rag.
-GW_PYTHON="${GATEWAY_PYTHON:-/tmp/vllm-clean-env/bin/python}"
+# Prefer Gemma python for gateway code if present; else fall back to Qwen/system python.
+if [[ -z "${GATEWAY_PYTHON:-}" ]]; then
+  if [[ -x /tmp/vllm-clean-env/bin/python ]]; then
+    GW_PYTHON=/tmp/vllm-clean-env/bin/python
+  elif [[ -x "$RUNTIME/bin/python" ]]; then
+    GW_PYTHON="$RUNTIME/bin/python"
+  else
+    GW_PYTHON=/usr/bin/python3
+  fi
+else
+  GW_PYTHON="$GATEWAY_PYTHON"
+fi
 KEY="${PLATFORM_API_KEY_FILE:-/tmp/platform-gateway.key}"
 DIAG=/workspace/platform-diagnostics/qwen
 MODE="${1:---start}"
@@ -24,9 +34,18 @@ if [[ "$MODE" == "--check" ]]; then
   exit 0
 fi
 
-[[ -f "$KEY" ]] || fail "API key file missing at $KEY"
+if [[ ! -f "$KEY" ]]; then
+  # Ephemeral loopback key only; never commit or copy into source snapshots.
+  umask 077
+  openssl rand -base64 48 | tr -d '\n' >"$KEY"
+  chmod 600 "$KEY"
+  log_note="created ephemeral $KEY"
+else
+  log_note="reusing $KEY"
+fi
 [[ -f "$REPO/api/local_gateway.py" ]] || fail "gateway source missing under $REPO"
 healthy http://127.0.0.1:8002/v1/models || fail "Qwen upstream :8002 is not healthy"
+echo "Using GATEWAY_PYTHON=$GW_PYTHON ($log_note)"
 
 if ! healthy http://127.0.0.1:8013/health; then
   nohup env \
