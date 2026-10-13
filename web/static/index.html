@@ -30,6 +30,11 @@
           <p>Messages go to the local web server, which calls the authenticated gateway. This page does not receive the API key.</p>
         </header>
         <div id="chat-error" class="banner banner-error" role="alert" hidden></div>
+        <div class="composer model-picker-bar">
+          <label for="model-select">Model</label>
+          <select id="model-select" aria-describedby="model-hint"></select>
+          <p id="model-hint" class="meta">Only one GPU model can be loaded at a time. Unavailable models stay listed but cannot be used until switched.</p>
+        </div>
         <div id="chat-log" class="log" aria-live="polite"></div>
         <form id="chat-form" class="composer">
           <label for="chat-input">Message</label>

@@ -32,24 +32,27 @@ class RegistryLoaderTests(unittest.TestCase):
     def setUp(self) -> None:
         self.registry = load_registry(MODELS / "registry.yaml")
 
-    def test_schema_and_production_default_remain_gemma(self) -> None:
+    def test_schema_and_production_default_is_qwen_first_release(self) -> None:
         self.assertEqual(self.registry.get("schema_version"), 2)
-        self.assertEqual(self.registry.get("production"), "gemma-4-31b-it")
+        self.assertEqual(self.registry.get("production"), "qwen3.5-27b")
         defaults = self.registry.get("defaults") or {}
-        self.assertEqual(defaults.get("active_model_id"), "gemma-4-31b-it")
+        self.assertEqual(defaults.get("active_model_id"), "qwen3.5-27b")
         self.assertFalse(defaults.get("concurrent_gpu_models"))
 
-    def test_qwen_candidate_is_registered_without_becoming_production(self) -> None:
+    def test_qwen_is_first_release_primary_with_gemma_alternative(self) -> None:
         qwen = get_model(self.registry, "qwen3.5-27b")
+        gemma = get_model(self.registry, "gemma-4-31b-it")
         self.assertEqual(qwen["license"], "Apache-2.0")
-        self.assertEqual(qwen["status"], "integration-candidate")
+        self.assertEqual(qwen["status"], "first-release-primary")
         self.assertEqual(qwen["revision"], "fc05daec18b0a78c049392ed2e771dde82bdf654")
         self.assertIn("Qwen3.5-27B", qwen["runpod_path"])
-        self.assertEqual(qwen["evaluation_status"], "isolated-smoke-passed-2026-10-13")
+        self.assertEqual(qwen["evaluation_status"], "first-release-primary-2026-10-13")
         serving = qwen["serving"]
         self.assertEqual(serving["listen_port"], 8002)
         self.assertNotEqual(serving["listen_port"], 8000)
-        self.assertEqual(self.registry["production"], "gemma-4-31b-it")
+        self.assertEqual(self.registry["production"], "qwen3.5-27b")
+        self.assertTrue(gemma.get("selection_eligible", True))
+        self.assertEqual(gemma["serving"]["listen_port"], 8000)
 
     def test_selection_decision_blocks_cross_runtime_without_silent_fallback(self) -> None:
         ok = selection_decision(self.registry, "qwen3.5-27b", upstream_port=8002)
@@ -67,10 +70,12 @@ class RegistryLoaderTests(unittest.TestCase):
         self.assertIn("gemma-4-31b-it", ids)
         self.assertIn("qwen3.5-27b", ids)
         gemma = next(item for item in catalog if item["id"] == "gemma-4-31b-it")
-        self.assertTrue(gemma["is_production_default"])
+        qwen = next(item for item in catalog if item["id"] == "qwen3.5-27b")
+        self.assertFalse(gemma["is_production_default"])
+        self.assertTrue(qwen["is_production_default"])
 
     def test_resolve_aliases_and_default(self) -> None:
-        self.assertEqual(resolve_requested_model(self.registry, None), "gemma-4-31b-it")
+        self.assertEqual(resolve_requested_model(self.registry, None), "qwen3.5-27b")
         self.assertEqual(
             resolve_requested_model(self.registry, "Qwen/Qwen3.5-27B"),
             "qwen3.5-27b",

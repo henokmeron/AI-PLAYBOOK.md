@@ -57,7 +57,34 @@ class FakeGatewayHandler(BaseHTTPRequestHandler):
                 return
             self._json(200, {"collection": "my-docs", "documents": [{"filename": "policy.md", "size_bytes": 22, "extension": ".md"}]})
             return
-        if urlsplit(self.path).path != "/health":
+        path = urlsplit(self.path).path
+        if path == "/v1/platform/models":
+            if entry["authorization"] != f"Bearer {self.server.key}":
+                self._json(401, {"error": "authentication required"})
+                return
+            self._json(200, {
+                "models": [
+                    {
+                        "id": "qwen3.5-27b",
+                        "selection_eligible": True,
+                        "runtime_loaded": True,
+                        "is_production_default": True,
+                        "is_active_default": True,
+                        "listen_port": 8002,
+                    },
+                    {
+                        "id": "gemma-4-31b-it",
+                        "selection_eligible": True,
+                        "runtime_loaded": False,
+                        "is_production_default": False,
+                        "is_active_default": False,
+                        "listen_port": 8000,
+                    },
+                ],
+                "upstream_port": 8002,
+            })
+            return
+        if path != "/health":
             self._json(404, {"error": "not found"})
             return
         if self.server.health_code == 503:
@@ -347,24 +374,39 @@ class ConsoleTests(unittest.TestCase):
         payload = json.loads(self.request(base, "GET", "/api/status")[1])
         self.assertFalse(payload["key_configured"])
 
-    def test_chat_injects_model_and_ignores_client_credentials(self) -> None:
+    def test_chat_uses_registry_model_id_and_ignores_client_credentials(self) -> None:
         gateway = FakeGateway()
-        base = self.web(gateway)
+        base = self.web(gateway, model_id="qwen3.5-27b")
         status, body = self.request(
             base,
             "POST",
             "/api/chat",
-            {"model": "client-override", "messages": [{"role": "user", "content": "Reply with exactly: gateway works"}]},
+            {
+                "model": "qwen3.5-27b",
+                "messages": [{"role": "user", "content": "Reply with exactly: gateway works"}],
+            },
             headers={"Authorization": "Bearer client-supplied-token"},
         )
         payload = json.loads(body)
         self.assertEqual(status, 200)
         self.assertEqual(payload["choices"][0]["message"]["content"], "gateway works")
         forwarded = json.loads(gateway.hits[-1]["body"])
-        self.assertEqual(forwarded["model"], MODEL)
-        self.assertNotIn("client-override", gateway.hits[-1]["body"])
+        self.assertEqual(forwarded["model"], "qwen3.5-27b")
         self.assertEqual(gateway.hits[-1]["authorization"], f"Bearer {KEY}")
         self.assertNotIn(KEY, body.decode("utf-8"))
+
+        # Filesystem-like overrides from the browser are rejected.
+        status, body = self.request(
+            base,
+            "POST",
+            "/api/chat",
+            {
+                "model": "/workspace/secret-path",
+                "messages": [{"role": "user", "content": "hello"}],
+            },
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("registry id", body.decode("utf-8").casefold())
 
         stdout = sys.stdout
         captured: list[str] = []
@@ -383,6 +425,18 @@ class ConsoleTests(unittest.TestCase):
         finally:
             sys.stdout = stdout
         self.assertNotIn(KEY, "".join(captured))
+
+    def test_platform_models_proxy_requires_key(self) -> None:
+        gateway = FakeGateway()
+        base = self.web(gateway)
+        status, body = self.request(base, "GET", "/api/platform/models")
+        self.assertEqual(status, 200)
+        payload = json.loads(body)
+        ids = {item["id"] for item in payload["models"]}
+        self.assertIn("qwen3.5-27b", ids)
+        self.assertIn("gemma-4-31b-it", ids)
+        self.assertNotIn("/workspace", body.decode("utf-8"))
+        self.assertEqual(gateway.hits[-1]["authorization"], f"Bearer {KEY}")
 
     def test_chat_validation_and_missing_model(self) -> None:
         gateway = FakeGateway()

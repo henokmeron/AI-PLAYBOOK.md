@@ -34,7 +34,9 @@ MAX_RAG_HISTORY_MESSAGES = 12
 MAX_RAG_HISTORY_CHARS = 2000
 MAX_RAG_HISTORY_TOTAL_CHARS = 12000
 COLLECTION_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
-SAFE_ERROR_RE = re.compile(r"^[A-Za-z0-9 ,.'():_-]{1,160}$")
+# Registry model ids only — never accept filesystem paths from the browser.
+MODEL_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+SAFE_ERROR_RE = re.compile(r"^[A-Za-z0-9 ,.'():_/-]{1,200}$")
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
@@ -380,6 +382,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/status":
             self.handle_status()
             return
+        if path == "/api/platform/models":
+            self.handle_platform_models()
+            return
         if path == "/api/documents":
             self.handle_document_list(parsed)
             return
@@ -585,13 +590,42 @@ class Handler(BaseHTTPRequestHandler):
         )
         self.forward_result(result)
 
+    def handle_platform_models(self) -> None:
+        if not self.require_key():
+            return
+        result = call_gateway(
+            self.config,
+            "GET",
+            "/v1/platform/models",
+            None,
+            self.config.health_timeout,
+            include_key=True,
+        )
+        self.forward_result(result)
+
+    def resolve_requested_model_id(self, payload: dict[str, Any]) -> str | None:
+        """Allow only safe registry ids from the browser; default to server config."""
+        requested = payload.get("model")
+        if requested in {None, ""}:
+            return self.config.model_id or None
+        if not isinstance(requested, str) or not MODEL_ID_RE.fullmatch(requested.strip()):
+            return None
+        return requested.strip()
+
     def handle_chat(self) -> None:
         payload = self.read_json_object()
         if payload is None:
             return
         if not self.require_key():
             return
-        if not self.config.model_id:
+        model_id = self.resolve_requested_model_id(payload)
+        if model_id is None:
+            if payload.get("model") not in {None, ""}:
+                self.send_error_json(
+                    400,
+                    "model must be a registry id such as qwen3.5-27b or gemma-4-31b-it",
+                )
+                return
             self.send_error_json(503, "PLATFORM_MODEL_ID is not configured on the web server")
             return
         messages = payload.get("messages")
@@ -620,7 +654,7 @@ class Handler(BaseHTTPRequestHandler):
             "POST",
             "/v1/chat/completions",
             {
-                "model": self.config.model_id,
+                "model": model_id,
                 "messages": cleaned,
                 "temperature": 0.2,
                 "max_tokens": 512,

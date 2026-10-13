@@ -145,6 +145,8 @@ main {
 .message-label { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 
 .composer { padding: 16px; }
+.model-picker-bar { margin-bottom: 12px; }
+.model-picker-bar select { width: 100%; max-width: 420px; }
 .composer label { display: block; margin-bottom: 6px; font-size: 0.92rem; font-weight: 600; }
 .composer textarea, .composer input, .composer select {
   width: 100%;

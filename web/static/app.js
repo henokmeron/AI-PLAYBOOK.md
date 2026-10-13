@@ -7,6 +7,8 @@
   var busy = false;
   var ragBusy = false;
   var lastStatus = null;
+  var catalogModels = [];
+  var selectedModelId = "";
   var MAX_RAG_HISTORY_MESSAGES = 12;
 
   var navStatus = document.getElementById("nav-status");
@@ -16,6 +18,8 @@
   var chatError = document.getElementById("chat-error");
   var chatLoading = document.getElementById("chat-loading");
   var chatSend = document.getElementById("chat-send");
+  var modelSelect = document.getElementById("model-select");
+  var modelHint = document.getElementById("model-hint");
   var ragForm = document.getElementById("rag-form");
   var ragQuestion = document.getElementById("rag-question");
   var ragCollection = document.getElementById("rag-collection");
@@ -136,11 +140,74 @@
     navStatus.classList.add("is-" + connection);
   }
 
+  function modelUsable(item) {
+    if (!item || item.selection_eligible === false) return false;
+    if (item.runtime_loaded === false) return false;
+    return true;
+  }
+
+  function modelOptionLabel(item) {
+    var label = item.id || "unknown";
+    if (item.is_production_default) label += " (default)";
+    if (item.runtime_loaded === true) label += " — loaded";
+    else if (item.runtime_loaded === false) label += " — not loaded";
+    else if (item.selection_eligible === false) label += " — unavailable";
+    return label;
+  }
+
+  function renderModelSelect() {
+    if (!modelSelect) return;
+    var previous = selectedModelId || (lastStatus && lastStatus.model_id) || "";
+    modelSelect.textContent = "";
+    if (!catalogModels.length) {
+      var empty = el("option", null, previous || "No registry catalog yet");
+      empty.value = previous || "";
+      modelSelect.appendChild(empty);
+      modelSelect.disabled = !previous;
+      if (modelHint) {
+        modelHint.textContent = "Waiting for /api/platform/models. Only one GPU model can be loaded at a time.";
+      }
+      return;
+    }
+    catalogModels.forEach(function (item) {
+      var option = el("option", null, modelOptionLabel(item));
+      option.value = item.id;
+      option.disabled = !modelUsable(item);
+      modelSelect.appendChild(option);
+    });
+    var preferred = previous;
+    var match = catalogModels.filter(function (item) { return item.id === preferred && modelUsable(item); })[0];
+    if (!match) {
+      match = catalogModels.filter(function (item) { return item.is_active_default && modelUsable(item); })[0]
+        || catalogModels.filter(function (item) { return modelUsable(item); })[0];
+    }
+    selectedModelId = match ? match.id : "";
+    modelSelect.value = selectedModelId;
+    modelSelect.disabled = !selectedModelId;
+    if (modelHint) {
+      modelHint.textContent = selectedModelId
+        ? ("Selected " + selectedModelId + ". Unavailable models stay listed but cannot be used until an operator switches the GPU runtime.")
+        : "No loaded model is available for chat right now.";
+    }
+  }
+
+  function refreshModels() {
+    return request("/api/platform/models").then(function (body) {
+      catalogModels = Array.isArray(body && body.models) ? body.models : [];
+      renderModelSelect();
+    }).catch(function () {
+      catalogModels = [];
+      renderModelSelect();
+    });
+  }
+
   function refreshStatus() {
     return request("/api/status").then(function (body) {
       lastStatus = body;
+      if (!selectedModelId && body && body.model_id) selectedModelId = body.model_id;
       applyNavStatus(body, false);
       if (!document.getElementById("status-view").hidden) renderStatus();
+      return refreshModels();
     }).catch(function () {
       lastStatus = null;
       applyNavStatus(null, true);
@@ -170,7 +237,8 @@
       .concat(addRow("API key configured", body.key_configured ? "Yes" : "No"))
       .concat(addRow("Key file", body.key_file || "Not set"))
       .concat(addRow("Key file found", body.key_file ? (body.key_file_found ? "Yes" : "No") : "Not applicable"))
-      .concat(addRow("Model id", body.model_id || "Not configured"))
+      .concat(addRow("Default model id", body.model_id || "Not configured"))
+      .concat(addRow("Selected model", selectedModelId || "Not selected"))
       .concat(addRow("RunPod connection", "Not verified"))
       .concat(addRow("Checked", new Date().toLocaleString()));
     if (body.health && typeof body.health.model_count === "number") {
@@ -306,11 +374,22 @@
     }
   });
 
+  if (modelSelect) {
+    modelSelect.addEventListener("change", function () {
+      selectedModelId = modelSelect.value || "";
+      showError(chatError, "");
+    });
+  }
+
   chatForm.addEventListener("submit", function (event) {
     event.preventDefault();
     if (busy) return;
     var content = chatInput.value.trim();
     if (!content) return;
+    if (!selectedModelId) {
+      showError(chatError, "Select a loaded model before sending a chat message.");
+      return;
+    }
     messages.push({ role: "user", content: content });
     chatInput.value = "";
     busy = true;
@@ -318,14 +397,21 @@
     chatLoading.hidden = false;
     showError(chatError, "");
     renderChat();
-    request("/api/chat", { method: "POST", body: { messages: messages } }).then(function (body) {
+    request("/api/chat", {
+      method: "POST",
+      body: { model: selectedModelId, messages: messages }
+    }).then(function (body) {
       var contentText = body && body.choices && body.choices[0] && body.choices[0].message
         ? body.choices[0].message.content
         : "";
       if (typeof contentText !== "string" || !contentText.trim()) {
         throw new Error("The model returned an empty reply.");
       }
-      messages.push({ role: "assistant", content: contentText.trim() });
+      var note = "";
+      if (body.platform_selection && body.platform_selection.resolved_id) {
+        note = "\n\n[Selected model: " + body.platform_selection.resolved_id + "]";
+      }
+      messages.push({ role: "assistant", content: contentText.trim() + note });
     }).catch(function (error) {
       showError(chatError, errorMessage(error));
     }).finally(function () {

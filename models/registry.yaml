@@ -4,12 +4,12 @@
 
 schema_version: 2
 
-# Active production default remains Gemma until an explicit operator approval
-# switches production. Isolated Qwen live smoke passed 2026-10-13; still not promoted.
-production: gemma-4-31b-it
+# First-release production default: Qwen3.5-27B (isolated live+RAG validated).
+# Gemma remains a selectable alternative when its runtime is loaded.
+production: qwen3.5-27b
 
 defaults:
-  active_model_id: gemma-4-31b-it
+  active_model_id: qwen3.5-27b
   # Only one GPU model process at a time on the current single-GPU Pod.
   concurrent_gpu_models: false
   # Explicit client model ids are never silently swapped to another model.
@@ -61,7 +61,7 @@ candidates:
     source: https://huggingface.co/Qwen/Qwen3.5-27B
     provider: Alibaba / Qwen
     origin: China
-    status: integration-candidate
+    status: first-release-primary
     license: Apache-2.0
     revision: fc05daec18b0a78c049392ed2e771dde82bdf654
     modalities:
@@ -70,11 +70,11 @@ candidates:
     notes: >
       Dense 27B multimodal model with gated delta hybrid attention and native
       262K context. Official card requires a current/nightly vLLM build for
-      Qwen3.5. Do not load alongside Gemma on one GPU. Isolated live chat smoke
-      passed 2026-10-13 on A100 80GB; multimodal/tool-calling still untested.
-      Not production default until explicit approval.
+      Qwen3.5. Do not load alongside Gemma on one GPU. First-release primary
+      after isolated live chat + Document Q&A on A100 80GB (2026-10-13).
+      Multimodal/tool-calling still untested.
     weight_storage: external
-    evaluation_status: isolated-smoke-passed-2026-10-13
+    evaluation_status: first-release-primary-2026-10-13
     selection_eligible: true
     runpod_path: /workspace/models/Qwen3.5-27B/fc05daec18b0a78c049392ed2e771dde82bdf654
     azure_blob_prefix: models/Qwen3.5-27B/fc05daec18b0a78c049392ed2e771dde82bdf654
@@ -187,9 +187,9 @@ selection_policy:
     - UK/EU commercial deployment implications
     - evaluation against our own tests
   switching_rules:
-    - Keep Gemma as production default until an explicit approval switches it (isolated Qwen smoke alone is not approval).
+    - First release defaults to Qwen3.5-27B; Gemma remains selectable when its runtime is loaded.
     - On a single GPU Pod, stop the active model before starting the other; never load both.
-    - Main services :8010/:8080/:8000 must not be restarted without approval; use isolated ports for Qwen experiments.
+    - Main first-release stack: Qwen :8002 + gateway :8010 + console :8080 (see ops/start-first-release.sh).
     - Use ops/switch-gpu-model.sh for an explicit stop/start switch; gateways do not silently remap across runtimes.
     - If the client names a model whose listen_port is not this gateway's upstream, return a clear error (no silent fallback).
   cost_notes:
