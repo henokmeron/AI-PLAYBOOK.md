@@ -29,8 +29,10 @@
 ## Blockers recorded during this pass
 
 1. **RunPod SSH unreachable** (`216.81.245.29:48480` connection refused). Host still pings; the Pod/SSH service appears stopped. Starting the Pod is a billed action and requires operator approval/start.
-2. **Live Qwen serve** needs either explicit approval to stop Gemma on `:8000`, or additional GPU capacity. Concurrent loading is refused by `ops/start-qwen-isolated.sh`.
-3. Until the Pod is up, weights cannot be downloaded and live chat cannot be proven.
+2. **Cursor-browser probe (2026-10-13):** console visible and logged in; **no running Pod** / no web terminal; Global Volume **New model container** (`cmv2p5m0d000007jk9o3931ea`, ~66.4 GB) still present; account balance was **−$0.23**. See `ops/results/runpod-browser-probe-2026-10-13.md`.
+3. **Live Qwen serve** needs either explicit approval to stop Gemma on `:8000`, or additional GPU capacity. Concurrent loading is refused by `ops/start-qwen-isolated.sh`.
+4. Until the Pod is up with positive balance, weights cannot be downloaded and live chat cannot be proven.
+5. Tracking: GitHub issue [#1](https://github.com/henokmeron/AI-PLAYBOOK.md/issues/1) + `AUTONOMOUS_WORK_QUEUE.md`.
 
 ## Operator sequence (after Pod is running)
 
