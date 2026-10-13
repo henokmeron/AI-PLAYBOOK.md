@@ -1,5 +1,7 @@
 # First-release acceptance — H100 NVL (2026-10-13)
 
+**Commit:** `04a9075` on `feature/qwen3.5-27b-integration`
+
 ## Environment
 
 - Pod: RunPod H100 NVL (≈94 GiB), driver **580.126.09**
