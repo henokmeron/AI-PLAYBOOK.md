@@ -4,7 +4,8 @@
 
 - Branch: `feature/qwen3.5-27b-integration`
 - Base tip before this finish pass: `d748762`
-- Final commit: `5281ab3`
+- Functional finish commit: `5281ab3`
+- Docs stamp tip: `dcb2d5d`
 
 ## 2. Qwen as default
 
@@ -57,8 +58,8 @@ Browser UI via SSH tunnel on the operator laptop: **NOT TESTED** in this finish 
 ## 7. Snapshot
 
 - Path: `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-runpod-first-5281ab3.tar.gz`
-- Checksum file: `/workspace/ai-platform-backups/manifests/AI-PLAYBOOK.md-runpod-first-5281ab3.sha256`
-- Exact SHA-256: recorded in volume `VERSION.txt` after snapshot creation
+- SHA-256: `6f23579fad7e143cb3f50bdb9caf7045ccfed02d42d5e0d13ccb74cd97882536`
+- Tip snapshot: `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-runpod-first-dcb2d5d.tar.gz`
 
 ## 8. Services and ports
 
