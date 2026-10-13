@@ -1,5 +1,7 @@
 # Cost-estimation worksheet — Qwen3.5-27B (indicative only)
 
+> **Optional / deferred.** First release runs on RunPod only. This worksheet is for future comparison, not a startup requirement.
+
 **Not a quote.** Verify live prices in RunPod and the Azure Pricing Calculator before any purchase. No paid Azure resources are created by this worksheet.
 
 ## Assumptions

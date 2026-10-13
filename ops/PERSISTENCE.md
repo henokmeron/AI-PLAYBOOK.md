@@ -25,8 +25,9 @@ Repository: `henokmeron/AI-PLAYBOOK.md`.
 ### Pod-local `/tmp` — temporary working state only
 Examples include `/tmp/vllm-clean-env`, the active gateway script, temporary API key, temporary parser extraction, test fixtures and logs. These can disappear when a Pod is recreated. The key is intentionally temporary and must not be persisted to source archives/manifests. Packages used by the model are recreated from the saved runtime environment archive; parser wheels are re-extracted from the Global Volume wheelhouse.
 
-### Azure — independent model/runtime backup
-The existing Azure model backup remains an independent copy. Do not delete it simply because Global Volume storage exists. Global Volume is not a substitute for an independent off-platform backup.
+### Azure — optional deferred off-platform backup
+Azure is **not required** for the RunPod-first release. The Global Volume at `/workspace` plus GitHub are the operational authorities for first-release recovery.
+If an independent Azure Blob copy already exists, it may be kept as an optional off-platform backup. Do not delete Azure account resources unless the operator explicitly chooses to. Do not block startup or recovery on Azure availability.
 
 ## How to snapshot the current source
 

@@ -1,4 +1,7 @@
-# Azure migration readiness — Qwen3.5-27B (prepare only)
+# Azure migration readiness — Qwen3.5-27B (optional / deferred)
+
+> **First release status:** RunPod-only. Azure is **not required** for chat, Document Q&A, recovery, or day-to-day operation.
+> Keep this document for a future off-platform backup or Azure GPU migration. Do not treat it as a startup dependency.
 
 This document prepares Azure portability. It does **not** create Azure resources, spend quota, or upload weights.
 

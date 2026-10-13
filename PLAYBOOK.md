@@ -73,6 +73,13 @@ Azure is an option, not a requirement. We will choose infrastructure after evalu
 
 Do not buy large cloud resources until the technical design requires them.
 
+### 2026-10-14 — RunPod-first first release (Qwen primary)
+
+- **Hosting:** RunPod Global Volume + Pod GPU is the standalone first-release deployment. Azure is optional/deferred and not required to start, chat, or recover.
+- **Primary model:** Qwen3.5-27B (`qwen3.5-27b`, revision `fc05daec18b0a78c049392ed2e771dde82bdf654`) on `:8002` with gateway `:8010` and console `:8080`.
+- **Start:** `bash /workspace/ai-platform-release/START.sh` (see `docs/first-release-recovery.md`).
+- **Cost control:** stop the paid Pod to halt GPU compute; keep the Global Volume for weights/archives/docs. Gemma weights may remain stored but are not required for normal operation.
+
 ## 4. Compliance-by-design
 The initial commercial target is the UK, with architecture suitable for expansion into the EU and other Western markets.
 

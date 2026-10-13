@@ -20,29 +20,47 @@ healthy() { curl -fsS --max-time 3 "$1" >/dev/null 2>&1; }
 mkdir -p "$DIAG"
 umask 077
 
-[[ -f "$MODEL/config.json" ]] || fail "Qwen model missing at $MODEL"
-[[ -f "$QWEN_ARCHIVE_DIR/vllm-qwen-env.tar.zst" ]] || fail "Qwen runtime archive missing"
-[[ -f "$VOL/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it/config.json" ]] || fail "Global Volume Gemma marker missing"
+[[ -f "$MODEL/config.json" ]] || fail "Qwen model missing at $MODEL (expected revision fc05daec18b0a78c049392ed2e771dde82bdf654)"
+[[ -f "$QWEN_ARCHIVE_DIR/vllm-qwen-env.tar.zst" ]] || fail "Qwen runtime archive missing under $QWEN_ARCHIVE_DIR"
+# Gemma weights are optional for first-release operation; only required if switching runtimes later.
+GEMMA_MARKER="$VOL/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it/config.json"
 
 if [[ "$MODE" == "--check" ]]; then
-  printf 'Qwen weights: '; [[ -f "$MODEL/config.json" ]] && echo OK
-  printf 'Qwen env: '; [[ -x "$QWEN_ENV/bin/vllm" ]] && echo PRESENT || echo MISSING
+  printf 'Global Volume /workspace: '; findmnt -n /workspace >/dev/null 2>&1 && echo OK || echo MISSING
+  printf 'Qwen weights: '; [[ -f "$MODEL/config.json" ]] && echo OK || echo MISSING
+  printf 'Qwen archive: '; [[ -f "$QWEN_ARCHIVE_DIR/vllm-qwen-env.tar.zst" ]] && echo OK || echo MISSING
+  printf 'Qwen env (/tmp): '; [[ -x "$QWEN_ENV/bin/vllm" ]] && echo PRESENT || echo MISSING
+  printf 'Gemma weights (optional): '; [[ -f "$GEMMA_MARKER" ]] && echo PRESENT || echo ABSENT
   printf 'Qwen :8002: '; healthy http://127.0.0.1:8002/v1/models && echo HEALTHY || echo DOWN
   printf 'Gateway :8010: '; healthy http://127.0.0.1:8010/health && echo HEALTHY || echo DOWN
   printf 'Console :8080: '; healthy http://127.0.0.1:8080/api/status && echo HEALTHY || echo DOWN
   printf 'Gemma :8000: '; healthy http://127.0.0.1:8000/v1/models && echo HEALTHY || echo DOWN
+  DRIVER_VER="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n1 || true)"
+  printf 'NVIDIA driver: %s\n' "${DRIVER_VER:-unknown}"
   exit 0
 fi
 
 [[ "$MODE" == "--start" ]] || fail "Usage: $0 [--start|--check]"
 
+# Preflight: volume, driver, disk, ports/GPU conflict. Reuses healthy services (idempotent).
+findmnt -n /workspace >/dev/null 2>&1 || fail "/workspace is not a mount point; attach the Global Volume before start"
+DRIVER_VER="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n1 || true)"
+DRIVER_MAJOR="${DRIVER_VER%%.*}"
+[[ -n "$DRIVER_MAJOR" && "$DRIVER_MAJOR" =~ ^[0-9]+$ ]] || fail "Could not read NVIDIA driver version (is nvidia-smi available?)"
+if (( DRIVER_MAJOR < 580 )); then
+  fail "NVIDIA driver ${DRIVER_VER} is below 580. Archived Qwen/vLLM needs driver >=580. Do not extract the archive onto /workspace. Rollback: stop processes; keep weights/archives; use a driver-capable Pod or rebuild with ops/_install_qwen_env_cu128.py on 570 hosts."
+fi
+FREE_KB=$(df -Pk /tmp | awk 'END {print $4}')
+MIN_FREE_KB=12582912 # 12 GiB
+[[ "$FREE_KB" =~ ^[0-9]+$ && "$FREE_KB" -ge "$MIN_FREE_KB" ]] || fail "/tmp has insufficient free space (need >=12 GiB). Free local disk or use a Pod with larger overlay. Weights/archives on /workspace are untouched."
+
 if healthy http://127.0.0.1:8000/v1/models; then
-  fail "Gemma is loaded on :8000. Stop it before starting Qwen first-release (one GPU)."
+  fail "Gemma is loaded on :8000. Stop it before starting Qwen first-release (one GPU). Rollback: bash ops/switch-gpu-model.sh or stop the :8000 process; do not delete weights."
 fi
 
 if [[ ! -x "$QWEN_ENV/bin/vllm" ]]; then
-  log "Restoring Qwen runtime from Global Volume archive"
-  bash "$(dirname "$0")/restore-qwen-runtime.sh"
+  log "Restoring Qwen runtime from Global Volume archive into /tmp (never onto FUSE)"
+  bash "$(dirname "$0")/restore-qwen-runtime.sh" || fail "Archive restore failed. /workspace archives were not modified. Inspect $QWEN_ARCHIVE_DIR/SHA256SUMS and retry."
 fi
 
 export PATH="$QWEN_ENV/bin:$PATH"

@@ -27,11 +27,12 @@ candidates:
     modalities:
       - text
       - image
-    notes: "First practical open-weight baseline for the platform. Remains the default until Qwen is validated and approved."
+    notes: "Optional alternative. First-release default is Qwen3.5-27B. Selecting Gemma while Qwen is loaded returns HTTP 409 until an operator switches the one-GPU runtime."
     weight_storage: external
     evaluation_status: smoke-passed-broader-pending
     selection_eligible: true
     runpod_path: /workspace/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it
+    # Optional deferred off-platform backup label only; not required for RunPod-first operation.
     azure_blob_prefix: models/gemma-4-31B-it
     serving:
       runtime_profile: gemma-vllm-0.31
@@ -77,13 +78,15 @@ candidates:
     evaluation_status: first-release-primary-2026-10-13
     selection_eligible: true
     runpod_path: /workspace/models/Qwen3.5-27B/fc05daec18b0a78c049392ed2e771dde82bdf654
+    # Optional deferred off-platform backup label only; RunPod Global Volume is the first-release authority.
     azure_blob_prefix: models/Qwen3.5-27B/fc05daec18b0a78c049392ed2e771dde82bdf654
     serving:
       runtime_profile: qwen-vllm-nightly-isolated
       listen_host: 127.0.0.1
       listen_port: 8002
       max_model_len: 8192
-      gpu_memory_utilization: 0.90
+      max_num_seqs: 256
+      gpu_memory_utilization: 0.92
       reasoning_parser: qwen3
       language_model_only: true
       extra_args:

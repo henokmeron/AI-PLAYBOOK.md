@@ -1,9 +1,9 @@
 # Qwen3.5-27B integration (RunPod-first)
 
-## First release (accepted 2026-10-13 on H100 NVL)
+## First release (accepted 2026-10-13 on H100 NVL; RunPod-only)
 
 Qwen3.5-27B is the **first-release primary** on main ports `:8002` / `:8010` / `:8080`.
-Gemma remains selectable in the registry/console; a live Gemma request while Qwen is loaded returns HTTP 409 until `ops/switch-gpu-model.sh` is used.
+**Azure is not required.** Gemma remains an optional selectable alternative; a live Gemma request while Qwen is loaded returns HTTP 409 until `ops/switch-gpu-model.sh` is used.
 
 Recoverable start (Global Volume folder, not a zip of a venv):
 
@@ -11,7 +11,7 @@ Recoverable start (Global Volume folder, not a zip of a venv):
 bash /workspace/ai-platform-release/START.sh
 ```
 
-See `docs/first-release-recovery.md` and `docs/results/first-release-h100-acceptance-2026-10-13.md`.
+See `docs/first-release-recovery.md`, `docs/results/first-release-h100-acceptance-2026-10-13.md`, and `docs/results/runpod-first-completion-2026-10-14.md`.
 
 ## Baseline (inspected 2026-10-13)
 
