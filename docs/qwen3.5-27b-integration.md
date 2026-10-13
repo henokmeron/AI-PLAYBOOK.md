@@ -35,7 +35,8 @@
 | Gateway / console | `127.0.0.1:8013` / `127.0.0.1:8083` (gateway smoke `QWEN_OK`) |
 | Production default | Still Gemma (`models/registry.yaml` → `production: gemma-4-31b-it`) |
 | Main ports | `:8010` / `:8080` **untouched** (not listening during this validation) |
-| Evidence | `ops/results/qwen-live-stack-2026-10-13.md`, `/workspace/platform-diagnostics/qwen/` |
+| Evidence | `ops/results/qwen-live-stack-2026-10-13.md`, `ops/results/qwen-integration-status-2026-10-13.md`, `/workspace/platform-diagnostics/qwen/` |
+| Integration scope | **Isolated only** — not production default; main `:8010`/`:8080` not connected to Qwen |
 
 ## Prior blockers (cleared for live serve; retained for history)
 
