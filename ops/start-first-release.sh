@@ -48,6 +48,20 @@ fi
 export PATH="$QWEN_ENV/bin:$PATH"
 export TMPDIR=/tmp
 export VLLM_RPC_BASE_PATH=/tmp
+# Bundled NVIDIA CUDA libs (cudart 13 etc.) must be on LD_LIBRARY_PATH for archived envs.
+if [[ -d "$QWEN_ENV/lib" ]]; then
+  _ld_extra="$(find "$QWEN_ENV/lib" -type f \( -name 'libcudart.so*' -o -name 'libcuda.so*' \) -printf '%h\n' 2>/dev/null | sort -u | tr '\n' ':')"
+  # Prefer site-packages/nvidia/*/lib layout used by pip CUDA wheels.
+  if [[ -d "$QWEN_ENV/lib/python3.12/site-packages/nvidia" ]]; then
+    _ld_extra="$(find "$QWEN_ENV/lib/python3.12/site-packages/nvidia" -type f -name 'lib*.so*' -printf '%h\n' 2>/dev/null | sort -u | tr '\n' ':')${_ld_extra}"
+  elif [[ -d "$QWEN_ENV/lib/python3.11/site-packages/nvidia" ]]; then
+    _ld_extra="$(find "$QWEN_ENV/lib/python3.11/site-packages/nvidia" -type f -name 'lib*.so*' -printf '%h\n' 2>/dev/null | sort -u | tr '\n' ':')${_ld_extra}"
+  fi
+  if [[ -n "${_ld_extra}" ]]; then
+    export LD_LIBRARY_PATH="${_ld_extra}${LD_LIBRARY_PATH:-}"
+  fi
+  unset _ld_extra
+fi
 # Driver gate: archived cu130/cu13 runtimes need NVIDIA driver ~580+.
 # On driver 570 / CUDA 12.8 hosts, use a host-matched venv (see ops/_install_qwen_env_cu128.py).
 DRIVER_VER="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n1 || true)"
@@ -64,13 +78,15 @@ fi
 
 if ! healthy http://127.0.0.1:8002/v1/models; then
   log "Starting Qwen vLLM on 127.0.0.1:8002"
-  nohup "$QWEN_ENV/bin/python" "$QWEN_ENV/bin/vllm" serve "$MODEL" \
+  # max-num-seqs must stay below available Mamba cache blocks on Qwen3.5 (else engine dies).
+  nohup env VLLM_DO_NOT_TRACK=1 "$QWEN_ENV/bin/python" "$QWEN_ENV/bin/vllm" serve "$MODEL" \
     --host 127.0.0.1 --port 8002 \
     --trust-remote-code \
     --language-model-only \
     --reasoning-parser qwen3 \
     --max-model-len 8192 \
-    --gpu-memory-utilization 0.90 \
+    --max-num-seqs 256 \
+    --gpu-memory-utilization 0.92 \
     --default-chat-template-kwargs '{"enable_thinking": false}' \
     >"$DIAG/qwen-vllm.log" 2>&1 &
   echo $! >"$DIAG/qwen-vllm.pid"
@@ -92,8 +108,18 @@ fi
 
 # Ensure repo checkout for gateway/console source
 if [[ ! -f "$REPO_ROOT/api/local_gateway.py" ]]; then
-  fail "Repo missing at $REPO_ROOT; clone feature/qwen3.5-27b-integration there first"
+  log "Cloning platform source into $REPO_ROOT"
+  git clone --branch feature/qwen3.5-27b-integration --single-branch \
+    https://github.com/henokmeron/AI-PLAYBOOK.md.git "$REPO_ROOT"
 fi
+if [[ -d /workspace/ai-platform-release/ops ]]; then
+  mkdir -p "$REPO_ROOT/ops"
+  cp -a /workspace/ai-platform-release/ops/. "$REPO_ROOT/ops/" || true
+fi
+if [[ -d /workspace/ai-platform-release/tree ]]; then
+  cp -a /workspace/ai-platform-release/tree/. "$REPO_ROOT/" || true
+fi
+[[ -f "$REPO_ROOT/api/local_gateway.py" ]] || fail "Repo missing at $REPO_ROOT after clone/overlay"
 
 # Ensure RAG parser wheels if setup scripts exist
 if [[ -f "$REPO_ROOT/rag/setup_pypdf.sh" ]]; then

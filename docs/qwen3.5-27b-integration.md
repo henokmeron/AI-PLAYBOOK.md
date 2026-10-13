@@ -1,5 +1,18 @@
 # Qwen3.5-27B integration (RunPod-first)
 
+## First release (accepted 2026-10-13 on H100 NVL)
+
+Qwen3.5-27B is the **first-release primary** on main ports `:8002` / `:8010` / `:8080`.
+Gemma remains selectable in the registry/console; a live Gemma request while Qwen is loaded returns HTTP 409 until `ops/switch-gpu-model.sh` is used.
+
+Recoverable start (Global Volume folder, not a zip of a venv):
+
+```bash
+bash /workspace/ai-platform-release/START.sh
+```
+
+See `docs/first-release-recovery.md` and `docs/results/first-release-h100-acceptance-2026-10-13.md`.
+
 ## Baseline (inspected 2026-10-13)
 
 | Item | Value |
@@ -80,7 +93,6 @@ bash ops/start-qwen-isolated.sh --stop
 - Vision / multimodal inputs
 - Tool calling (`--enable-auto-tool-choice`)
 - Long-context (>8192) on the current Pod
-- Promoting Qwen to production default
 - Azure GPU provisioning and Blob upload of Qwen weights
 
 ## Related docs

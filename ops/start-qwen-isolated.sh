@@ -95,14 +95,15 @@ case "$MODE" in
       unset _qwen_ld
     fi
     log "Starting isolated Qwen on ${HOST}:${PORT} from $MODEL"
-    nohup "$ENV_DIR/bin/python" "$ENV_DIR/bin/vllm" serve "$MODEL" \
+    nohup env VLLM_DO_NOT_TRACK=1 "$ENV_DIR/bin/python" "$ENV_DIR/bin/vllm" serve "$MODEL" \
       --host "$HOST" \
       --port "$PORT" \
       --trust-remote-code \
       --language-model-only \
       --reasoning-parser qwen3 \
       --max-model-len "${QWEN_MAX_MODEL_LEN:-8192}" \
-      --gpu-memory-utilization "${QWEN_GPU_MEM_UTIL:-0.90}" \
+      --max-num-seqs "${QWEN_MAX_NUM_SEQS:-256}" \
+      --gpu-memory-utilization "${QWEN_GPU_MEM_UTIL:-0.92}" \
       --default-chat-template-kwargs '{"enable_thinking": false}' \
       >>"$LOG" 2>&1 </dev/null &
     echo $! >"$PIDFILE"

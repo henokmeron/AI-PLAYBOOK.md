@@ -452,12 +452,20 @@ class Handler(BaseHTTPRequestHandler):
                 from registry_loader import public_model_catalog
 
                 health = probe_runtime_health_by_registry(registry)
+                defaults = (
+                    registry.get("defaults")
+                    if isinstance(registry.get("defaults"), dict)
+                    else {}
+                )
+                active = defaults.get("active_model_id") or registry.get("production")
                 self.send_json(
                     200,
                     {
                         "models": public_model_catalog(
                             registry, runtime_health=health
                         ),
+                        "default_model_id": active,
+                        "production_model_id": registry.get("production"),
                         "upstream_port": upstream_listen_port(),
                         "production_default_unchanged": True,
                     },
@@ -648,6 +656,14 @@ class Handler(BaseHTTPRequestHandler):
                 return
             minimum_score = RAG_MANAGED_MIN_SCORE
             history = sanitize_history_for_collection(history, collection_files)
+            if not collection_files:
+                self.send_json(200, {
+                    "status": "abstained",
+                    "answer": "No documents are available in this collection.",
+                    "sources": [],
+                    "retrieval": {"matched": False, "reason": "empty_collection"},
+                })
+                return
 
         effective_top_k = top_k
         if question_requests_broad_coverage(question):
@@ -659,7 +675,17 @@ class Handler(BaseHTTPRequestHandler):
                 allowed = set(collection_files)
                 chunks = [chunk for chunk in chunks if chunk.source in allowed]
             ranked = retrieve(question, chunks, top_k=effective_top_k)
-        except (RuntimeError, OSError):
+        except (RuntimeError, OSError) as exc:
+            # Empty managed folders are a normal post-delete state; abstain instead of 500.
+            message = str(exc).lower()
+            if "no readable" in message or "does not exist" in message:
+                self.send_json(200, {
+                    "status": "abstained",
+                    "answer": "No matching evidence was found in the supplied documents.",
+                    "sources": [],
+                    "retrieval": {"matched": False, "reason": "no_documents"},
+                })
+                return
             self.send_json(500, {"error": "document retrieval unavailable"})
             return
 
