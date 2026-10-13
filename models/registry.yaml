@@ -109,7 +109,12 @@ candidates:
       document_questions: eligible-isolated-untested-on-main
     known_requirements:
       vllm: "Official model card: install vLLM from main/nightly in a fresh environment; recipe pages cite >=0.17.0. Do not upgrade the Gemma /tmp/vllm-clean-env in place."
-      cuda: "Nightly vLLM may need libcudart.so.13 via LD_LIBRARY_PATH under the venv nvidia/ tree."
+      cuda: >
+        Current vLLM wheels link libcudart.so.13 and require an NVIDIA driver that
+        supports CUDA 13 (~580+). Driver 570 / CUDA 12.8 hosts fail at engine start
+        with cudaHostGetDevicePointer / insufficient driver. Redeploy on a newer
+        driver host with the same Global Volume; do not expect the cu130 archives
+        alone to fix a 570 host.
 
   - id: mistral-large-4
     family: mistral-large-4

@@ -1065,3 +1065,9 @@ Research should lead to a decision, not a pile of links. Every research report s
 - **PREPARED ONLY:** console model picker design in `docs/console-model-picker-design.md` (not implemented).
 - **BLOCKED without approval:** stop/switch live Qwen → Gemma main `:8000`/`:8010`/`:8080`; production default change; picker on main console.
 - Evidence: `/workspace/platform-diagnostics/tonight/post-acceptance-inspect.json`; `ops/results/post-acceptance-runtime-2026-10-13.md`.
+
+### 2026-10-13 — Final mission (picker + Qwen-primary code; live serve blocked on new Pod driver)
+- Shipped console model picker, registry `production: qwen3.5-27b`, and `ops/start-first-release.sh`.
+- New Pod `usual_coral_ape` (SSH `216.81.151.54:13774`) has NVIDIA **driver 570** / CUDA 12.8. Current vLLM wheels need cudart 13 → engine fails with insufficient driver. Weights + archives on Global Volume remain intact.
+- **Next:** redeploy same volume on driver ≥580, then `bash ops/start-first-release.sh --start` and E2E browser tests.
+- Acceptance: `ops/results/final-mission-acceptance-2026-10-13.md`.

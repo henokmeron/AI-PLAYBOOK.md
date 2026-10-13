@@ -45,15 +45,22 @@ if [[ ! -x "$QWEN_ENV/bin/vllm" ]]; then
   bash "$(dirname "$0")/restore-qwen-runtime.sh"
 fi
 
-# Build CUDA 13 LD path for nightly vLLM
-_qwen_ld=""
-if [[ -d "$QWEN_ENV/lib/python3.12/site-packages/nvidia" ]]; then
-  _qwen_ld=$(find "$QWEN_ENV/lib/python3.12/site-packages/nvidia" -type f -name 'lib*.so*' -printf '%h\n' 2>/dev/null | sort -u | paste -sd: -)
-fi
-export LD_LIBRARY_PATH="${_qwen_ld}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export PATH="$QWEN_ENV/bin:$PATH"
 export TMPDIR=/tmp
 export VLLM_RPC_BASE_PATH=/tmp
+# Driver gate: archived cu130/cu13 runtimes need NVIDIA driver ~580+.
+# On driver 570 / CUDA 12.8 hosts, use a host-matched venv (see ops/_install_qwen_env_cu128.py).
+DRIVER_VER="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n1 || true)"
+log "NVIDIA driver: ${DRIVER_VER:-unknown}"
+if ! "$QWEN_ENV/bin/python" - <<'PY'
+import torch, sys
+ok = torch.cuda.is_available()
+print(f"torch={torch.__version__} cuda={torch.version.cuda} available={ok}")
+sys.exit(0 if ok else 1)
+PY
+then
+  fail "Qwen env cannot see the GPU (likely CUDA runtime/driver mismatch). On CUDA 12.8 / driver 570 hosts, rebuild with ops/_install_qwen_env_cu128.py rather than extracting the cu130 archive."
+fi
 
 if ! healthy http://127.0.0.1:8002/v1/models; then
   log "Starting Qwen vLLM on 127.0.0.1:8002"
