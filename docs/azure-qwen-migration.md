@@ -56,10 +56,21 @@ Do not delete the RunPod `/workspace` copy until Azure verification succeeds and
 6. Backup: Blob + Git tags + `/workspace` snapshots while RunPod remains secondary
 7. Rollback: keep Gemma serving config as default; switch `production` only after evaluation
 
+## RunPod → Azure component reuse (2026-10-13)
+
+| Component | Reuse on Azure? | Notes |
+| --- | --- | --- |
+| `models/registry.yaml` + loader | Yes | Override paths via env; keep production default policy |
+| `api/local_gateway.py` | Yes with hardening | Loopback prototype; Azure needs TLS, auth, network policy |
+| Isolated vLLM serve scripts | Pattern yes | Rebuild env on Azure image; archive under `/workspace/runtime-setup/qwen-vllm` still TODO |
+| RAG / document library | Yes | Point managed docs root at durable disk |
+| Web console | Yes behind gateway | Never embed keys |
+| Global Volume weights | Transfer then verify | Do not treat RunPod FUSE as Azure Blob |
+
 ## Remaining steps requiring explicit approval
 
-- Start/stop paid RunPod GPU time for download and live Qwen serve
-- Temporarily stop Gemma on `:8000` to free VRAM for Qwen validation
+- Continued paid RunPod GPU time while models stay loaded
+- Restore Gemma main stack (`:8000`/`:8010`/`:8080`) after stopping Qwen
 - Create or resize any Azure GPU VM / AKS node
 - AzCopy upload of Qwen weights to Blob (egress/time cost)
 - Change platform `production` default from Gemma to Qwen

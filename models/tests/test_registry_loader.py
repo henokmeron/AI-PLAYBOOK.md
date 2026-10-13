@@ -22,6 +22,7 @@ from registry_loader import (  # noqa: E402
     load_registry,
     public_model_catalog,
     resolve_requested_model,
+    selection_decision,
     upstream_model_token,
 )
 
@@ -44,10 +45,18 @@ class RegistryLoaderTests(unittest.TestCase):
         self.assertEqual(qwen["status"], "integration-candidate")
         self.assertEqual(qwen["revision"], "fc05daec18b0a78c049392ed2e771dde82bdf654")
         self.assertIn("Qwen3.5-27B", qwen["runpod_path"])
+        self.assertEqual(qwen["evaluation_status"], "isolated-smoke-passed-2026-10-13")
         serving = qwen["serving"]
         self.assertEqual(serving["listen_port"], 8002)
         self.assertNotEqual(serving["listen_port"], 8000)
         self.assertEqual(self.registry["production"], "gemma-4-31b-it")
+
+    def test_selection_decision_blocks_cross_runtime_without_silent_fallback(self) -> None:
+        ok = selection_decision(self.registry, "qwen3.5-27b", upstream_port=8002)
+        self.assertTrue(ok["allowed"])
+        blocked = selection_decision(self.registry, "qwen3.5-27b", upstream_port=8000)
+        self.assertFalse(blocked["allowed"])
+        self.assertEqual(blocked["reason"], "runtime_mismatch")
 
     def test_public_catalog_omits_filesystem_paths(self) -> None:
         catalog = public_model_catalog(self.registry)

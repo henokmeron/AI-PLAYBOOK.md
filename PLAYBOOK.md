@@ -1048,3 +1048,11 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Production default left as Gemma; main `:8010`/`:8080` not modified. Gemma `:8000` was not running while Qwen owned the GPU.
 - Evidence: `ops/results/qwen-live-stack-2026-10-13.md` and `/workspace/platform-diagnostics/qwen/`.
 - Still deferred: restore Gemma after Qwen stop; promote Qwen; Azure spend; fresh feature-branch volume source snapshot.
+
+### 2026-10-13 — Tonight completion (dual-model recoverable state)
+- Phase 1–8 executed on `feature/qwen3.5-27b-integration` against live Pod (A100 80GB) + Global Volume.
+- Qwen remains on isolated `:8002`/`:8013`/`:8083`; live chat + isolated Document Q&A (upload/ask/delete) **PASS**.
+- Registry selection: explicit model id works; cross-runtime requests return **HTTP 409** (no silent fallback). Catalog reports `runtime_loaded`.
+- Production default still Gemma. Main `:8010`/`:8080` not started. Gemma overlay env missing; restore from `/workspace/runtime-setup/vllm-clean-env.tar.zst` before Gemma serve.
+- Local regression: **70 tests OK**. Acceptance: `ops/results/tonight-completion-acceptance-2026-10-13.md`.
+- Snapshot helper: `ops/snapshot-source-commit.sh <sha>` for immutable Global Volume source archives without weight duplication.

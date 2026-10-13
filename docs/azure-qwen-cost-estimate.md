@@ -6,12 +6,23 @@
 
 | Assumption | Value used here |
 | --- | --- |
-| Model | Qwen3.5-27B BF16 (~50–65 GiB on disk) |
+| Model | Qwen3.5-27B BF16 (~52 GiB on disk observed) |
 | Alternate | FP8 / INT4 checkpoints if VRAM-constrained |
-| RunPod GPU (historical platform) | 1× H100 NVL ~94 GB (same class as Gemma baseline) |
+| RunPod GPU (historical platform) | 1× H100 NVL ~94 GB (Gemma baseline) |
+| RunPod GPU (2026-10-13 live Qwen) | 1× **A100 80GB PCIe** — ~71 GiB VRAM used while serving |
 | Azure GPU candidates | NC H100-class or equivalent; availability TBD |
-| Usage pattern for first validation | a few hours of interactive smoke tests, not 24/7 |
-| Concurrent models | false (switch, do not dual-load) |
+| Usage pattern for first validation | hours of interactive smoke tests, not 24/7 |
+| Concurrent models | false (switch via `ops/switch-gpu-model.sh`) |
+
+## Observed tonight (fill $/h from RunPod console; do not invent prices)
+
+| Observation | Value |
+| --- | --- |
+| Qwen weights on Global Volume | ~52 GiB at `/workspace/models/Qwen3.5-27B/fc05daec…` |
+| Gemma weights on Global Volume | ~59 GiB (unchanged) |
+| Model loaded continuously while Pod runs | Yes (Qwen on `:8002` until stopped) |
+| Switching models | Requires stop one runtime / start the other (one GPU) |
+| Safe shutdown | Stop vLLM processes; stop Pod from RunPod UI to halt GPU billing; keep Global Volume |
 
 ## Expected charge categories
 

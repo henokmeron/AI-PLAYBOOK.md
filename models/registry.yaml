@@ -4,14 +4,16 @@
 
 schema_version: 2
 
-# Active production default remains Gemma until Qwen passes live validation
-# and an explicit operator approval switches production.
+# Active production default remains Gemma until an explicit operator approval
+# switches production. Isolated Qwen live smoke passed 2026-10-13; still not promoted.
 production: gemma-4-31b-it
 
 defaults:
   active_model_id: gemma-4-31b-it
   # Only one GPU model process at a time on the current single-GPU Pod.
   concurrent_gpu_models: false
+  # Explicit client model ids are never silently swapped to another model.
+  silent_model_fallback: false
 
 candidates:
   - id: gemma-4-31b-it
@@ -28,6 +30,7 @@ candidates:
     notes: "First practical open-weight baseline for the platform. Remains the default until Qwen is validated and approved."
     weight_storage: external
     evaluation_status: smoke-passed-broader-pending
+    selection_eligible: true
     runpod_path: /workspace/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it
     azure_blob_prefix: models/gemma-4-31B-it
     serving:
@@ -41,6 +44,16 @@ candidates:
       precision: bf16
       min_vram_gb: 80
       validated_gpu: NVIDIA H100 NVL 94GB
+      observed_gpu_2026_10_13: NVIDIA A100 80GB PCIe
+    capabilities:
+      chat: verified
+      document_qa: verified
+      vision: untested
+      tool_calling: untested
+    task_routing:
+      chat: preferred-default
+      coding: eligible
+      document_questions: preferred-default
 
   - id: qwen3.5-27b
     family: qwen3.5
@@ -57,10 +70,12 @@ candidates:
     notes: >
       Dense 27B multimodal model with gated delta hybrid attention and native
       262K context. Official card requires a current/nightly vLLM build for
-      Qwen3.5. Do not load alongside Gemma on one GPU. Multimodal input and
-      tool-calling are not claimed until live tests pass.
+      Qwen3.5. Do not load alongside Gemma on one GPU. Isolated live chat smoke
+      passed 2026-10-13 on A100 80GB; multimodal/tool-calling still untested.
+      Not production default until explicit approval.
     weight_storage: external
-    evaluation_status: not-started
+    evaluation_status: isolated-smoke-passed-2026-10-13
+    selection_eligible: true
     runpod_path: /workspace/models/Qwen3.5-27B/fc05daec18b0a78c049392ed2e771dde82bdf654
     azure_blob_prefix: models/Qwen3.5-27B/fc05daec18b0a78c049392ed2e771dde82bdf654
     serving:
@@ -81,13 +96,20 @@ candidates:
       recipe_bf16: 1x H200 or 2x H100; H100 NVL 94GB is expected to fit with limited context
       recipe_fp8: single ~40GB GPU (alternate checkpoint Qwen/Qwen3.5-27B-FP8)
       recipe_int4: single ~24GB GPU (alternate quantized checkpoint)
+      observed_gpu_2026_10_13: NVIDIA A100 80GB PCIe (~71 GiB used at serve)
     capabilities:
-      chat: planned
+      chat: verified-isolated
       vision: untested
       tool_calling: untested
-      reasoning_parser: planned
+      reasoning_parser: configured
+      document_qa: not-live-tested-on-main
+    task_routing:
+      chat: eligible-isolated
+      coding: eligible-isolated
+      document_questions: eligible-isolated-untested-on-main
     known_requirements:
       vllm: "Official model card: install vLLM from main/nightly in a fresh environment; recipe pages cite >=0.17.0. Do not upgrade the Gemma /tmp/vllm-clean-env in place."
+      cuda: "Nightly vLLM may need libcudart.so.13 via LD_LIBRARY_PATH under the venv nvidia/ tree."
 
   - id: mistral-large-4
     family: mistral-large-4
@@ -102,6 +124,7 @@ candidates:
     notes: "Leading candidate to evaluate when public weights are released."
     weight_storage: external
     evaluation_status: not-started
+    selection_eligible: false
 
   - id: llama-4
     family: meta-llama-4
@@ -116,6 +139,7 @@ candidates:
     notes: "Keep as a comparison model; licence is not Apache/MIT and must be reviewed before commercial distribution."
     weight_storage: external
     evaluation_status: not-started
+    selection_eligible: false
 
 runtime_profiles:
   gemma-vllm-0.31:
@@ -158,6 +182,12 @@ selection_policy:
     - UK/EU commercial deployment implications
     - evaluation against our own tests
   switching_rules:
-    - Keep Gemma as production default until Qwen live validation passes and an explicit approval switches it.
+    - Keep Gemma as production default until an explicit approval switches it (isolated Qwen smoke alone is not approval).
     - On a single GPU Pod, stop the active model before starting the other; never load both.
     - Main services :8010/:8080/:8000 must not be restarted without approval; use isolated ports for Qwen experiments.
+    - Use ops/switch-gpu-model.sh for an explicit stop/start switch; gateways do not silently remap across runtimes.
+    - If the client names a model whose listen_port is not this gateway's upstream, return a clear error (no silent fallback).
+  cost_notes:
+    - GPU compute dominates cost while a model is loaded; stop the Pod or unload when idle.
+    - Weights on Global Volume are persistent storage cost, separate from GPU hours.
+    - Do not claim relative cost/quality between Gemma and Qwen without comparable timed tests.

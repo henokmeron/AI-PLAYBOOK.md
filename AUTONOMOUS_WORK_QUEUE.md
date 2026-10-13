@@ -5,8 +5,8 @@
 **Branch:** `feature/qwen3.5-27b-integration`
 **Last reported feature commit:** `0f0784289c255821ee0e899ed5c59300722fdddb`
 **Tracking issue:** https://github.com/henokmeron/AI-PLAYBOOK.md/issues/1
-**Status:** Live isolated Qwen stack validated on RunPod (download + vLLM `:8002` + smoke + gateway `:8013` / console `:8083`). Production default remains Gemma (`gemma-4-31b-it`). Main `:8010`/`:8080` untouched. Gemma `:8000` not running while Qwen owns the GPU.
-**Owner approval boundary:** Do not make paid changes or disrupt the working Gemma/main services; do not auto-promote Qwen.
+**Status:** Tonight completion pass: isolated Qwen live+RAG verified; registry selection+409 mismatch refusal shipped; production still Gemma; main ports untouched. Gemma overlay venv missing until archive restore. See `ops/results/tonight-completion-acceptance-2026-10-13.md`.
+**Owner approval boundary:** Do not make paid changes or disrupt the working Gemma/main services; do not auto-promote Qwen; stop Pod/Qwen when idle to limit GPU cost.
 
 ## Read first
 - `docs/qwen3.5-27b-integration.md`
@@ -53,7 +53,8 @@ Finish and validate Qwen3.5-27B integration on RunPod, keep Gemma as the default
 - 2026-10-13 (issue #1 safe repo phase): Fast-forwarded to include this queue file (`2b319cb`). Re-ran local suites: **69 tests OK** (`models.tests.test_registry_loader`, `api.test_rag_conversation`, `rag.tests.test_rag_engine`, `rag.tests.test_document_loaders`, `rag.tests.test_document_library`). Confirmed revision `fc05daec18b0a78c049392ed2e771dde82bdf654`, ports `:8002`/`:8013`/`:8083`, `production: gemma-4-31b-it`, and Gemma-conflict guards in `ops/start-qwen-isolated.sh` are consistent across scripts/docs. No Pod started; no main services touched.
 - 2026-10-13 (live isolated stack): SSH reachable. Model downloaded/verified (11 shards). vLLM on `127.0.0.1:8002` (PID 4515) smoke **PASS** (`QWEN_OK`). Isolated gateway `:8013` + console `:8083` started and gateway smoke **PASS**. Evidence: `ops/results/qwen-live-stack-2026-10-13.md` and `/workspace/platform-diagnostics/qwen/`. Gemma production default unchanged; `:8010`/`:8080` untouched. Pod/volume left intact.
 - 2026-10-13 (honest integration status): **Partially yes — not fully the platform.** Weights on Global Volume; isolated `:8002`/`:8013`/`:8083` up on live recheck; production still Gemma; main ports not wired to Qwen; `/tmp` venv ephemeral. Evidence: `ops/results/qwen-integration-status-2026-10-13.md`.
-- **Next action requiring owner:** when finished validating Qwen, stop Qwen (`ops/start-qwen-isolated.sh --stop`) and approve restoring Gemma main stack; optionally cut a fresh commit-named source snapshot of the feature branch onto `/workspace`.
+- 2026-10-13 (tonight completion): Dual-model registry + selection safeguards; Qwen isolated RAG verified; 70 local tests OK; acceptance report written. Gemma main not restored (safety + missing `/tmp/vllm-clean-env`). Evidence: `ops/results/tonight-completion-acceptance-2026-10-13.md`.
+- **Next action requiring owner:** stop Qwen/Pod when finished to halt GPU billing; approve Gemma env restore + main `:8000`/`:8010`/`:8080` restart; do not promote Qwen without explicit approval.
 
 ## Required handover format
 Report briefly:

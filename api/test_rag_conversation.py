@@ -170,11 +170,12 @@ class RagConversationTests(unittest.TestCase):
         try:
             gateway.PLATFORM_DEFAULT_MODEL_ID = "gemma-default-token"
             gateway.PLATFORM_MODEL_REGISTRY = ""
-            outbound = gateway.apply_chat_model_selection({
+            outbound, decision = gateway.apply_chat_model_selection({
                 "messages": [{"role": "user", "content": "hi"}],
             })
+            self.assertIsNone(decision)
             self.assertEqual(outbound["model"], "gemma-default-token")
-            passthrough = gateway.apply_chat_model_selection({
+            passthrough, _ = gateway.apply_chat_model_selection({
                 "model": "already-set",
                 "messages": [{"role": "user", "content": "hi"}],
             })
@@ -191,18 +192,48 @@ class RagConversationTests(unittest.TestCase):
         registry_path = Path(__file__).resolve().parent.parent / "models" / "registry.yaml"
         previous_default = gateway.PLATFORM_DEFAULT_MODEL_ID
         previous_registry = gateway.PLATFORM_MODEL_REGISTRY
+        previous_upstream = gateway.UPSTREAM
         try:
             gateway.PLATFORM_MODEL_REGISTRY = str(registry_path)
             gateway.PLATFORM_DEFAULT_MODEL_ID = ""
-            outbound = gateway.apply_chat_model_selection({
+            gateway.UPSTREAM = "http://127.0.0.1:8002/v1"
+            outbound, decision = gateway.apply_chat_model_selection({
                 "model": "Qwen/Qwen3.5-27B",
                 "messages": [{"role": "user", "content": "hi"}],
             })
+            self.assertTrue(decision["allowed"])
+            self.assertEqual(decision["resolved_id"], "qwen3.5-27b")
             self.assertIn("Qwen3.5-27B", outbound["model"])
             self.assertIn("fc05daec18b0a78c049392ed2e771dde82bdf654", outbound["model"])
         finally:
             gateway.PLATFORM_DEFAULT_MODEL_ID = previous_default
             gateway.PLATFORM_MODEL_REGISTRY = previous_registry
+            gateway.UPSTREAM = previous_upstream
+
+    def test_chat_model_selection_refuses_runtime_mismatch(self) -> None:
+        try:
+            import yaml  # noqa: F401
+        except ImportError:
+            self.skipTest("PyYAML required for registry-backed selection test")
+        registry_path = Path(__file__).resolve().parent.parent / "models" / "registry.yaml"
+        previous_default = gateway.PLATFORM_DEFAULT_MODEL_ID
+        previous_registry = gateway.PLATFORM_MODEL_REGISTRY
+        previous_upstream = gateway.UPSTREAM
+        try:
+            gateway.PLATFORM_MODEL_REGISTRY = str(registry_path)
+            gateway.PLATFORM_DEFAULT_MODEL_ID = ""
+            gateway.UPSTREAM = "http://127.0.0.1:8000/v1"
+            _outbound, decision = gateway.apply_chat_model_selection({
+                "model": "qwen3.5-27b",
+                "messages": [{"role": "user", "content": "hi"}],
+            })
+            self.assertIsNotNone(decision)
+            self.assertFalse(decision["allowed"])
+            self.assertEqual(decision["reason"], "runtime_mismatch")
+        finally:
+            gateway.PLATFORM_DEFAULT_MODEL_ID = previous_default
+            gateway.PLATFORM_MODEL_REGISTRY = previous_registry
+            gateway.UPSTREAM = previous_upstream
 
 
 if __name__ == "__main__":

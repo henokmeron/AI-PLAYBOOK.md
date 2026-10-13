@@ -126,8 +126,47 @@ def load_optional_model_registry() -> dict[str, Any] | None:
         return None
 
 
-def apply_chat_model_selection(payload: dict[str, Any]) -> dict[str, Any]:
+def upstream_listen_port() -> int | None:
+    """Parse the configured upstream base URL port (default 80/443 omitted → None)."""
+    try:
+        parsed = urlsplit(UPSTREAM if "://" in UPSTREAM else f"http://{UPSTREAM}")
+        if parsed.port is not None:
+            return int(parsed.port)
+        if parsed.scheme == "https":
+            return 443
+        if parsed.scheme == "http":
+            return 80
+    except Exception:
+        return None
+    return None
+
+
+def probe_runtime_health_by_registry(registry: dict[str, Any]) -> dict[str, bool]:
+    """Best-effort /v1/models probes for candidate listen ports (loopback only)."""
+    from registry_loader import serving_listen_port
+
+    health: dict[str, bool] = {}
+    for entry in registry.get("candidates", []):
+        if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
+            continue
+        port = serving_listen_port(entry)
+        if port is None:
+            continue
+        url = f"http://127.0.0.1:{port}/v1/models"
+        try:
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                health[entry["id"]] = 200 <= resp.status < 300
+        except Exception:
+            health[entry["id"]] = False
+    return health
+
+
+def apply_chat_model_selection(payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """Attach a resolved model id without breaking unconfigured deployments.
+
+    Returns (outbound_payload, selection_meta). selection_meta is None when no registry
+    is loaded. Refuses silent cross-runtime remaps when the registry forbids them.
 
     Priority:
     1. PLATFORM_DEFAULT_MODEL_ID / registry default when the client omits model
@@ -144,24 +183,29 @@ def apply_chat_model_selection(payload: dict[str, Any]) -> dict[str, Any]:
 
     if registry is not None:
         try:
-            from registry_loader import resolve_requested_model, upstream_model_token
+            from registry_loader import selection_decision, upstream_model_token
 
-            resolved_id = resolve_requested_model(registry, requested)
-            if resolved_id and resolved_id in {
-                entry.get("id") for entry in registry.get("candidates", [])
-                if isinstance(entry, dict)
-            }:
-                updated["model"] = upstream_model_token(registry, resolved_id)
-                return updated
+            decision = selection_decision(
+                registry,
+                requested,
+                upstream_port=upstream_listen_port(),
+            )
+            if not decision.get("allowed", True):
+                return updated, decision
+            resolved_id = decision.get("resolved_id")
             if resolved_id:
-                updated["model"] = resolved_id
-                return updated
+                updated["model"] = upstream_model_token(registry, resolved_id)
+                return updated, decision
+            passthrough = decision.get("passthrough")
+            if passthrough:
+                updated["model"] = passthrough
+                return updated, decision
         except Exception:
             pass
 
     if not requested and PLATFORM_DEFAULT_MODEL_ID:
         updated["model"] = PLATFORM_DEFAULT_MODEL_ID
-    return updated
+    return updated, None
 
 
 def question_requests_broad_coverage(question: str) -> bool:
@@ -407,7 +451,17 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 from registry_loader import public_model_catalog
 
-                self.send_json(200, {"models": public_model_catalog(registry)})
+                health = probe_runtime_health_by_registry(registry)
+                self.send_json(
+                    200,
+                    {
+                        "models": public_model_catalog(
+                            registry, runtime_health=health
+                        ),
+                        "upstream_port": upstream_listen_port(),
+                        "production_default_unchanged": True,
+                    },
+                )
             except Exception:
                 self.send_json(503, {"error": "model registry unavailable"})
             return
@@ -525,13 +579,35 @@ class Handler(BaseHTTPRequestHandler):
         if payload.get("stream") is True:
             self.send_json(400, {"error": "streaming is not supported by this prototype gateway"})
             return
-        outbound = apply_chat_model_selection(payload)
+        outbound, decision = apply_chat_model_selection(payload)
+        if decision is not None and not decision.get("allowed", True):
+            self.send_json(
+                409,
+                {
+                    "error": decision.get("error") or "model selection refused",
+                    "selection": {
+                        "requested": decision.get("requested"),
+                        "resolved_id": decision.get("resolved_id"),
+                        "reason": decision.get("reason"),
+                        "listen_port": decision.get("listen_port"),
+                    },
+                },
+            )
+            return
         try:
             upstream_data = json_bytes(read_upstream_json("/chat/completions", outbound))
         except RuntimeError:
             self.send_json(502, {"error": "inference upstream unavailable"})
             return
-        self.send_json(200, json.loads(upstream_data.decode("utf-8")))
+        body = json.loads(upstream_data.decode("utf-8"))
+        if decision is not None:
+            # Transparent decision metadata only — never echo prompts or keys.
+            body["platform_selection"] = {
+                "resolved_id": decision.get("resolved_id"),
+                "reason": decision.get("reason"),
+                "listen_port": decision.get("listen_port"),
+            }
+        self.send_json(200, body)
 
     def handle_rag_ask(self, payload: dict[str, Any]) -> None:
         question = payload.get("question")
