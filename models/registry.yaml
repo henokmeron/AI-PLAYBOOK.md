@@ -1,14 +1,22 @@
 # Model registry
-# This file tracks candidate, approved, production and retired models.
+# Tracks candidate, approved, production and retired models.
 # Large model weights are NEVER stored in GitHub.
 
-schema_version: 1
+schema_version: 2
 
-production: null
+# Active production default remains Gemma until Qwen passes live validation
+# and an explicit operator approval switches production.
+production: gemma-4-31b-it
+
+defaults:
+  active_model_id: gemma-4-31b-it
+  # Only one GPU model process at a time on the current single-GPU Pod.
+  concurrent_gpu_models: false
 
 candidates:
   - id: gemma-4-31b-it
     family: google-gemma-4
+    huggingface_id: google/gemma-4-31B-it
     source: https://huggingface.co/google/gemma-4-31B-it
     provider: Google DeepMind
     origin: Western
@@ -17,9 +25,69 @@ candidates:
     modalities:
       - text
       - image
-    notes: "First practical open-weight baseline for the platform."
+    notes: "First practical open-weight baseline for the platform. Remains the default until Qwen is validated and approved."
     weight_storage: external
-    evaluation_status: pending
+    evaluation_status: smoke-passed-broader-pending
+    runpod_path: /workspace/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it
+    azure_blob_prefix: models/gemma-4-31B-it
+    serving:
+      runtime_profile: gemma-vllm-0.31
+      listen_host: 127.0.0.1
+      listen_port: 8000
+      max_model_len: 8192
+      gpu_memory_utilization: 0.90
+      openai_model_id_env: PLATFORM_MODEL_ID
+    hardware:
+      precision: bf16
+      min_vram_gb: 80
+      validated_gpu: NVIDIA H100 NVL 94GB
+
+  - id: qwen3.5-27b
+    family: qwen3.5
+    huggingface_id: Qwen/Qwen3.5-27B
+    source: https://huggingface.co/Qwen/Qwen3.5-27B
+    provider: Alibaba / Qwen
+    origin: China
+    status: integration-candidate
+    license: Apache-2.0
+    revision: fc05daec18b0a78c049392ed2e771dde82bdf654
+    modalities:
+      - text
+      - image
+    notes: >
+      Dense 27B multimodal model with gated delta hybrid attention and native
+      262K context. Official card requires a current/nightly vLLM build for
+      Qwen3.5. Do not load alongside Gemma on one GPU. Multimodal input and
+      tool-calling are not claimed until live tests pass.
+    weight_storage: external
+    evaluation_status: not-started
+    runpod_path: /workspace/models/Qwen3.5-27B/fc05daec18b0a78c049392ed2e771dde82bdf654
+    azure_blob_prefix: models/Qwen3.5-27B/fc05daec18b0a78c049392ed2e771dde82bdf654
+    serving:
+      runtime_profile: qwen-vllm-nightly-isolated
+      listen_host: 127.0.0.1
+      listen_port: 8002
+      max_model_len: 8192
+      gpu_memory_utilization: 0.90
+      reasoning_parser: qwen3
+      language_model_only: true
+      extra_args:
+        - --trust-remote-code
+        - --default-chat-template-kwargs
+        - '{"enable_thinking": false}'
+    hardware:
+      precision: bf16
+      weights_vram_gb_approx: 51
+      recipe_bf16: 1x H200 or 2x H100; H100 NVL 94GB is expected to fit with limited context
+      recipe_fp8: single ~40GB GPU (alternate checkpoint Qwen/Qwen3.5-27B-FP8)
+      recipe_int4: single ~24GB GPU (alternate quantized checkpoint)
+    capabilities:
+      chat: planned
+      vision: untested
+      tool_calling: untested
+      reasoning_parser: planned
+    known_requirements:
+      vllm: "Official model card: install vLLM from main/nightly in a fresh environment; recipe pages cite >=0.17.0. Do not upgrade the Gemma /tmp/vllm-clean-env in place."
 
   - id: mistral-large-4
     family: mistral-large-4
@@ -49,6 +117,23 @@ candidates:
     weight_storage: external
     evaluation_status: not-started
 
+runtime_profiles:
+  gemma-vllm-0.31:
+    description: Existing pinned Gemma serving environment; do not mutate for Qwen.
+    python_env: /tmp/vllm-clean-env
+    archive: /workspace/runtime-setup/vllm-clean-env.tar.zst
+    vllm_version_observed: "0.31.0"
+    notes: Shared by main stack :8000/:8010/:8080.
+
+  qwen-vllm-nightly-isolated:
+    description: Isolated Qwen3.5 environment; never extracts over the Gemma env.
+    python_env: /tmp/vllm-qwen-env
+    install_hint: >
+      uv venv /tmp/vllm-qwen-env && source /tmp/vllm-qwen-env/bin/activate &&
+      uv pip install -U vllm --torch-backend=auto --extra-index-url https://wheels.vllm.ai/nightly
+    persist_plan: /workspace/runtime-setup/qwen-vllm (archive after first successful install)
+    notes: Create only when Pod is up and operator approves GPU work; do not replace Gemma env.
+
 selection_policy:
   prefer:
     - strong general reasoning
@@ -72,3 +157,7 @@ selection_policy:
     - intended-use restrictions
     - UK/EU commercial deployment implications
     - evaluation against our own tests
+  switching_rules:
+    - Keep Gemma as production default until Qwen live validation passes and an explicit approval switches it.
+    - On a single GPU Pod, stop the active model before starting the other; never load both.
+    - Main services :8010/:8080/:8000 must not be restarted without approval; use isolated ports for Qwen experiments.

@@ -12,7 +12,8 @@ def load_gateway_module():
     """Load local_gateway.py with the sibling rag modules available."""
     api_dir = Path(__file__).resolve().parent
     rag_dir = api_dir.parent / "rag"
-    for path in (str(api_dir), str(rag_dir)):
+    models_dir = api_dir.parent / "models"
+    for path in (str(api_dir), str(rag_dir), str(models_dir)):
         if path not in sys.path:
             sys.path.insert(0, path)
     module_path = api_dir / "local_gateway.py"
@@ -162,6 +163,46 @@ class RagConversationTests(unittest.TestCase):
             evidence,
         )
         self.assertNotIn("DETERMINISTIC WEEKLY CALCULATIONS", daily_only[1]["content"])
+
+    def test_chat_model_selection_defaults_without_registry(self) -> None:
+        previous_default = gateway.PLATFORM_DEFAULT_MODEL_ID
+        previous_registry = gateway.PLATFORM_MODEL_REGISTRY
+        try:
+            gateway.PLATFORM_DEFAULT_MODEL_ID = "gemma-default-token"
+            gateway.PLATFORM_MODEL_REGISTRY = ""
+            outbound = gateway.apply_chat_model_selection({
+                "messages": [{"role": "user", "content": "hi"}],
+            })
+            self.assertEqual(outbound["model"], "gemma-default-token")
+            passthrough = gateway.apply_chat_model_selection({
+                "model": "already-set",
+                "messages": [{"role": "user", "content": "hi"}],
+            })
+            self.assertEqual(passthrough["model"], "already-set")
+        finally:
+            gateway.PLATFORM_DEFAULT_MODEL_ID = previous_default
+            gateway.PLATFORM_MODEL_REGISTRY = previous_registry
+
+    def test_chat_model_selection_uses_registry_when_available(self) -> None:
+        try:
+            import yaml  # noqa: F401
+        except ImportError:
+            self.skipTest("PyYAML required for registry-backed selection test")
+        registry_path = Path(__file__).resolve().parent.parent / "models" / "registry.yaml"
+        previous_default = gateway.PLATFORM_DEFAULT_MODEL_ID
+        previous_registry = gateway.PLATFORM_MODEL_REGISTRY
+        try:
+            gateway.PLATFORM_MODEL_REGISTRY = str(registry_path)
+            gateway.PLATFORM_DEFAULT_MODEL_ID = ""
+            outbound = gateway.apply_chat_model_selection({
+                "model": "Qwen/Qwen3.5-27B",
+                "messages": [{"role": "user", "content": "hi"}],
+            })
+            self.assertIn("Qwen3.5-27B", outbound["model"])
+            self.assertIn("fc05daec18b0a78c049392ed2e771dde82bdf654", outbound["model"])
+        finally:
+            gateway.PLATFORM_DEFAULT_MODEL_ID = previous_default
+            gateway.PLATFORM_MODEL_REGISTRY = previous_registry
 
 
 if __name__ == "__main__":

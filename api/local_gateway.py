@@ -35,6 +35,10 @@ HOST = os.environ.get("PLATFORM_HOST", "127.0.0.1")
 PORT = int(os.environ.get("PLATFORM_PORT", "8010"))
 API_KEY = os.environ.get("PLATFORM_API_KEY", "")
 UPSTREAM = os.environ.get("VLLM_UPSTREAM_URL", "http://127.0.0.1:8000/v1").rstrip("/")
+# Optional model registry (YAML). When unset/unloadable, gateway behaviour matches the
+# prior single-upstream prototype and Gemma remains the operational default.
+PLATFORM_MODEL_REGISTRY = os.environ.get("PLATFORM_MODEL_REGISTRY", "").strip()
+PLATFORM_DEFAULT_MODEL_ID = os.environ.get("PLATFORM_DEFAULT_MODEL_ID", "").strip()
 RAG_DOCS_DIR = Path(os.environ.get("RAG_DOCS_DIR", "/workspace/rag-demo-docs"))
 RAG_MANAGED_DOCS_DIR = Path(os.environ.get("RAG_MANAGED_DOCS_DIR", "/workspace/rag-managed-docs"))
 # 2.30 is calibrated only for the two-file fictional demo corpus. Managed collections
@@ -106,6 +110,58 @@ RAG_SYSTEM_PROMPT = (
     "If a required rate, category, unit or relationship is missing from the evidence, "
     "say so instead of inventing it."
 )
+
+
+def load_optional_model_registry() -> dict[str, Any] | None:
+    """Load models/registry.yaml when configured and PyYAML is available."""
+    if not PLATFORM_MODEL_REGISTRY:
+        return None
+    try:
+        from registry_loader import load_registry
+    except Exception:
+        return None
+    try:
+        return load_registry(Path(PLATFORM_MODEL_REGISTRY))
+    except Exception:
+        return None
+
+
+def apply_chat_model_selection(payload: dict[str, Any]) -> dict[str, Any]:
+    """Attach a resolved model id without breaking unconfigured deployments.
+
+    Priority:
+    1. PLATFORM_DEFAULT_MODEL_ID / registry default when the client omits model
+    2. Registry alias resolution when a registry is loaded
+    3. Otherwise leave the payload unchanged (existing single-upstream behaviour)
+    """
+    updated = dict(payload)
+    registry = load_optional_model_registry()
+    requested = updated.get("model")
+    if isinstance(requested, str):
+        requested = requested.strip() or None
+    else:
+        requested = None
+
+    if registry is not None:
+        try:
+            from registry_loader import resolve_requested_model, upstream_model_token
+
+            resolved_id = resolve_requested_model(registry, requested)
+            if resolved_id and resolved_id in {
+                entry.get("id") for entry in registry.get("candidates", [])
+                if isinstance(entry, dict)
+            }:
+                updated["model"] = upstream_model_token(registry, resolved_id)
+                return updated
+            if resolved_id:
+                updated["model"] = resolved_id
+                return updated
+        except Exception:
+            pass
+
+    if not requested and PLATFORM_DEFAULT_MODEL_ID:
+        updated["model"] = PLATFORM_DEFAULT_MODEL_ID
+    return updated
 
 
 def question_requests_broad_coverage(question: str) -> bool:
@@ -334,9 +390,26 @@ class Handler(BaseHTTPRequestHandler):
                 payload = read_upstream_json("/models", timeout=5)
                 entries = payload.get("data", [])
                 count = len(entries) if isinstance(entries, list) else 0
-                self.send_json(200, {"status": "ok", "upstream": "ok", "model_count": count})
+                body: dict[str, Any] = {"status": "ok", "upstream": "ok", "model_count": count}
+                if PLATFORM_DEFAULT_MODEL_ID:
+                    body["default_model_id"] = PLATFORM_DEFAULT_MODEL_ID
+                self.send_json(200, body)
             except Exception:
                 self.send_json(503, {"status": "degraded", "upstream": "unavailable"})
+            return
+        if parsed.path == "/v1/platform/models":
+            if not self.require_auth_and_rate_limit():
+                return
+            registry = load_optional_model_registry()
+            if registry is None:
+                self.send_json(503, {"error": "model registry unavailable"})
+                return
+            try:
+                from registry_loader import public_model_catalog
+
+                self.send_json(200, {"models": public_model_catalog(registry)})
+            except Exception:
+                self.send_json(503, {"error": "model registry unavailable"})
             return
         if parsed.path == "/v1/rag/documents":
             if not self.require_auth_and_rate_limit():
@@ -452,8 +525,9 @@ class Handler(BaseHTTPRequestHandler):
         if payload.get("stream") is True:
             self.send_json(400, {"error": "streaming is not supported by this prototype gateway"})
             return
+        outbound = apply_chat_model_selection(payload)
         try:
-            upstream_data = json_bytes(read_upstream_json("/chat/completions", payload))
+            upstream_data = json_bytes(read_upstream_json("/chat/completions", outbound))
         except RuntimeError:
             self.send_json(502, {"error": "inference upstream unavailable"})
             return
