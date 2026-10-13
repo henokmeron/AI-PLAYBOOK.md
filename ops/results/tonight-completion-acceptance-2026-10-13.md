@@ -11,8 +11,8 @@ Do **not** call production cutover complete.
 | Item | Value |
 | --- | --- |
 | Branch | `feature/qwen3.5-27b-integration` |
-| Commit | *(filled after push)* |
-| Push | *(filled after push)* |
+| Commit | `7072cab31b93e5c27abffb2e14a96a1b67e685a1` |
+| Push | Pushed to `origin/feature/qwen3.5-27b-integration` |
 
 ## 2. Persistent model paths (Global Volume)
 
@@ -67,7 +67,7 @@ Mount: `fuse.geesefs` at `/workspace` (verified via `findmnt` + Gemma marker).
 | Item | Status |
 | --- | --- |
 | Prior source snapshots on volume | Present (e.g. `…861086a…`) |
-| New feature-commit snapshot | Created after push via `ops/snapshot-source-commit.sh` *(path filled after)* |
+| New feature-commit snapshot | **VERIFIED** `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-7072cab31b93e5c27abffb2e14a96a1b67e685a1.tar.gz` (SHA256 `4fc0fe4a40551ade2368c15721474dde07f1dc4e4638aab01b0637bbfcba1616`) |
 | Gemma runtime archive | Present: `/workspace/runtime-setup/vllm-clean-env.tar.zst` (`.sha256` companion missing) |
 | Qwen runtime archive | NOT created (`/workspace/runtime-setup/qwen-vllm` absent) |
 
