@@ -1,7 +1,7 @@
 # AI Platform Recovery Runbook
 
 Status: **idempotent same-Pod restart helpers available; full Pod-recreation cold-start not yet verified**  
-Last updated: 2026-10-12
+Last updated: 2026-10-13
 
 This runbook records observed facts from the working RunPod prototype. It deliberately distinguishes verified facts from steps that still need a controlled test. Do not treat the system as fully reproducible across Pod replacement until a cold-start drill passes.
 
@@ -36,11 +36,13 @@ Mounted Global Volume: `/workspace`
 
 - Model directory: `/workspace/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it`
 - Runtime assets: `/workspace/runtime-setup/`
-- Runtime archive: `/workspace/runtime-setup/vllm-clean-env.tar.zst` (about 6.3 GB)
+- Runtime archive (Gemma): `/workspace/runtime-setup/vllm-clean-env.tar.zst` (~3.4G compressed; expands ~8.4G)
 - Frozen Python requirements: `/workspace/runtime-setup/requirements-frozen.txt`
 - Runtime manifest: `/workspace/runtime-setup/runtime-manifest.txt`
 - Installer: `/workspace/runtime-setup/install-vllm.sh`
+- Runtime archive (Qwen, 2026-10-13): `/workspace/runtime-setup/qwen-vllm/vllm-qwen-env.tar.zst` (~3.8G) + `SHA256SUMS` / freeze / manifest
 - Backup files and manifests: `/workspace/ai-platform-backups/`
+- Source snapshots include feature commits `7072cab…` and `534a891…` under `/workspace/ai-platform-backups/source-snapshots/`
 - Demo RAG documents:
   - `/workspace/rag-demo-docs/employee-handbook.md`
   - `/workspace/rag-demo-docs/expenses-policy.md`
@@ -97,11 +99,20 @@ The backed-up RAG engine splits documents into chunks of up to 1,200 characters 
 
 The demo threshold `2.30` is explicitly calibrated only for the two-file demo corpus. The managed collection threshold defaults to `0.0`; this must not be treated as calibrated. Keep current behavior intact until a versioned evaluation set exists.
 
+## Gemma / Qwen runtime restore notes (2026-10-13)
+
+- **Gemma archive integrity:** `sha256sum -c SHA256SUMS` and `zstd -t` **OK** on this Pod. `scripts/restore-vllm-environment.sh` extracted `/tmp/vllm-clean-env` successfully (vLLM 0.31.0; Torch CUDA available) **without** starting `:8000`. Qwen remained on `:8002`.
+- **Qwen archive:** created with `ops/archive-qwen-runtime.sh` while Qwen was serving; checksums **OK**. Restore helper: `ops/restore-qwen-runtime.sh` (refuses overwrite; **restore-test not yet run** because `/tmp/vllm-qwen-env` already exists).
+- **Switch helper:** `ops/switch-gpu-model.sh` defaults to `--dry-run` unless `SWITCH_CONFIRM=yes`. See `docs/one-gpu-model-switch.md`.
+- Do **not** run `install-vllm.sh` to “fix” a missing env; use the checksummed archives.
+
 ## What is not yet verified
 
 - A complete startup script that restores the runtime archive, gateway source/dependencies, API key, and console after Pod replacement.
 - Whether the managed RAG collection is backed up completely beyond the observed canary file and whether collection state survives all restart scenarios.
 - A cold-start recovery test from the persistent volume without relying on `/tmp`.
+- Live one-GPU switch with operator approval (stop Qwen → start Gemma main stack end-to-end).
+- Console model picker UI (design only: `docs/console-model-picker-design.md`).
 - RAG accuracy across paraphrases, multi-document questions, unsupported questions, conflicting versions, long files, and citation correctness.
 
 ## Exact recovery commands (same Pod)

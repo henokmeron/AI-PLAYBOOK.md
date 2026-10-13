@@ -54,7 +54,8 @@ Finish and validate Qwen3.5-27B integration on RunPod, keep Gemma as the default
 - 2026-10-13 (live isolated stack): SSH reachable. Model downloaded/verified (11 shards). vLLM on `127.0.0.1:8002` (PID 4515) smoke **PASS** (`QWEN_OK`). Isolated gateway `:8013` + console `:8083` started and gateway smoke **PASS**. Evidence: `ops/results/qwen-live-stack-2026-10-13.md` and `/workspace/platform-diagnostics/qwen/`. Gemma production default unchanged; `:8010`/`:8080` untouched. Pod/volume left intact.
 - 2026-10-13 (honest integration status): **Partially yes — not fully the platform.** Weights on Global Volume; isolated `:8002`/`:8013`/`:8083` up on live recheck; production still Gemma; main ports not wired to Qwen; `/tmp` venv ephemeral. Evidence: `ops/results/qwen-integration-status-2026-10-13.md`.
 - 2026-10-13 (tonight completion): Dual-model registry + selection safeguards; Qwen isolated RAG verified; 70 local tests OK; acceptance report written. Gemma main not restored (safety + missing `/tmp/vllm-clean-env`). Evidence: `ops/results/tonight-completion-acceptance-2026-10-13.md`.
-- **Next action requiring owner:** stop Qwen/Pod when finished to halt GPU billing; approve Gemma env restore + main `:8000`/`:8010`/`:8080` restart; do not promote Qwen without explicit approval.
+- 2026-10-13 (post-acceptance): Qwen runtime archived to `/workspace/runtime-setup/qwen-vllm/` (checksum OK). Gemma archive verified + `/tmp/vllm-clean-env` restored **without** starting Gemma; Qwen still on `:8002`. Switch script dry-run gated; picker design only. Evidence: `ops/results/post-acceptance-runtime-2026-10-13.md`.
+- **Next action requiring owner:** either (A) approve stop-Qwen → start Gemma `:8000` only, or (B) stop the Pod to halt GPU billing while leaving volumes/archives intact. Do not promote Qwen; do not start main `:8010`/`:8080` without a separate approval.
 
 ## Required handover format
 Report briefly:

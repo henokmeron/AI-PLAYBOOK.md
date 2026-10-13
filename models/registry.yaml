@@ -155,8 +155,13 @@ runtime_profiles:
     install_hint: >
       uv venv /tmp/vllm-qwen-env && source /tmp/vllm-qwen-env/bin/activate &&
       uv pip install -U vllm --torch-backend=auto --extra-index-url https://wheels.vllm.ai/nightly
-    persist_plan: /workspace/runtime-setup/qwen-vllm (archive after first successful install)
-    notes: Create only when Pod is up and operator approves GPU work; do not replace Gemma env.
+    persist_plan: /workspace/runtime-setup/qwen-vllm
+    archive: /workspace/runtime-setup/qwen-vllm/vllm-qwen-env.tar.zst
+    archive_status: checksum-verified-2026-10-13
+    notes: >
+      Archive present on Global Volume. Restore with ops/restore-qwen-runtime.sh when
+      /tmp/vllm-qwen-env is absent. Needs LD_LIBRARY_PATH for nvidia cu13 libs at serve time.
+      Do not replace Gemma env.
 
 selection_policy:
   prefer:

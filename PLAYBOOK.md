@@ -1056,3 +1056,12 @@ Research should lead to a decision, not a pile of links. Every research report s
 - Production default still Gemma. Main `:8010`/`:8080` not started. Gemma overlay env missing; restore from `/workspace/runtime-setup/vllm-clean-env.tar.zst` before Gemma serve.
 - Local regression: **70 tests OK**. Acceptance: `ops/results/tonight-completion-acceptance-2026-10-13.md`.
 - Snapshot helper: `ops/snapshot-source-commit.sh <sha>` for immutable Global Volume source archives without weight duplication.
+
+### 2026-10-13 — Post-acceptance runtime archive + Gemma env restore (no switch)
+- Inspected live Pod: Qwen `:8002`/`:8013`/`:8083` still up; main/Gemma ports down; Global Volume mounted; snapshots `7072cab`/`534a891` preserved.
+- **VERIFIED:** archived Qwen venv to `/workspace/runtime-setup/qwen-vllm/vllm-qwen-env.tar.zst` (~3.8G) with `SHA256SUMS` OK; no secrets; no overwrite of prior assets.
+- **VERIFIED:** Gemma `/workspace/runtime-setup/vllm-clean-env.tar.zst` checksum + `zstd -t` OK; restored to `/tmp/vllm-clean-env` (vLLM 0.31.0) **without** starting Gemma; Qwen kept serving.
+- **PREPARED:** `ops/switch-gpu-model.sh` now dry-run by default (`SWITCH_CONFIRM=yes` to act); procedure in `docs/one-gpu-model-switch.md`; Qwen restore helper `ops/restore-qwen-runtime.sh`.
+- **PREPARED ONLY:** console model picker design in `docs/console-model-picker-design.md` (not implemented).
+- **BLOCKED without approval:** stop/switch live Qwen → Gemma main `:8000`/`:8010`/`:8080`; production default change; picker on main console.
+- Evidence: `/workspace/platform-diagnostics/tonight/post-acceptance-inspect.json`; `ops/results/post-acceptance-runtime-2026-10-13.md`.
