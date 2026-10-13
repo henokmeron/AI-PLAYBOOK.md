@@ -3,7 +3,7 @@
 **Purpose:** Shared handover for Cursor and other collaborators working on AI Platform Build.
 **Current workstream:** Qwen3.5-27B integration.
 **Branch:** `feature/qwen3.5-27b-integration`
-**Last reported feature commit:** (updated by next commit on this handoff)
+**Last reported feature commit:** `0f0784289c255821ee0e899ed5c59300722fdddb`
 **Tracking issue:** https://github.com/henokmeron/AI-PLAYBOOK.md/issues/1
 **Status:** Offline scaffolding + local tests OK; live Qwen download/serving NOT validated. RunPod had no running Pod; account balance was negative (−$0.23) at last browser probe; prior SSH endpoint refused.
 **Owner approval boundary:** Do not make paid changes or disrupt the working Gemma/main services.
