@@ -3,10 +3,10 @@
 **Purpose:** Shared handover for Cursor and other collaborators working on AI Platform Build.
 **Current workstream:** Qwen3.5-27B integration.
 **Branch:** `feature/qwen3.5-27b-integration`
-**Last reported feature commit:** `0f0784289c255821ee0e899ed5c59300722fdddb`
+**Last reported feature commit:** `0b49946` (plus pending PATH/`ninja` launcher fix if not yet pushed)
 **Tracking issue:** https://github.com/henokmeron/AI-PLAYBOOK.md/issues/1
-**Status:** Tonight completion pass: isolated Qwen live+RAG verified; registry selection+409 mismatch refusal shipped; production still Gemma; main ports untouched. Gemma overlay venv missing until archive restore. See `ops/results/tonight-completion-acceptance-2026-10-13.md`.
-**Owner approval boundary:** Do not make paid changes or disrupt the working Gemma/main services; do not auto-promote Qwen; stop Pod/Qwen when idle to limit GPU cost.
+**Status:** Qwen is the RunPod-first production default. Live A100 SXM Pod serves `:8002`/`:8010`/`:8080`. Runtime archive + source snapshot `0b49946` on the Global Volume. See `ops/results/qwen-integration-status-2026-10-14.md` and `docs/AGENT_HANDOFF.md`.
+**Owner approval boundary:** Do not create new paid Pods, merge to `main`, delete volume assets, or restore Gemma onto the GPU without explicit approval. Prefer stopping idle Pods to limit GPU cost while leaving the volume intact.
 
 ## Read first
 - `docs/qwen3.5-27b-integration.md`
@@ -16,14 +16,14 @@
 - Existing recovery runbook and ops scripts.
 
 ## Goal
-Finish and validate Qwen3.5-27B integration on RunPod, keep Gemma as the default, preserve all source/configuration/recovery assets, then prepare (not execute) Azure migration.
+Keep Qwen3.5-27B as the RunPod-first production default, preserve volume recovery assets, keep Gemma optional (409 while Qwen is loaded), and treat Azure as optional/deferred.
 
 ## Execution protocol
 1. Inspect the latest branch/commit and working tree before doing anything. Fetch/pull this file before proceeding. Preserve uncommitted work; never reset or discard it blindly.
 2. Work autonomously on reversible, non-disruptive tasks. Run tests, improve docs/scripts, and report actual command outputs/exit codes.
 3. If RunPod is unreachable or stopped, do not repeatedly retry or assume it is available. Continue only with safe repository work and report that live tasks are blocked.
 4. Do not start/restart a billable Pod, add credits, resize compute, create paid Azure resources, or incur other new costs without explicit user approval.
-5. Do not stop Gemma on :8000, change the production default, or touch main gateway :8010 / main console :8080 without explicit approval. Use isolated Qwen/test ports only after confirming GPU availability and no conflict.
+5. Do not load Gemma onto the GPU or change the Qwen production default without explicit approval. The live main ports are `:8002`/`:8010`/`:8080` for Qwen. Use isolated test ports for risky experiments.
 6. Never overwrite/delete Gemma weights, prior snapshots, or unrelated documents. Keep large model weights out of Git. Keep recoverable source/configuration assets on persistent `/workspace` when available.
 7. Do not expose credentials, tokens, private keys, or gateway keys in commits, logs, issues, or reports.
 8. Before any potentially disruptive operation, inspect and document the rollback path. If it could affect the live platform, stop and request approval.
@@ -37,13 +37,13 @@ Finish and validate Qwen3.5-27B integration on RunPod, keep Gemma as the default
 - [x] Download resumably to the planned persistent path and verify file completeness/checksums where available. *(11 `model.safetensors-*-of-*` shards; manifest under `/workspace/models/Qwen3.5-27B/manifests/`)*
 - [x] Keep Qwen dependencies isolated from Gemma's environment. *(`/tmp/vllm-qwen-env` installed live; Gemma env not overwritten)*
 - [x] Verify startup preflight refuses unsafe GPU/service conflicts. *(code review + live isolated start on `:8002` only)*
-- [x] Confirm model registry and API model selection are backward-compatible. *(production still `gemma-4-31b-it`; Qwen not auto-promoted)*
+- [x] Confirm model registry and API model selection. *(production `qwen3.5-27b`; Gemma selection while Qwen loaded → 409)*
 - [x] Run local automated suites and record results.
-- [x] When the user has started the billable Pod and SSH is reachable, run live checks; do not claim success before this. *(SSH `213.173.105.7:30018`; smoke PASS `QWEN_OK`)*
-- [x] If GPU memory requires stopping Gemma, pause until explicit approval. *(Gemma was already down for this live Qwen serve; `:8000` not started)*
-- [x] Test Qwen through the isolated gateway/console; preserve the main :8010/:8080 services. *(`:8013`/`:8083` PASS; main ports untouched)*
-- [ ] Re-test Gemma after Qwen is stopped and restore its normal service safely.
-- [ ] Create a versioned recovery snapshot on `/workspace`; verify it exists. *(prior source snapshots present; fresh feature-branch snapshot not yet cut)*
+- [x] When the user has started the billable Pod and SSH is reachable, run live checks; do not claim success before this.
+- [x] One GPU: Gemma stays down while Qwen serves.
+- [x] Isolated stack validated historically (`:8013`/`:8083`); main `:8010`/`:8080` now serve Qwen on A100 SXM (**VERIFIED** 2026-10-14).
+- [ ] Re-test Gemma only if the owner explicitly requests a GPU switch away from Qwen.
+- [x] Versioned recovery snapshot on `/workspace` verified (`…-0b49946.tar.gz` checksum OK).
 - [x] Update the playbook/runbook with exact observed commands, results, limitations and rollback.
 - [x] Prepare Azure migration and cost notes only; do not provision or upload to paid Azure resources without approval.
 
@@ -52,10 +52,10 @@ Finish and validate Qwen3.5-27B integration on RunPod, keep Gemma as the default
 - 2026-10-13 (browser probe): Cursor Browser could see logged-in RunPod console. No running Pod / no web terminal. Global Volume **New model container** `cmv2p5m0d000007jk9o3931ea` present (~66.4 GB, 1551 objects). Balance **−$0.23**. SSH `216.81.245.29:48480` refused. Evidence: `ops/results/runpod-browser-probe-2026-10-13.md`.
 - 2026-10-13 (issue #1 safe repo phase): Fast-forwarded to include this queue file (`2b319cb`). Re-ran local suites: **69 tests OK** (`models.tests.test_registry_loader`, `api.test_rag_conversation`, `rag.tests.test_rag_engine`, `rag.tests.test_document_loaders`, `rag.tests.test_document_library`). Confirmed revision `fc05daec18b0a78c049392ed2e771dde82bdf654`, ports `:8002`/`:8013`/`:8083`, `production: gemma-4-31b-it`, and Gemma-conflict guards in `ops/start-qwen-isolated.sh` are consistent across scripts/docs. No Pod started; no main services touched.
 - 2026-10-13 (live isolated stack): SSH reachable. Model downloaded/verified (11 shards). vLLM on `127.0.0.1:8002` (PID 4515) smoke **PASS** (`QWEN_OK`). Isolated gateway `:8013` + console `:8083` started and gateway smoke **PASS**. Evidence: `ops/results/qwen-live-stack-2026-10-13.md` and `/workspace/platform-diagnostics/qwen/`. Gemma production default unchanged; `:8010`/`:8080` untouched. Pod/volume left intact.
-- 2026-10-13 (honest integration status): **Partially yes — not fully the platform.** Weights on Global Volume; isolated `:8002`/`:8013`/`:8083` up on live recheck; production still Gemma; main ports not wired to Qwen; `/tmp` venv ephemeral. Evidence: `ops/results/qwen-integration-status-2026-10-13.md`.
-- 2026-10-13 (tonight completion): Dual-model registry + selection safeguards; Qwen isolated RAG verified; 70 local tests OK; acceptance report written. Gemma main not restored (safety + missing `/tmp/vllm-clean-env`). Evidence: `ops/results/tonight-completion-acceptance-2026-10-13.md`.
-- 2026-10-13 (post-acceptance): Qwen runtime archived to `/workspace/runtime-setup/qwen-vllm/` (checksum OK). Gemma archive verified + `/tmp/vllm-clean-env` restored **without** starting Gemma; Qwen still on `:8002`. Switch script dry-run gated; picker design only. Evidence: `ops/results/post-acceptance-runtime-2026-10-13.md`.
-- **Next action requiring owner:** either (A) approve stop-Qwen → start Gemma `:8000` only, or (B) stop the Pod to halt GPU billing while leaving volumes/archives intact. Do not promote Qwen; do not start main `:8010`/`:8080` without a separate approval.
+- 2026-10-13 (honest integration status): **Partially yes — not fully the platform** (historical). Superseded by 2026-10-14 status.
+- 2026-10-13 (tonight completion / post-acceptance): Dual-model registry; Qwen runtime archived to `/workspace/runtime-setup/qwen-vllm/`.
+- 2026-10-14: **Qwen is the production default.** A100 SXM cold start + main `:8002`/`:8010`/`:8080` E2E (chat, text/PDF/XLSX RAG, console UI) **VERIFIED**. Snapshot `0b49946` checksum OK. Evidence: `ops/results/qwen-integration-status-2026-10-14.md`, `docs/AGENT_HANDOFF.md`.
+- **Next action requiring owner:** stop the A100 Pod when idle to save cost (volume keeps assets), or approve committing/installing the `ninja` PATH launcher fix if not yet on GitHub/volume.
 
 ## Required handover format
 Report briefly:

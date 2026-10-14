@@ -199,7 +199,8 @@ else
   else UTIL=0.92; fi                              # >=94GB class (H100 NVL): value proven on H100 NVL
   log "Starting Qwen on 127.0.0.1:$QWEN_PORT (gpu_mem_util=$UTIL max_model_len=$QWEN_MAX_MODEL_LEN max_num_seqs=$QWEN_MAX_NUM_SEQS)"
   # max-num-seqs must stay below the available Mamba cache blocks for Qwen3.5 or the engine aborts.
-  nohup env VLLM_DO_NOT_TRACK=1 "$QWEN_ENV/bin/python" "$QWEN_ENV/bin/vllm" serve "$MODEL" \
+  # FlashInfer JIT invokes `ninja` from PATH. A fresh Pod image does not ship it; the archived env does.
+  nohup env PATH="$QWEN_ENV/bin:${PATH:-}" VLLM_DO_NOT_TRACK=1 "$QWEN_ENV/bin/python" "$QWEN_ENV/bin/vllm" serve "$MODEL" \
     --host 127.0.0.1 --port "$QWEN_PORT" \
     --trust-remote-code \
     --language-model-only \
