@@ -11,12 +11,23 @@ credentials. **High** means a serious exposure, or a blocker before any external
 **Medium** means a meaningful weakness with preconditions. **Low** and **Info** mean defence in depth
 or hygiene.
 
+## Risk acceptance decisions (2026-10-14)
+
+| Finding | Decision | Decided by | Condition |
+| --- | --- | --- | --- |
+| C-1 (nginx `0.0.0.0:8081` → unauthenticated console) | **ACCEPTED / DEFERRED** | User (platform owner) | Pod nginx and RunPod port config are left untouched, and no console login is added now, so access stays simple. Must be resolved in the **final auth phase**, before any customer or external user gets access. |
+| H-1 (nginx `0.0.0.0:8001` → vLLM `:8000`) | **ACCEPTED / DEFERRED** | User (platform owner) | Same as C-1. |
+
+The technical risk described below is unchanged by this decision. Until the final auth phase,
+treat the Pod as reachable by anyone who can reach ports 8081/8001. Keep only fictional or
+non-sensitive documents in managed collections.
+
 ## Findings, ranked
 
 | ID | Severity | Area | Finding | Owner |
 | --- | --- | --- | --- | --- |
-| C-1 | **Critical if 8081 is exposed by RunPod, else High** | Binding / tunnels | Pod nginx (RunPod template) listens on `0.0.0.0:8081` and `proxy_pass http://localhost:8080`, the unauthenticated console, which injects the gateway bearer key server-side | Ops + web |
-| H-1 | High | Binding | Same nginx forwards `0.0.0.0:8001` to `localhost:8000` (Gemma vLLM slot, no `--api-key`) | Ops |
+| C-1 | **Critical if 8081 is exposed by RunPod, else High**. ACCEPTED/DEFERRED to the final auth phase | Binding / tunnels | Pod nginx (RunPod template) listens on `0.0.0.0:8081` and `proxy_pass http://localhost:8080`, the unauthenticated console, which injects the gateway bearer key server-side | Ops + web |
+| H-1 | High. ACCEPTED/DEFERRED to the final auth phase | Binding | Same nginx forwards `0.0.0.0:8001` to `localhost:8000` (Gemma vLLM slot, no `--api-key`) | Ops |
 | H-2 | High | AuthN/Z, tenancy | One shared bearer key grants every operation on every collection; no per-tenant keys or ACLs | Gateway |
 | H-3 | High | Console | No authentication and no `Host`/`Origin` validation, so DNS rebinding works through the operator's SSH tunnel | Web |
 | M-1 | Medium | Input validation / DoS | `/v1/chat/completions` forwards arbitrary client fields (`max_tokens`, `n`, …) to vLLM uncapped | Gateway |
@@ -198,6 +209,6 @@ with key identity (the `integrations/audit.py` hash-chained log is reusable).
 
 ## Needs operator approval
 
-- C-1/H-1 changes on the live Pod (nginx/RunPod exposed ports). These are the most urgent items,
-  and they are the reason this review rates the platform as **not safe to expose** beyond a single
-  operator until they are fixed.
+- C-1/H-1 changes on the live Pod (nginx/RunPod exposed ports): **deferred by the user on
+  2026-10-14 to the final auth phase** (see "Risk acceptance decisions"). Until then, the platform is
+  **not safe to expose** beyond a single operator, and it should hold no real customer data.

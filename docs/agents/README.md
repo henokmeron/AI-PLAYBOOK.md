@@ -1,6 +1,7 @@
 # Controlled agent foundation (`agents/`)
 
-Status: **prototype, unit-tested locally with a scripted fake model. Not tested against live Qwen.**
+Status: **prototype, unit-tested locally with a scripted fake model. Live smoke against Qwen3.5-27B
+via the gateway: VERIFIED for one calculator task** (see `live-smoke-2026-10-14.md`).
 Pure Python standard library (openpyxl is used only if installed, for XLSX tables).
 Nothing in `rag/`, `api/` or `web/` was modified; the agent calls them through adapters.
 
@@ -81,13 +82,14 @@ bugs), stopping conditions (iterations, tool calls, tokens, wall clock, cancella
 errors), refusal, multi-step completion with structured output, loop prevention, approval
 pause/resume across serialisation, path traversal, RAG adapter tenant grants, and redaction.
 
-## Live smoke against Qwen: **NOT TESTED**
+## Live smoke against Qwen: **VERIFIED (2026-10-14, one calculator task)**
 
-`agents/live_smoke.py` runs one calculator task through the gateway. It has not been run. To try it
-later on the Pod (it uses only a few hundred tokens of inference and no extra GPU memory):
+`agents/live_smoke.py` runs one calculator task through the gateway. It completed in two model
+calls and 868 tokens, with the exact answer `696.486`; see `docs/agents/live-smoke-2026-10-14.md`.
+To re-run on the Pod (no extra GPU memory):
 
 ```
-cd /tmp/AI-PLAYBOOK && python3 -m agents.live_smoke --model qwen3.5-27b
+cd /tmp/agentsmoke && python3 -m agents.live_smoke --model qwen3.5-27b
 ```
 
 What to expect and watch for: Qwen3.5 may emit `<think>` text (stripped by the client), and 8,192
