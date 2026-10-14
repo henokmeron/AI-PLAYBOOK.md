@@ -24,6 +24,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from agents.adapters.rag_library import GroundedDocumentRetriever
 from agents.model import OpenAICompatibleClient
 from agents.workspace import CONSOLE_TENANT, AgentDesk
 from integrations.errors import AuthenticationError
@@ -335,6 +336,22 @@ def resolve_static(static_dir: Path, url_path: str) -> Path | None:
     return None
 
 
+def redact_request_log(text: str) -> str:
+    """Drop query strings that can carry an OAuth code, state, or token."""
+    lowered = text.casefold()
+    sensitive = any(marker in lowered for marker in ("code=", "access_token", "refresh_token", "client_secret"))
+    callback = "/api/microsoft/callback" in lowered and "?" in text
+    if not sensitive and not callback:
+        return text
+    if "?" not in text:
+        return "[redacted]"
+    head, _, tail = text.partition("?")
+    version = ""
+    if " HTTP/" in tail:
+        version = " HTTP/" + tail.split(" HTTP/", 1)[1]
+    return head + " [query redacted]" + version
+
+
 def connection_state(*, reachable: bool, upstream_ok: bool, key_ok: bool, model_ok: bool) -> str:
     if not reachable:
         return "unreachable"
@@ -356,7 +373,11 @@ class WebServer(ThreadingHTTPServer):
         self.oauth = MicrosoftOAuth.from_env()
         catalog, self.microsoft = platform_catalog(self.oauth)
         self.microsoft.apply(catalog, CONSOLE_TENANT)
-        self.desk = AgentDesk(catalog)
+        documents = GroundedDocumentRetriever(
+            Path(os.environ.get("RAG_DOCS_DIR", "/workspace/rag-demo-docs")),
+            Path(os.environ.get("RAG_MANAGED_DOCS_DIR", "/workspace/rag-managed-docs")),
+        )
+        self.desk = AgentDesk(catalog, documents=documents)
         super().__init__((config.host, config.port), Handler)
 
 
@@ -365,7 +386,7 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def log_message(self, format_string: str, *args: Any) -> None:
-        print(f"{self.client_address[0]} - {format_string % args}", flush=True)
+        print(f"{self.client_address[0]} - {redact_request_log(format_string % args)}", flush=True)
 
     @property
     def config(self) -> Config:

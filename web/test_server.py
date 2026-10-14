@@ -313,6 +313,11 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("System Status", text)
         self.assertIn(">Agent<", text)
         self.assertIn('id="agent-task"', text)
+        self.assertIn("not indexed", text)
+        self.assertEqual(
+            server.redact_request_log("GET /api/microsoft/callback?code=secret-code&state=abc HTTP/1.1"),
+            "GET /api/microsoft/callback [query redacted] HTTP/1.1",
+        )
         self.assertIn('id="rag-log"', text)
         self.assertIn('id="rag-clear"', text)
         self.assertIn("Clear conversation", text)

@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-14** (live calculator verified; Microsoft sign-in is in source only).
+Last updated: **2026-10-15** (agent document search and OAuth corrections are in source only; the Pod was not restarted).
 
 ## Only this repository
 
@@ -45,13 +45,13 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 | Item | Value | Status |
 | --- | --- | --- |
 | Active test Pod | RunPod `00n856z3eue5v9` (“testing system”), **A100-SXM4-80GB**, **$1.79/hr** | Running. The older Pod `3s3mh10hrkhocw` is not in the Pod list. |
-| SSH (TCP) | `root@154.54.102.31 -p 11165`, key `%USERPROFILE%\.ssh\id_ed25519` | VERIFIED 2026-10-14 22:43 UTC |
-| GPU / driver | 81,920 MiB, **71,091 MiB used** after Qwen became ready | VERIFIED 2026-10-14 22:43 UTC |
+| SSH (TCP) | `root@154.54.102.31 -p 11165`, key `%USERPROFILE%\.ssh\id_ed25519` | VERIFIED 2026-10-15. Cheap health check only. |
+| GPU / driver | 81,920 MiB, **71,347 MiB used** | VERIFIED 2026-10-15. Qwen was left running. |
 | Container | 250 GB RAM, 30 GB overlay disk | OK |
 | Global Volume | Same volume id `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (fuse.geesefs) | VERIFIED |
 | Qwen | `127.0.0.1:8002` | HTTP 200 after ~1080s cold load on 2026-10-14 |
 | Gateway | `127.0.0.1:8010` | HTTP 200, `default_model_id` `qwen3.5-27b` |
-| Console | `127.0.0.1:8080` (tunnel: `-L 18080:127.0.0.1:8080`) | HTTP 200. Serves the Agent page from commit `98511df`. |
+| Console | `127.0.0.1:8080` (tunnel: `-L 18080:127.0.0.1:8080`) | HTTP 200. The **running process** is still commit `98511df`. |
 | Other Pod | “Qwen model testing system” **H100 NVL** showed **$0.00/hr** earlier; do not assume it is still needed or safe to delete | Leave alone unless user says otherwise |
 
 ### Exact volume paths that must remain
@@ -71,7 +71,7 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 - **GitHub** feature branches include the Qwen routing work. `main` is fast-forwarded to the same tip and pushed. It is not force-pushed.
 - `e1e360f` is the parent of **`c2323238041cea8317d2322e6d16554d0bc967bc`** (Qwen routing). That push is a fast-forward. The `ninja` PATH change itself is **`083fa58`**, already inside `e1e360f`.
 - Local checkout is `feature/qwen-a100-start-hardening`. Keep `feature/qwen3.5-27b-integration` on the same commit.
-- Live Pod source is `/tmp/AI-PLAYBOOK` at `98511df`, cloned by `START.sh` on 2026-10-14. Gateway default is Qwen. The Agent page is on this console.
+- Live Pod source is `/tmp/AI-PLAYBOOK` at `98511df` on `feature/qwen3.5-27b-integration`, verified 2026-10-15. Qwen `:8002`, gateway `:8010`, and console `:8080` returned HTTP 200. Gemma on `:8000` was down. `MICROSOFT_CLIENT_ID` was unset. Weights were still present. The Pod was not restarted.
 - Volume `VERSION.txt` and snapshot `…-01e7692.tar.gz` match SHA-256 `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370` (checked 2026-10-14).
 - Do not commit untracked `ops/_*.sh` / `ops/_*.py` probe helpers or `__pycache__`.
 
@@ -102,9 +102,10 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 ### Agents / security / integrations
 
 - `agents/`, `integrations/`, security review, fine-tuning plan: committed (`de40330`, smoke `473d119`).
-- Live agent smoke vs Qwen on Pod `00n856z3eue5v9`, deployed code `98511df`: **calculator VERIFIED**. `agents.live_smoke` and `POST /api/agent` both returned `696.486` from the calculator tool. Document Q&A on `POST /api/rag` answered the receipt question from the demo corpus and abstained on CEO salary. The Agent desk does not search documents.
+- Live agent smoke vs Qwen on Pod `00n856z3eue5v9`, deployed code `98511df`: **calculator VERIFIED** on 2026-10-14. `agents.live_smoke` and `POST /api/agent` both returned `696.486` from the calculator tool. Document Q&A on `POST /api/rag` answered the receipt question from the demo corpus and abstained on CEO salary. That live check was not repeated on 2026-10-15 because the new code is not deployed.
+- In source, the Agent desk now has `search_documents`. It uses the existing retrieval pipeline, cites the file, abstains when coverage is too low, and flags instruction-like document text. That path is **unit-tested with a fake model**, not live against Qwen. Standalone Document Q&A, Chat, and System Status remain. File attachments on the Agent page are unsupported and are not indexed.
 - Approval pause is unit-tested. No live external approval was clicked, and no email was sent.
-- Microsoft 365 OAuth is implemented in source (`integrations/microsoft_oauth.py`) for read-only mail. **No Entra application id is configured. No real account was authorised. No real Graph request succeeded.** The live console is still `98511df` and was not restarted. See `docs/integrations/microsoft-365-signin.md`.
+- Microsoft 365 OAuth is implemented in source for read-only mail. **No Entra application was created. No application id is configured. No real account was authorised. No real Graph request or mailbox search succeeded.** The live console is still `98511df` and was not restarted. See `docs/integrations/microsoft-365-signin.md`.
 - Nginx on some Pods listens on `0.0.0.0:8081` → console without login. User **deferred** fixing auth/nginx until a later “login” phase. Treat Pod docs as non-sensitive until then (`docs/security/baseline-review.md`).
 
 ---
@@ -160,6 +161,15 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — agent document search and OAuth corrections, source only
+
+- Cheap SSH check, no restart: Pod `00n856z3eue5v9`, volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (fuse.geesefs), checkout `/tmp/AI-PLAYBOOK` `98511df` on `feature/qwen3.5-27b-integration`. Qwen `:8002`, gateway `:8010`, and console `:8080` returned HTTP 200. Gemma `:8000` was down. GPU 71,347 / 81,920 MiB. Qwen weights were present. `MICROSOFT_CLIENT_ID` was unset. Billing was not re-queried; the last known rate is $1.79/hour and the Pod was left running.
+- The Agent desk can call `search_documents` through the existing retrieval pipeline. A task can cite a file, abstain, and see instruction-like passages marked as data. Document Q&A `POST /api/rag` is unchanged. This is not live until the console process is replaced.
+- Mail search and read stay behind the connector catalog. They appear only when the saved token includes delegated `Mail.Read`. Send, Teams, files, and calendar still make no Graph call. Tokens stay in `/tmp/microsoft-365-token.json` mode `0600`, not on `/workspace` and not in git. A group- or world-readable file is not loaded on Linux.
+- Entra admin center asked for a sign-in. No app was created and no client id exists. The owner has to sign in and create one app named `Business AI local`, as written in `docs/integrations/microsoft-365-signin.md`.
+- Tests: `integrations.tests.test_microsoft_oauth`, `test_catalog`, `test_framework`, `agents.tests.test_workspace`, `test_tools`, `test_runtime`, and `web.test_server` — 132 tests, OK. All mocked. No live Graph call, no email, no model load, no calculator re-run.
+- **Approval required before this code can run on the Pod.** Do not run `START.sh --start` while the console is already healthy: that launcher reuses the healthy Qwen, gateway, and console, so it will not load this commit. Do not stop Qwen. Weights stay on the volume. The exact request is in `docs/integrations/microsoft-365-signin.md`.
 
 ### 2026-10-14 — live calculator check and Microsoft sign-in source
 

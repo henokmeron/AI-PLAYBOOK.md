@@ -8,7 +8,7 @@ from ..adapters.rag_library import SearchBackend
 from ..tools import ToolRegistry
 from .calculator import calculator_tool
 from .files import AuthorisedRoot, default_extractor, list_documents_tool, read_document_tool
-from .search import document_qa_tool, document_search_tool
+from .search import document_qa_tool, document_search_tool, search_documents_tool
 from .structured import structured_output_tool
 from .tables import table_analysis_tool
 
@@ -36,6 +36,6 @@ def default_registry(
 
 __all__ = [
     "AuthorisedRoot", "calculator_tool", "default_registry", "document_qa_tool",
-    "document_search_tool", "list_documents_tool", "read_document_tool",
+    "document_search_tool", "list_documents_tool", "read_document_tool", "search_documents_tool",
     "structured_output_tool", "table_analysis_tool",
 ]

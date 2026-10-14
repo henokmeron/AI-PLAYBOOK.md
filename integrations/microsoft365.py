@@ -9,18 +9,20 @@ from __future__ import annotations
 from typing import Any
 
 import re
+import urllib.parse
 
 from .catalog import Catalog, ConnectorSpec, Effect, OperationSpec
-from .errors import AuthenticationError, InvalidRequest
+from .errors import AuthenticationError, InvalidRequest, NotFound
 from .microsoft_oauth import MicrosoftOAuth
 
-_MESSAGE_ID = re.compile(r"[A-Za-z0-9_\-=]{8,180}\Z")
+_MESSAGE_ID = re.compile(r"[A-Za-z0-9_+=/\-]{8,512}\Z")
 _MAIL_RESULT = {
     "type": "object",
     "additionalProperties": False,
     "required": ["status", "messages"],
     "properties": {
         "status": {"type": "string"},
+        "detail": {"type": "string", "maxLength": 300},
         "messages": {
             "type": "array",
             "maxItems": 5,
@@ -29,7 +31,7 @@ _MAIL_RESULT = {
                 "additionalProperties": False,
                 "required": ["id", "subject", "sender", "preview"],
                 "properties": {
-                    "id": {"type": "string", "maxLength": 180},
+                    "id": {"type": "string", "maxLength": 512},
                     "subject": {"type": "string", "maxLength": 300},
                     "sender": {"type": "string", "maxLength": 200},
                     "preview": {"type": "string", "maxLength": 500},
@@ -50,7 +52,7 @@ _OBJECT_RESULT = {
     "type": "object",
     "additionalProperties": False,
     "required": ["status"],
-    "properties": {"status": {"type": "string"}, "detail": {"type": "string"}},
+    "properties": {"status": {"type": "string"}, "detail": {"type": "string", "maxLength": 300}},
 }
 _MESSAGE = {
     "type": "object",
@@ -100,7 +102,7 @@ MICROSOFT_365 = ConnectorSpec(
             "type": "object",
             "additionalProperties": False,
             "required": ["message_id"],
-            "properties": {"message_id": {"type": "string", "minLength": 8, "maxLength": 180}},
+            "properties": {"message_id": {"type": "string", "minLength": 8, "maxLength": 512}},
         }, _MAIL_RESULT),
         _op("create_mail_draft", "Create an unsent mail draft.", Effect.DRAFT, "mail:write",
             ("Mail.ReadWrite",), _MESSAGE),
@@ -170,8 +172,12 @@ class Microsoft365Client:
             return
         record.connected = True
         record.account = bundle.account
-        record.granted_scopes = frozenset({"mail:read"})
-        record.detail = "Read-only mail is connected. Sending a message is not available."
+        if self.oauth is not None and self.oauth.has_mail_read():
+            record.granted_scopes = frozenset({"mail:read"})
+            record.detail = "Read-only mail is connected. Sending a message is not available."
+            return
+        record.granted_scopes = frozenset()
+        record.detail = "Signed in, but Mail.Read was not granted. Mail search is unavailable."
 
     def perform(self, connector_id: str, operation: str, params: dict[str, Any]) -> Any:
         if operation == "search_mail":
@@ -183,7 +189,7 @@ class Microsoft365Client:
         )
 
     def _search(self, query: str) -> dict[str, Any]:
-        cleaned = " ".join(query.replace('"', " ").split())
+        cleaned = " ".join(query.replace("\\", " ").replace('"', " ").split())
         if not cleaned:
             raise InvalidRequest("mail search text is empty")
         payload = self._get("/me/messages", {
@@ -191,15 +197,30 @@ class Microsoft365Client:
             "$top": "5",
             "$select": "id,subject,from,receivedDateTime,bodyPreview,webLink",
         })
-        rows = [_message(item) for item in payload.get("value", []) if isinstance(item, dict)]
-        return {"status": "ok", "messages": rows[:5]}
+        raw = payload.get("value", [])
+        if not isinstance(raw, list):
+            raise InvalidRequest("Microsoft Graph did not return a message list.")
+        rows = [_message(item) for item in raw if isinstance(item, dict)]
+        result: dict[str, Any] = {"status": "ok", "messages": rows[:5]}
+        if not rows:
+            result["detail"] = "No messages matched this search."
+        return result
 
     def _read(self, message_id: str) -> dict[str, Any]:
-        if not _MESSAGE_ID.fullmatch(message_id):
+        if (
+            not _MESSAGE_ID.fullmatch(message_id)
+            or ".." in message_id
+            or "//" in message_id
+            or message_id.startswith("/")
+        ):
             raise InvalidRequest("message id is not usable")
-        payload = self._get(f"/me/messages/{message_id}", {
-            "$select": "id,subject,from,receivedDateTime,bodyPreview,webLink",
-        })
+        quoted = urllib.parse.quote(message_id, safe="")
+        try:
+            payload = self._get("/me/messages/" + quoted, {
+                "$select": "id,subject,from,receivedDateTime,bodyPreview,webLink",
+            })
+        except NotFound:
+            return {"status": "not_found", "messages": [], "detail": "Microsoft Graph did not find that message."}
         return {"status": "ok", "messages": [_message(payload)]}
 
     def _get(self, path: str, query: dict[str, str]) -> dict[str, Any]:

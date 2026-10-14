@@ -14,6 +14,7 @@ from integrations.microsoft365 import platform_catalog
 from integrations.tenancy import TenantContext
 
 from .builtin.calculator import calculator_tool
+from .builtin.search import search_documents_tool
 from .model import ModelClient
 from .runtime import AgentRunner
 from .state import AgentTask, Budget
@@ -52,8 +53,10 @@ def _tool(catalog: Catalog, ctx: TenantContext, connector_id: str, operation: st
     )
 
 
-def tools_for(catalog: Catalog, ctx: TenantContext) -> list[Tool]:
+def tools_for(catalog: Catalog, ctx: TenantContext, documents: Any = None) -> list[Tool]:
     tools = [calculator_tool()]
+    if documents is not None:
+        tools.append(search_documents_tool(documents))
     for spec, operation in catalog.visible_operations(ctx):
         tools.append(_tool(
             catalog, ctx, spec.connector_id, operation.name, operation.tool_name,
@@ -98,9 +101,15 @@ def public_view(task: AgentTask, trace: ExecutionTrace) -> dict[str, Any]:
 class AgentDesk:
     """In-memory tasks for one loopback console. Not a customer tenant store."""
 
-    def __init__(self, catalog: Catalog | None = None, ctx: TenantContext | None = None) -> None:
+    def __init__(
+        self,
+        catalog: Catalog | None = None,
+        ctx: TenantContext | None = None,
+        documents: Any = None,
+    ) -> None:
         self.catalog = catalog if catalog is not None else platform_catalog()[0]
         self.ctx = ctx or TenantContext.create(_CONSOLE_TENANT, _CONSOLE_PRINCIPAL, [])
+        self.documents = documents
         self._lock = threading.Lock()
         self._sessions: dict[str, tuple[AgentRunner, AgentTask, ExecutionTrace]] = {}
 
@@ -111,7 +120,7 @@ class AgentDesk:
         if not isinstance(goal, str) or not goal.strip() or len(goal) > 2000:
             raise ValueError("task must be 1 to 2000 characters")
         trace = ExecutionTrace()
-        registry = ToolRegistry(tools_for(self.catalog, self.ctx))
+        registry = ToolRegistry(tools_for(self.catalog, self.ctx, self.documents))
         runner = AgentRunner(model, registry, trace=trace, model_timeout=wall_seconds)
         task = runner.new_task(goal, budget=Budget(
             max_iterations=6, max_tool_calls=4, max_total_tokens=12000, max_wall_seconds=wall_seconds,
