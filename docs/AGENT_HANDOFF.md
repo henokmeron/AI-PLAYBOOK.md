@@ -40,14 +40,16 @@ Last updated: **2026-10-14** (Qwen integration status closed: production default
 - RAG wheels: `/workspace/runtime-setup/rag-wheelhouse/`.
 - Launcher: `/workspace/ai-platform-release/START.sh` (canonical in git: `ops/release/START.sh`).
 - Managed docs: `/workspace/rag-managed-docs`.
-- Source snapshot for commit `0b49946`:  
-  `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-runpod-first-0b49946.tar.gz`  
-  SHA-256: `4e718a05ac59397658a1b7b21b701f4ad2dde1407b3ace89f37446e6187fe620` (verified with `sha256sum -c` on the manifest under `/workspace/ai-platform-backups/manifests/`).
+- Source snapshot for commit `083fa58`:  
+  `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-runpod-first-083fa58.tar.gz`  
+  SHA-256: `2fa0ecd0f7d3f2867b4641e1fa532800c63856f14f53ea4d515cb565ea005d22` (verified).  
+  Older `0b49946` snapshot remains on the volume.
 
 ### Git
 
-- Branch: **`feature/qwen3.5-27b-integration`** (also tip of `feature/qwen-a100-start-hardening` when last checked).
-- Commit: **`0b49946`** / full `0b49946e74f41c53b78f03448a7237727dab96ae`.
+- Branch: **`feature/qwen3.5-27b-integration`** (also tip of `feature/qwen-a100-start-hardening`).
+- Commit: **`083fa58`** / full `083fa5850c1c3b572fad8b63aa938192f58e8b45` (includes `ninja` PATH fix + integration status doc).
+- Prior tip `0b49946` remains a valid historical snapshot on the volume.
 - **`main` was not merged.** Do not merge without approval.
 - Local working tree often has untracked `ops/_*.sh` / `ops/_*.py` probe helpers and `__pycache__` — **do not commit those by accident.**
 
@@ -111,8 +113,7 @@ or the one-line change in `ops/start-first-release.sh`:
 nohup env PATH="$QWEN_ENV/bin:${PATH:-}" VLLM_DO_NOT_TRACK=1 ...
 ```
 
-- That fix is in the **local** repo working tree and was patched on **this Pod’s** `/tmp/AI-PLAYBOOK` checkout.
-- It was **NOT committed / pushed to GitHub** at handoff time. A brand-new Pod that clones published `0b49946` will hit the same failure until someone commits and reinstalls the launcher on the volume.
+- Fix is **committed and pushed** as of `083fa58` in `ops/start-first-release.sh`. Volume `VERSION.txt` points at that commit. Next `START.sh` that fast-forwards/clones this tip picks it up. Checkouts still on `0b49946` need the PATH workaround once.
 
 After a failed start, nothing on `/workspace` is deleted; re-run after fixing PATH.
 
@@ -136,12 +137,17 @@ E2E helper (uses key file; does not print it):
 
 ## Session log (newest first)
 
-### 2026-10-14 — A100 SXM verification (this chat)
+### 2026-10-14 — Qwen integration status closure
+
+- Wrote `ops/results/qwen-integration-status-2026-10-14.md` (honest answer: Qwen **is** production default; plan file left untouched).
+- Verified volume archive SHA256SUMS, snapshot `083fa58`, live `:8002`/`:8010`/`:8080`, registry `qwen3.5-27b`.
+- Pushed `083fa58` (PATH/`ninja` fix + handoff + queue update). Volume `VERSION.txt` updated. Live services left running (HTTP 200).
+
+### 2026-10-14 — A100 SXM verification
 
 - Inspected A40 ($0.59): **incompatible** (VRAM).
 - User switched to A100 SXM `3s3mh10hrkhocw`. Preflight **PASS**. First start **FAILED** (missing `ninja` on PATH). Second start with PATH **PASS**; Qwen ready ~490s; gateway + console up.
 - E2E chat / models / Gemma-409 / text RAG: **PASS**. PDF + XLSX Q&A: **PASS**. Console tunnel + UI chat `UI_OK`: **PASS**.
-- Local edit: `ops/start-first-release.sh` PATH for ninja — **not pushed**.
 - Did not stop the $0.00/hr H100 listing; did not delete volume assets; did not merge to main.
 
 ### Earlier (same project arc, same branch tip `0b49946`)
