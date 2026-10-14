@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-14** (connector catalog and Agent page; Pod not restarted).
+Last updated: **2026-10-14** (Pod `00n856z3eue5v9` started; Qwen, gateway, and console healthy).
 
 ## Only this repository
 
@@ -44,14 +44,14 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 | Item | Value | Status |
 | --- | --- | --- |
-| Active test Pod | RunPod `3s3mh10hrkhocw` (“another pod test”), **A100-SXM4-80GB**, **$1.79/hr** | Running |
-| SSH (TCP) | `root@154.54.102.36 -p 10469`, key `%USERPROFILE%\.ssh\id_ed25519` | VERIFIED 2026-10-14 20:07 UTC |
-| GPU / driver | 81,920 MiB, driver **580.126.16**, **73,507 MiB used** with Qwen loaded | VERIFIED 2026-10-14 20:07 UTC |
+| Active test Pod | RunPod `00n856z3eue5v9` (“testing system”), **A100-SXM4-80GB**, **$1.79/hr** | Running. The older Pod `3s3mh10hrkhocw` is not in the Pod list. |
+| SSH (TCP) | `root@154.54.102.31 -p 11165`, key `%USERPROFILE%\.ssh\id_ed25519` | VERIFIED 2026-10-14 22:43 UTC |
+| GPU / driver | 81,920 MiB, **71,091 MiB used** after Qwen became ready | VERIFIED 2026-10-14 22:43 UTC |
 | Container | 250 GB RAM, 30 GB overlay disk | OK |
 | Global Volume | Same volume id `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (fuse.geesefs) | VERIFIED |
-| Qwen | `127.0.0.1:8002` | HTTP 200 |
-| Gateway | `127.0.0.1:8010` | HTTP 200 |
-| Console | `127.0.0.1:8080` (tunnel example: `-L 18080:127.0.0.1:8080`) | HTTP 200 |
+| Qwen | `127.0.0.1:8002` | HTTP 200 after ~1080s cold load on 2026-10-14 |
+| Gateway | `127.0.0.1:8010` | HTTP 200, `default_model_id` `qwen3.5-27b` |
+| Console | `127.0.0.1:8080` (tunnel: `-L 18080:127.0.0.1:8080`) | HTTP 200. Serves the Agent page from commit `98511df`. |
 | Other Pod | “Qwen model testing system” **H100 NVL** showed **$0.00/hr** earlier; do not assume it is still needed or safe to delete | Leave alone unless user says otherwise |
 
 ### Exact volume paths that must remain
@@ -71,7 +71,7 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 - **GitHub** feature branches include the Qwen routing work. `main` is fast-forwarded to the same tip and pushed. It is not force-pushed.
 - `e1e360f` is the parent of **`c2323238041cea8317d2322e6d16554d0bc967bc`** (Qwen routing). That push is a fast-forward. The `ninja` PATH change itself is **`083fa58`**, already inside `e1e360f`.
 - Local checkout is `feature/qwen-a100-start-hardening`. Keep `feature/qwen3.5-27b-integration` on the same commit.
-- Live Pod source is **not** that tip. `/tmp/AI-PLAYBOOK` is `0b49946` plus one uncommitted PATH line in `ops/start-first-release.sh`. Do not restart the Pod to pick up GitHub. The running gateway still has the old Document Q&A model selection.
+- Live Pod source is `/tmp/AI-PLAYBOOK` at `98511df`, cloned by `START.sh` on 2026-10-14. Gateway default is Qwen. The Agent page is on this console.
 - Volume `VERSION.txt` and snapshot `…-01e7692.tar.gz` match SHA-256 `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370` (checked 2026-10-14).
 - Do not commit untracked `ops/_*.sh` / `ops/_*.py` probe helpers or `__pycache__`.
 
@@ -158,6 +158,13 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-14 — owner started Pod `00n856z3eue5v9`
+
+- The previous SSH address `154.54.102.36:10469` refused the connection. The running Pod is `00n856z3eue5v9` (“testing system”), SSH `root@154.54.102.31 -p 11165`.
+- The same Global Volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373` is mounted at `/workspace`. Qwen weights and the runtime archive were already there. GPU was idle.
+- Ran `/workspace/ai-platform-release/START.sh`. It cloned `98511df`. Preflight passed. Checksum of the Qwen runtime archive passed. Qwen became ready after about 1080 seconds. Gateway and console returned HTTP 200. Gemma was not started.
+- RunPod showed a low-balance warning around $4.79 before this start. The Pod is billing at $1.79/hour while it stays on.
 
 ### 2026-10-14 — Teams plugin diagnosis and connector foundation
 
