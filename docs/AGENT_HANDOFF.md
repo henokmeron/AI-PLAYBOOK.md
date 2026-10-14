@@ -3,7 +3,27 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-14** (Qwen integration status closed: production default on A100; see `ops/results/qwen-integration-status-2026-10-14.md`).
+Last updated: **2026-10-14** (repo connection for the next agent; local integration branch fast-forwarded to GitHub).
+
+## Only this repository
+
+Do not create a new project, a new GitHub repo, or a new folder. All work stays here.
+
+| | |
+| --- | --- |
+| Local folder | `C:\Users\henok\src\AI-PLAYBOOK.md` |
+| GitHub | `https://github.com/henokmeron/AI-PLAYBOOK.md.git` (remote name `origin`) |
+| Work branch | `feature/qwen-a100-start-hardening` (same commits as `feature/qwen3.5-27b-integration`) |
+| Do not merge | `main` (`33160fd`) unless the owner explicitly says so |
+| Pod | RunPod only. Do not start a different app or a second paid Pod. |
+
+`git` on the Windows PATH often fails (the `git.exe` that is found is a launcher without the real binary). Use this binary:
+
+`C:\Users\henok\AppData\Local\GitHubDesktop\app-3.5.4\resources\app\git\mingw64\bin\git.exe`
+
+Confirm with `git remote -v` before any commit. If the remote is not `henokmeron/AI-PLAYBOOK.md`, stop.
+
+The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e` while GitHub was at `01e7692`. It has been fast-forwarded to match GitHub. Stay on `feature/qwen-a100-start-hardening` unless you have just fetched and both tips match.
 
 ---
 
@@ -24,8 +44,8 @@ Last updated: **2026-10-14** (Qwen integration status closed: production default
 | Item | Value | Status |
 | --- | --- | --- |
 | Active test Pod | RunPod `3s3mh10hrkhocw` (“another pod test”), **A100-SXM4-80GB**, **$1.79/hr** | Running |
-| SSH (TCP) | `root@154.54.102.36 -p 10469`, key `%USERPROFILE%\.ssh\id_ed25519` | Working when last checked |
-| GPU / driver | 81,920 MiB, driver **580.126.16**, ~73.5 GiB used with Qwen loaded | VERIFIED |
+| SSH (TCP) | `root@154.54.102.36 -p 10469`, key `%USERPROFILE%\.ssh\id_ed25519` | VERIFIED 2026-10-14 20:07 UTC |
+| GPU / driver | 81,920 MiB, driver **580.126.16**, **73,507 MiB used** with Qwen loaded | VERIFIED 2026-10-14 20:07 UTC |
 | Container | 250 GB RAM, 30 GB overlay disk | OK |
 | Global Volume | Same volume id `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (fuse.geesefs) | VERIFIED |
 | Qwen | `127.0.0.1:8002` | HTTP 200 |
@@ -40,18 +60,19 @@ Last updated: **2026-10-14** (Qwen integration status closed: production default
 - RAG wheels: `/workspace/runtime-setup/rag-wheelhouse/`.
 - Launcher: `/workspace/ai-platform-release/START.sh` (canonical in git: `ops/release/START.sh`).
 - Managed docs: `/workspace/rag-managed-docs`.
-- Source snapshot for commit `083fa58`:  
-  `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-runpod-first-083fa58.tar.gz`  
-  SHA-256: `2fa0ecd0f7d3f2867b4641e1fa532800c63856f14f53ea4d515cb565ea005d22` (verified).  
-  Older `0b49946` snapshot remains on the volume.
+- Source snapshot for the published tip `01e76922`:  
+  `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-runpod-first-01e7692.tar.gz`  
+  SHA-256: `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370` (re-checked against the file and its manifest on 2026-10-14).  
+  Older snapshots `083fa58` and `0b49946` are still on the volume. The `083fa58` checksum was not re-hashed this session.
 
 ### Git
 
-- Branch: **`feature/qwen3.5-27b-integration`** (also tip of `feature/qwen-a100-start-hardening`).
-- Commit: **`083fa58`** / full `083fa5850c1c3b572fad8b63aa938192f58e8b45` (includes `ninja` PATH fix + integration status doc).
-- Prior tip `0b49946` remains a valid historical snapshot on the volume.
-- **`main` was not merged.** Do not merge without approval.
-- Local working tree often has untracked `ops/_*.sh` / `ops/_*.py` probe helpers and `__pycache__` — **do not commit those by accident.**
+- **GitHub** tips of `feature/qwen3.5-27b-integration` and `feature/qwen-a100-start-hardening` are both **`01e76922589aeb404b054198b992fcac7e69b6e8`**. `main` is still `33160fde` and was **not** merged.
+- The `ninja` PATH change itself is the parent commit **`083fa5850c1c3b572fad8b63aa938192f58e8b45`**. `01e76922` only refreshes this handoff.
+- Local checkout is `feature/qwen-a100-start-hardening` at `01e76922`. The local ref `feature/qwen3.5-27b-integration` is **stale** at `467ca3ef` and must not be committed on until it is fast-forwarded to GitHub.
+- Live Pod source is **not** that tip. `/tmp/AI-PLAYBOOK` is `0b49946` plus one uncommitted PATH line in `ops/start-first-release.sh`. `START.sh` will refuse to fast-forward that checkout. Do not restart the Pod to clean it up.
+- Volume `VERSION.txt` and snapshot `…-01e7692.tar.gz` match SHA-256 `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370` (checked 2026-10-14).
+- Do not commit untracked `ops/_*.sh` / `ops/_*.py` probe helpers or `__pycache__`.
 
 ---
 
@@ -113,7 +134,7 @@ or the one-line change in `ops/start-first-release.sh`:
 nohup env PATH="$QWEN_ENV/bin:${PATH:-}" VLLM_DO_NOT_TRACK=1 ...
 ```
 
-- Fix is **committed and pushed** as of `083fa58` in `ops/start-first-release.sh`. Volume `VERSION.txt` points at that commit. Next `START.sh` that fast-forwards/clones this tip picks it up. Checkouts still on `0b49946` need the PATH workaround once.
+- Fix is **committed and pushed** in `083fa58` (GitHub tip `01e76922`). It is one comment plus `PATH="$QWEN_ENV/bin:${PATH:-}"` on the existing `nohup env` line. Volume `START.sh` matches git `ops/release/START.sh` (SHA-256 `6059e4c2…`). A brand-new clone of `feature/qwen3.5-27b-integration` gets the fix. **This Pod's `/tmp/AI-PLAYBOOK` does not:** it is still `0b49946` with that PATH line uncommitted and without the comment. Leave it; the running Qwen process was not started from the published commit.
 
 After a failed start, nothing on `/workspace` is deleted; re-run after fixing PATH.
 
@@ -136,6 +157,21 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-14 — connect the next agent to this repo only
+
+- Confirmed this workspace remote is `https://github.com/henokmeron/AI-PLAYBOOK.md.git`. No other project was opened.
+- Working Git binary is GitHub Desktop’s `mingw64\bin\git.exe` (see “Only this repository” above). PATH `git` is not reliable on this PC.
+- Fast-forwarded the local branch `feature/qwen3.5-27b-integration` from stale `467ca3e` to `01e7692`, matching GitHub. No history was rewritten.
+- Corrected the queue sentence that still said the `ninja` PATH fix might be unpushed. Added `ops/test_qwen_launch_path.py` (1 test, OK). Did not touch the Pod.
+
+### 2026-10-14 20:07 UTC — read-only takeover check
+
+- Did **not** restart services, start a Pod, download weights, or delete volume files.
+- SSH to `3s3mh10hrkhocw` succeeded. `:8002/health`, `:8002/v1/models`, `:8010/health`, `:8080/` all HTTP 200. Gateway health: `default_model_id=qwen3.5-27b`. vLLM id is the Qwen weight path. GPU A100-SXM4-80GB, 73,507 / 81,920 MiB, driver 580.126.16. `/tmp/vllm-qwen-env/bin/ninja` is present.
+- GitHub both feature branches = `01e76922`. Pod checkout = dirty `0b49946`. The stale local integration ref and the stale queue sentence were corrected in the later session entry above.
+- Fresh-Pod run of the published script: **NOT TESTED** (do not start another Pod to test it).
+- Nginx still listens on `0.0.0.0:8081`. Still deferred.
 
 ### 2026-10-14 — Qwen integration status closure
 
