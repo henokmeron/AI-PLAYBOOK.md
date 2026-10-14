@@ -211,7 +211,9 @@ class RagAdapterTests(unittest.TestCase):
         self.assertEqual(task.state, TaskState.FINAL)
         self.assertIn("25 days", model.calls[1][-1]["content"])
         self.assertIn("permission_denied", model.calls[2][-1]["content"])
-        self.assertNotIn("999", json.dumps(task.messages))
+        blob = json.dumps(task.messages)
+        self.assertNotIn("secret pricing", blob)
+        self.assertNotIn("999 per unit", blob)
 
     def test_gateway_backend_requires_loopback_and_grant(self) -> None:
         with self.assertRaises(ValueError):

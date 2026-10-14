@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-14** (feature-branch commits are pushed to GitHub; the live Pod is not restarted).
+Last updated: **2026-10-14** (completion audit; Pod still on checkout `0b49946`; not restarted).
 
 ## Only this repository
 
@@ -158,6 +158,15 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-14 — completion audit and tonight's agent test
+
+- Re-checked GitHub: `main` and both feature branches were `ebe1a8a` before this audit commit.
+- `ops/test_qwen_launch_path.py` passed. Fresh-Pod run of that script remains **NOT TESTED**.
+- Registry and agent unit tests passed after fixing a false failure: the search test treated the digits `999` inside a random call id as a leaked secret.
+- Pod health at 20:52 UTC: `:8002`, `:8010`, `:8080` HTTP 200. Checkout still `0b49946`. `agents/live_smoke.py` is on that checkout. Did not restart anything and did not upload documents.
+- Checklist: `docs/results/completion-audit-2026-10-14.md`.
+- Tonight the owner can run the calculator smoke and Document Q&A. There is no live approval button.
 
 ### 2026-10-14 — publish the feature tip on main
 
