@@ -34,11 +34,20 @@ Environment: the current H100 NVL Pod, driver 580.126.09. Drill paths were under
 | T8 | Unit tests (drill checkout and env, with parsers): models 6, rag 55, RAG conversation 10, console 16 | **VERIFIED** — 87 passed |
 | T9 | `_pod_e2e_verify.py` against `:8013`/`:8083`: chat, gateway/console models, console status, Gemma-while-Qwen gives 409, RAG upload/ask/delete, follow-up after delete abstains | **VERIFIED** — 9/9 PASS |
 | T10 | PDF and XLSX upload, ask, delete on `:8013` | **VERIFIED** — answers cited the correct values (PDF text; XLSX sheet `Fees`, cell B2) |
+| T11 | Offline fallback: `PLATFORM_REMOTE` pointed at an unreachable host, so the installed volume `START.sh` used the newest verified snapshot (`7a715f6`) and then ran preflight | **VERIFIED** — PREFLIGHT_PASS |
 | — | Live `:8002`/`:8010`/`:8080` before and after | **VERIFIED** — HTTP 200 throughout; same process IDs (7114, 20209, 17567) |
 
 Afterwards only the drill's gateway and console were stopped. `/tmp/drill` (9.5 GB, Pod-local, disappears with the Pod) was left in place. `/tmp` had 11 GB free.
 
-## 3. A100 80GB compatibility of the launch settings
+## 3. Installed on the Global Volume
+
+- `/workspace/ai-platform-release/START.sh` and `README.md` were replaced by the canonical copies. The installed file is byte-identical to Git. The previous files were kept as `START.sh.bak-20261014T000734Z` and `README.md.bak-20261014T000734Z`.
+- `VERSION.txt` was updated (`commit=7a715f6`, `fresh_pod_cold_start=NOT_TESTED`). The previous copy was kept as `VERSION.txt.bak-20261014T000738Z`.
+- New source snapshot: `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-runpod-first-7a715f6.tar.gz`, SHA-256 `7c652a975db6351fa196d29b39db44fb10740c744f64540da239c162eaac7e27`. The manifest is in `/workspace/ai-platform-backups/manifests/`. Earlier snapshots were kept.
+- `feature/qwen3.5-27b-integration` was fast-forwarded to `7a715f6`. `main` is unchanged.
+- Model weights, runtime archives, Gemma and managed documents were not touched.
+
+## 4. A100 80GB compatibility of the launch settings
 
 Evidence comes from an earlier A100 80GB PCIe run with the same archived runtime:
 
@@ -48,7 +57,7 @@ Evidence comes from an earlier A100 80GB PCIe run with the same archived runtime
 - 8192 context fits. **Longer contexts on the A100: NOT TESTED.**
 - The new launcher selects 0.90 automatically when the GPU reports less than 90,000 MiB (A100 80GB reports 81,920 MiB).
 
-## 4. Not tested / blocked
+## 5. Not tested / blocked
 
 - **NOT TESTED:** a cold start on a brand-new Pod (empty GPU, Qwen loading from the volume with the new launcher). The drill could not do this without stopping the live Qwen or paying for a second Pod.
 - **NOT TESTED:** A100 with the new launcher. The A100 evidence above comes from the earlier launcher, using identical serve flags and runtime.
