@@ -153,6 +153,27 @@ class FakeGatewayHandler(BaseHTTPRequestHandler):
                     "retrieval": {"matched": True, "reason": "below_min_score", "top_score": 0.1, "minimum_score": 2.3},
                 })
                 return
+            if "outage" in payload.get("question", "").lower():
+                self._json(502, {
+                    "error": "document answer generation failed",
+                    "reason": "upstream_timeout",
+                    "error_id": "0123456789abcdef",
+                })
+                return
+            if "where" in payload.get("question", "").lower():
+                self._json(200, {
+                    "status": "answered",
+                    "answer": "Rate is 66.30 [Source 1].",
+                    "model": MODEL,
+                    "collection": payload.get("collection"),
+                    "sources": [{
+                        "label": "Source 1", "file": "fees.xlsx", "chunk": 1, "score": 9.1,
+                        "location": {"sheet": "Rates", "row_start": 3, "row_end": 6},
+                        "flags": ["instruction_like_text"],
+                    }],
+                    "retrieval": {"matched": True, "citations": {"cited": ["Source 1"], "invalid": []}},
+                })
+                return
             answer = "Employees have 10 business days [Source 1]."
             if history:
                 answer = "Follow-up: weekly fee is daily × 7 = 700 (derived) [Source 1]."
@@ -482,6 +503,20 @@ class ConsoleTests(unittest.TestCase):
         status, _ = self.request(base, "POST", "/api/rag", {"question": "hello", "collection": "../secrets"})
         self.assertEqual(status, 400)
         self.assertEqual(len(gateway.hits), before)
+
+    def test_rag_source_locations_and_gateway_error_ids_pass_through(self) -> None:
+        gateway = FakeGateway()
+        base = self.web(gateway)
+        status, body = self.request(base, "POST", "/api/rag", {"question": "Where is the standard rate?"})
+        self.assertEqual(status, 200)
+        source = json.loads(body)["sources"][0]
+        self.assertEqual(source["location"], {"sheet": "Rates", "row_start": 3, "row_end": 6})
+        self.assertEqual(source["flags"], ["instruction_like_text"])
+        status, body = self.request(base, "POST", "/api/rag", {"question": "Simulate an outage"})
+        self.assertEqual(status, 502)
+        payload = json.loads(body)
+        self.assertEqual(payload["error_id"], "0123456789abcdef")
+        self.assertEqual(payload["error"], "document answer generation failed")
 
     def test_managed_document_list_upload_and_delete_proxy(self) -> None:
         gateway = FakeGateway()

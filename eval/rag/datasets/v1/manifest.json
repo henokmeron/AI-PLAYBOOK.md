@@ -1,0 +1,50 @@
+{
+  "dataset": "rag-benchmark",
+  "documents": {
+    "board-minutes-2026-q3.docx": {
+      "bytes": 1187,
+      "content_sha256": "a09b851b08fd37533405d8b73660afb8e1b61f49e29350e1621e8f0837dc0188"
+    },
+    "customer-faq.html": {
+      "bytes": 542,
+      "content_sha256": "3a6c2922fbc3fcbd7459dba2243153a41dcd415b277f62534669aad925de6273"
+    },
+    "expenses-policy.txt": {
+      "bytes": 1682,
+      "content_sha256": "07033d25ce5176d99c3770d4cdec6af22a5d661c84c3901217925bbf30ef1f4b"
+    },
+    "fleet-vehicles.csv": {
+      "bytes": 1716,
+      "content_sha256": "534c670488a450ce11dfd3c5a2bd3b4a33f2fe398f2c69cbe8e621ee7061b16e"
+    },
+    "it-security-standard.md": {
+      "bytes": 596,
+      "content_sha256": "17a65f2a7c427ce5355f230284af5856be42044698406b79f921cfc06d64f695"
+    },
+    "leave-policy-2025.txt": {
+      "bytes": 419,
+      "content_sha256": "1b82587d7ff10e79745441cb286e7b19164025e22f444a8a6bb06b7a34824c9f"
+    },
+    "leave-policy-2026.txt": {
+      "bytes": 509,
+      "content_sha256": "237060c0a74405dc4d4263110e85656eaeb480a6037c6718931800087a07f792"
+    },
+    "newsletter-autumn-2026.txt": {
+      "bytes": 703,
+      "content_sha256": "db0cce410222a3aab044b03f6c38fc9cfde7ea4f0ce4a0f157408a5983e0c22b"
+    },
+    "placement-fees-2026.xlsx": {
+      "bytes": 5818,
+      "content_sha256": "eab576923ef04da7cae99cd5a0b8ca6aee6d18cdf07316fe4cce122ab6623c50"
+    },
+    "supplier-notes.txt": {
+      "bytes": 517,
+      "content_sha256": "dddeaf2b0a43e388db8b12689438a7c9304b265fbbc2dc327a03d4287993aac3"
+    },
+    "training-handbook.pdf": {
+      "bytes": 1719,
+      "content_sha256": "ba10b861b3e1bb7c9dd722cf2348637564803f7cf88bb8a169e6f55f50730b96"
+    }
+  },
+  "version": "v1"
+}

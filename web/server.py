@@ -37,6 +37,7 @@ COLLECTION_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 # Registry model ids only — never accept filesystem paths from the browser.
 MODEL_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 SAFE_ERROR_RE = re.compile(r"^[A-Za-z0-9 ,.'():_/-]{1,200}$")
+ERROR_ID_RE = re.compile(r"\A[0-9a-f]{16}\Z")
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
@@ -370,8 +371,11 @@ class Handler(BaseHTTPRequestHandler):
         encoded = scrub(json.dumps(payload, separators=(",", ":")), secret).encode("utf-8")
         self.send_bytes(status, encoded, "application/json; charset=utf-8")
 
-    def send_error_json(self, status: int, message: str) -> None:
-        self.send_json(status, {"error": scrub(message, self.config.resolve_api_key())})
+    def send_error_json(self, status: int, message: str, error_id: str | None = None) -> None:
+        body: dict[str, Any] = {"error": scrub(message, self.config.resolve_api_key())}
+        if error_id:
+            body["error_id"] = error_id
+        self.send_json(status, body)
 
     def do_GET(self) -> None:
         parsed = urlsplit(self.path)
@@ -719,7 +723,12 @@ class Handler(BaseHTTPRequestHandler):
         if 200 <= result.status < 300 and isinstance(result.payload, dict):
             self.send_json(result.status, result.payload)
             return
-        self.send_error_json(result.status or 502, safe_error_text(result.payload, result.status or 502, self.config.resolve_api_key()))
+        error_id = result.payload.get("error_id") if isinstance(result.payload, dict) else None
+        self.send_error_json(
+            result.status or 502,
+            safe_error_text(result.payload, result.status or 502, self.config.resolve_api_key()),
+            error_id if isinstance(error_id, str) and ERROR_ID_RE.fullmatch(error_id) else None,
+        )
 
 
 def main(argv: list[str] | None = None) -> int:

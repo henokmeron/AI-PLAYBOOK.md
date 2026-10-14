@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import re
 from pathlib import Path
 import tempfile
@@ -185,23 +186,66 @@ def delete_document(root: Path, collection: Any, filename: Any) -> dict[str, Any
     return {"collection": collection_name, "filename": safe_filename, "deleted": True}
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def find_duplicate_content(root: Path, collection: Any, filename: Any) -> list[str]:
+    """Return other files in the collection whose bytes are identical to ``filename``."""
+    collection_name = validate_collection_name(collection)
+    safe_filename = validate_filename(filename)
+    folder = _collection_dir(root, collection_name)
+    target = folder / safe_filename
+    if not target.is_file():
+        return []
+    try:
+        size = target.stat().st_size
+        target_hash: str | None = None
+        duplicates = []
+        for entry in sorted(folder.iterdir(), key=lambda item: item.name.casefold()):
+            if entry.name == safe_filename or entry.is_symlink() or not entry.is_file():
+                continue
+            if entry.stat().st_size != size:
+                continue
+            target_hash = target_hash or _sha256_file(target)
+            if _sha256_file(entry) == target_hash:
+                duplicates.append(entry.name)
+    except OSError:
+        return []
+    return duplicates
+
+
 def get_collection_dir(root: Path, collection: Any) -> Path:
     """Return a validated collection path for use by RAG retrieval."""
     return _collection_dir(root, validate_collection_name(collection))
 
 
+def _chunk_counts(folder: Path) -> dict[str, int]:
+    """Chunk count per loadable file; unreadable files are skipped individually."""
+    from rag_engine import load_document_chunks, supported_paths
+
+    counts: dict[str, int] = {}
+    for path in supported_paths(folder):
+        relative = path.relative_to(folder).as_posix()
+        try:
+            chunks = load_document_chunks(path, relative)
+        except (DocumentLoadError, OSError):
+            continue
+        if chunks:
+            counts[relative] = len(chunks)
+    return counts
+
+
 def indexed_source_names(root: Path, collection: Any) -> list[str]:
     """Return filenames currently loadable as RAG chunks for a collection."""
-    from rag_engine import load_chunks
-
     folder = get_collection_dir(root, collection)
     if not folder.is_dir():
         return []
-    try:
-        chunks = load_chunks(folder)
-    except RuntimeError:
-        return []
-    return sorted({chunk.source for chunk in chunks})
+    return sorted(_chunk_counts(folder))
 
 
 def verify_document_searchable(root: Path, collection: Any, filename: Any) -> dict[str, Any]:
@@ -212,14 +256,13 @@ def verify_document_searchable(root: Path, collection: Any, filename: Any) -> di
     target = folder / safe_filename
     if not target.is_file():
         raise DocumentLibraryError(f"{safe_filename} is not stored in collection {collection_name}")
-    sources = indexed_source_names(root, collection_name)
-    if safe_filename not in sources:
+    counts = _chunk_counts(folder)
+    sources = sorted(counts)
+    if safe_filename not in counts:
         raise DocumentLibraryError(
             f"{safe_filename} was stored but is not yet searchable in collection {collection_name}"
         )
-    from rag_engine import load_chunks
-
-    chunk_count = sum(1 for chunk in load_chunks(folder) if chunk.source == safe_filename)
+    chunk_count = counts[safe_filename]
     return {
         "collection": collection_name,
         "filename": safe_filename,

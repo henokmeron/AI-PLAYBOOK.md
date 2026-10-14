@@ -8,6 +8,7 @@ PDFs containing only scanned images require OCR and are intentionally rejected.
 from __future__ import annotations
 
 import csv
+from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_HALF_UP
 from html.parser import HTMLParser
 import io
@@ -32,6 +33,19 @@ WORD_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 class DocumentLoadError(ValueError):
     """Raised when a source file cannot safely be read as supported text."""
+
+
+@dataclass
+class Segment:
+    """A structural unit of a document (page, worksheet, table or body text).
+
+    ``meta`` carries location fields used for citations: ``kind`` is one of
+    text/page/table/sheet; ``page`` (PDF, 1-based), ``sheet`` (XLSX) and
+    ``table_header`` (CSV header line repeated as context for every chunk).
+    """
+
+    text: str
+    meta: dict[str, object] = field(default_factory=dict)
 
 
 class _VisibleHTMLText(HTMLParser):
@@ -76,19 +90,37 @@ def _read_utf8(path: Path) -> str:
         raise DocumentLoadError(f"{path} is not valid UTF-8 text") from exc
 
 
-def _read_csv(path: Path) -> str:
+def _read_csv_segment(path: Path) -> Segment:
     raw = _read_utf8(path)
     rows: list[str] = []
+    header: list[str] | None = None
+    header_line = ""
     try:
         reader = csv.reader(io.StringIO(raw, newline=""))
         for row_number, row in enumerate(reader, start=1):
             # Empty rows add no searchable information.
             cells = [cell.strip() for cell in row]
-            if any(cells):
-                rows.append(f"Row {row_number}: " + " | ".join(cells))
+            if not any(cells):
+                continue
+            if header is None:
+                header = cells
+                header_line = f"Row {row_number}: " + " | ".join(cells)
+                rows.append(header_line)
+                continue
+            # Pair each value with its column name so rows stay interpretable
+            # when a chunk no longer contains the header row.
+            rendered = [
+                f"{header[i]}={cell}" if i < len(header) and header[i] and cell else cell
+                for i, cell in enumerate(cells)
+            ]
+            rows.append(f"Row {row_number}: " + " | ".join(rendered))
     except csv.Error as exc:
         raise DocumentLoadError(f"invalid CSV file {path}: {exc}") from exc
-    return "\n".join(rows)
+    return Segment("\n".join(rows), {"kind": "table", "table_header": header_line})
+
+
+def _read_csv(path: Path) -> str:
+    return _read_csv_segment(path).text
 
 
 def _read_html(path: Path) -> str:
@@ -142,6 +174,10 @@ def _read_docx(path: Path) -> str:
 
 
 def _read_pdf(path: Path) -> str:
+    return "\n\n".join(segment.text for segment in _read_pdf_segments(path))
+
+
+def _read_pdf_segments(path: Path) -> list[Segment]:
     # Import lazily so TXT/CSV/HTML/DOCX still work if the optional PDF dependency
     # is not installed. The gateway startup script sets PYTHONPATH=/tmp/rag-deps.
     try:
@@ -165,7 +201,7 @@ def _read_pdf(path: Path) -> str:
             raise DocumentLoadError(
                 f"{path.name} has {page_count} pages; the limit is {MAX_PDF_PAGES}"
             )
-        pages: list[str] = []
+        pages: list[Segment] = []
         total_chars = 0
         for page_number, page in enumerate(reader.pages, start=1):
             try:
@@ -176,13 +212,13 @@ def _read_pdf(path: Path) -> str:
                 ) from exc
             text = text.strip()
             if text:
-                page_text = f"[Page {page_number}]\\n{text}"
+                page_text = f"[Page {page_number}]\n{text}"
                 total_chars += len(page_text)
                 if total_chars > MAX_EXTRACTED_TEXT_CHARS:
                     raise DocumentLoadError(
                         f"extracted text from {path.name} exceeds the safety limit"
                     )
-                pages.append(page_text)
+                pages.append(Segment(page_text, {"kind": "page", "page": page_number}))
     except DocumentLoadError:
         raise
     except Exception as exc:
@@ -192,7 +228,7 @@ def _read_pdf(path: Path) -> str:
         raise DocumentLoadError(
             f"{path.name} contains no extractable text; scanned/image-only PDFs require OCR, which is not enabled"
         )
-    return "\\n\\n".join(pages)
+    return pages
 
 
 def sanitize_excel_float(value: float) -> Decimal:
@@ -559,6 +595,56 @@ def _read_xlsx(path: Path) -> str:
                 workbook.close()
             except Exception:
                 pass
+
+
+_SHEET_LABEL_RE = re.compile(r"Sheet: (?P<title>.+) \(state: [a-zA-Z]+\)\Z")
+
+
+def _split_xlsx_sheets(text: str) -> list[Segment]:
+    segments: list[Segment] = []
+    current: list[str] = []
+    title: str | None = None
+    for line in text.splitlines():
+        match = _SHEET_LABEL_RE.match(line)
+        if match:
+            if current and title is not None:
+                segments.append(Segment("\n".join(current), {"kind": "sheet", "sheet": title}))
+            title = match.group("title")
+            current = [line]
+        else:
+            current.append(line)
+    if current:
+        segments.append(Segment("\n".join(current), {"kind": "sheet", "sheet": title or ""}))
+    return [segment for segment in segments if "| Row " in segment.text]
+
+
+def read_document_segments(path: Path) -> list[Segment]:
+    """Read a document as structural segments carrying page/sheet/table metadata.
+
+    The concatenated segment text is equivalent to :func:`read_document`.
+    """
+    suffix = path.suffix.casefold()
+    if suffix == ".pdf":
+        _check_readable(path)
+        return _read_pdf_segments(path)
+    if suffix == ".csv":
+        _check_readable(path)
+        return [_read_csv_segment(path)]
+    text = read_document(path)
+    if suffix == ".xlsx":
+        return _split_xlsx_sheets(text)
+    return [Segment(text, {"kind": "text"})]
+
+
+def _check_readable(path: Path) -> None:
+    if not path.is_file():
+        raise DocumentLoadError(f"not a regular file: {path}")
+    try:
+        input_size = path.stat().st_size
+    except OSError as exc:
+        raise DocumentLoadError(f"cannot inspect {path}: {exc}") from exc
+    if input_size > MAX_INPUT_BYTES:
+        raise DocumentLoadError(f"{path} exceeds the {MAX_INPUT_BYTES}-byte input limit")
 
 
 def read_document(path: Path) -> str:

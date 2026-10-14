@@ -1,21 +1,67 @@
 openapi: 3.1.0
 info:
   title: Local Business AI Prototype API
-  version: 0.3.0
+  version: 0.4.0
   description: >
     Development-only, loopback-bound API for vLLM chat completion, document-grounded
     question answering, and collection-scoped document management. Not for public
-    or production exposure.
+    or production exposure. Every 4xx/5xx JSON body includes an `error_id`
+    (16 hex characters, also sent as the `X-Error-Id` header) that matches the
+    gateway's structured log line for that request. 0.4.0 changes are additive;
+    no existing field was removed or renamed.
 servers:
   - url: http://127.0.0.1:8010
     description: Local RunPod Pod only
 security:
   - BearerAuth: []
 paths:
+  /livez:
+    get:
+      security: []
+      summary: Liveness - the gateway process is serving requests (no upstream call)
+      responses:
+        "200":
+          description: Process alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, const: alive }
+  /readyz:
+    get:
+      security: []
+      summary: Readiness - the inference upstream answers /models with at least one model
+      responses:
+        "200":
+          description: Ready to serve chat and document answers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, const: ready }
+                  model_count: { type: integer, minimum: 1 }
+        "503":
+          description: Not ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, const: not_ready }
+                  reason:
+                    type: string
+                    enum: [upstream_unreachable, upstream_timeout, upstream_bad_response, no_models_reported]
+                    description: May also be upstream_http_<code>.
+                  error_id: { type: string }
   /health:
     get:
       security: []
-      summary: Check whether the vLLM upstream is reachable
+      summary: Legacy combined check (unchanged); prefer /livez and /readyz
+      description: >
+        Kept for the console and existing scripts. Returns 200 whenever the upstream
+        /models call succeeds, even when it reports zero models.
       responses:
         "200":
           description: Upstream is reachable
@@ -27,6 +73,7 @@ paths:
                   status: { type: string, const: ok }
                   upstream: { type: string, const: ok }
                   model_count: { type: integer }
+                  default_model_id: { type: string }
         "503": { description: Upstream unavailable }
   /v1/chat/completions:
     post:
@@ -48,17 +95,27 @@ paths:
         "200": { description: vLLM completion response }
         "400": { description: Invalid request or streaming requested }
         "401": { description: Authentication required }
+        "409": { description: Requested model is served by a different runtime (e.g. Gemma while Qwen is live) }
         "413": { description: Request body too large }
+        "415": { description: Content type must be application/json }
         "429": { description: Rate limit exceeded }
-        "502": { description: Inference upstream unavailable }
+        "500": { description: Unexpected internal error (see error_id) }
+        "502":
+          description: Inference upstream failed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UpstreamError" }
   /v1/rag/ask:
     post:
       summary: Answer a question using the demo corpus or a selected managed collection
       description: >
-        Retrieves relevant chunks from the demo corpus by default. A request may
-        specify a validated collection slug to search only that managed collection.
-        BM25 thresholds require corpus-specific calibration; the demo threshold is
-        not a universal setting.
+        Retrieves relevant chunks (BM25 over structure-aware chunks) from the demo
+        corpus by default, or only from the named managed collection. Abstains
+        without calling the model when nothing matches, the top score is below the
+        configured minimum, or the best evidence covers less than RAG_MIN_COVERAGE
+        of the question's informative terms. Evidence is trimmed to fit the model
+        context (RAG_MODEL_CONTEXT_TOKENS) after reserving RAG_MAX_TOKENS for the answer;
+        the oldest history pairs are dropped first when history crowds out evidence.
       requestBody:
         required: true
         content:
@@ -69,13 +126,14 @@ paths:
               properties:
                 question: { type: string, minLength: 1, maxLength: 2000 }
                 collection: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,39}$" }
-                top_k: { type: integer, minimum: 1, maximum: 10, default: 4 }
+                top_k: { type: integer, minimum: 1, maximum: 20, default: 8 }
                 history:
                   type: array
                   maxItems: 12
                   description: >
                     Optional prior user/assistant turns for follow-up questions.
                     Must start with user, end with assistant, and alternate roles.
+                    At most 2000 characters per turn and 12000 in total.
                   items:
                     type: object
                     required: [role, content]
@@ -83,85 +141,71 @@ paths:
                       role: { type: string, enum: [user, assistant] }
                       content: { type: string, minLength: 1, maxLength: 2000 }
       responses:
-        "200": { description: Answer or explicit abstention }
-        "400": { description: Invalid question, collection, top_k or history }
-        "401": { description: Authentication required }
-        "404": { description: Managed collection not found }
-        "413": { description: Request body or question too large }
-        "429": { description: Rate limit exceeded }
-        "500": { description: Document retrieval unavailable }
-        "502": { description: Inference upstream unavailable }
-  /v1/rag/documents:
-    get:
-      summary: List documents in one managed collection
-      parameters:
-        - name: collection
-          in: query
-          required: true
-          schema: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,39}$" }
-      responses:
         "200":
-          description: Document metadata without document contents
+          description: Answer or explicit abstention
           content:
             application/json:
               schema:
                 type: object
-                required: [collection, documents]
+                required: [status, answer, sources]
                 properties:
-                  collection: { type: string }
-                  documents:
+                  status: { type: string, enum: [answered, abstained] }
+                  answer: { type: string }
+                  model: { type: string }
+                  collection: { type: [string, "null"] }
+                  sources:
                     type: array
-                    items:
-                      type: object
-                      properties:
-                        filename: { type: string }
-                        size_bytes: { type: integer }
-                        extension: { type: string }
-        "400": { description: Invalid or missing collection }
+                    items: { $ref: "#/components/schemas/Source" }
+                  retrieval:
+                    type: object
+                    description: Diagnostics; fields marked (0.4) are new and optional.
+                    properties:
+                      matched: { type: boolean }
+                      reason:
+                        type: string
+                        enum: [empty_collection, no_documents, no_match, below_min_score, low_query_coverage]
+                      top_score: { type: number }
+                      minimum_score: { type: number }
+                      top_coverage: { type: number, description: "(0.4)" }
+                      minimum_coverage: { type: number, description: "(0.4)" }
+                      top_k_requested: { type: integer }
+                      top_k_used: { type: integer }
+                      sources_returned: { type: integer }
+                      duplicate_groups_collapsed: { type: integer }
+                      sources_dropped_for_budget: { type: integer, description: "(0.4)" }
+                      evidence_chars: { type: integer, description: "(0.4)" }
+                      evidence_char_budget: { type: integer, description: "(0.4)" }
+                      history_messages_dropped: { type: integer, description: "(0.4)" }
+                      skipped_files:
+                        type: array
+                        items: { type: string }
+                        description: "(0.4) Files in the collection that could not be parsed and were skipped."
+                      citations:
+                        type: object
+                        description: "(0.4) [Source N] labels found in the answer and any that do not exist."
+                        properties:
+                          cited: { type: array, items: { type: string } }
+                          invalid: { type: array, items: { type: string } }
+                      truncated: { type: boolean }
+                  usage:
+                    type: object
+                    description: "(0.4) Token usage reported by the inference upstream."
+                    properties:
+                      prompt_tokens: { type: integer }
+                      completion_tokens: { type: integer }
+                      total_tokens: { type: integer }
+        "400": { description: Invalid question, collection, top_k or history }
         "401": { description: Authentication required }
+        "404": { description: Managed collection not found }
+        "413": { description: Request body or question too large }
+        "415": { description: Content type must be application/json }
         "429": { description: Rate limit exceeded }
-    post:
-      summary: Upload a supported document to a managed collection
-      description: >
-        Send file bytes as base64. The decoded file is limited to 10 MiB. Collection
-        and filename validation block path traversal; overwrite is false by default.
-        This is local prototype storage, not a multi-tenant production document service.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [collection, filename, content_base64]
-              properties:
-                collection: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,39}$" }
-                filename: { type: string, maxLength: 120 }
-                content_base64: { type: string, format: byte }
-                overwrite: { type: boolean, default: false }
-      responses:
-        "201": { description: Document stored }
-        "400": { description: Invalid upload or filename }
-        "401": { description: Authentication required }
-        "409": { description: File already exists and overwrite was not set }
-        "413": { description: Upload too large }
-        "429": { description: Rate limit exceeded }
-    delete:
-      summary: Delete one document from a managed collection
-      parameters:
-        - name: collection
-          in: query
-          required: true
-          schema: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,39}$" }
-        - name: filename
-          in: query
-          required: true
-          schema: { type: string, maxLength: 120 }
-      responses:
-        "200": { description: Document deleted }
-        "400": { description: Invalid collection or filename }
-        "401": { description: Authentication required }
-        "404": { description: Document not found }
-        "429": { description: Rate limit exceeded }
+        "500": { description: Unexpected internal error (see error_id) }
+        "502":
+          description: Answer generation failed upstream
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UpstreamError" }
   /v1/rag/documents:
     get:
       summary: List documents in one managed collection
@@ -195,8 +239,11 @@ paths:
       summary: Upload a document to a managed collection
       description: >
         Base64-encoded file bytes, at most 10 MiB after decoding. Supports txt,
-        md, csv, html, htm, docx, searchable pdf, and xlsx. Path-traversal names
-        are rejected and duplicate files return 409 unless overwrite is true.
+        md, csv, html, htm, docx, searchable pdf, and xlsx. The file is parsed
+        before it is stored, so malformed files are rejected with 400. Path-traversal
+        names are rejected and existing filenames return 409 unless overwrite is true.
+        Identical content already stored under another filename is reported in
+        `document.duplicate_of` (0.4); the upload still succeeds.
       requestBody:
         required: true
         content:
@@ -210,14 +257,16 @@ paths:
                 content_base64: { type: string, format: byte }
                 overwrite: { type: boolean, default: false }
       responses:
-        "201": { description: Document stored after content validation }
-        "400": { description: Invalid upload or unsupported document }
+        "201": { description: Document stored after content validation and is searchable }
+        "400": { description: Invalid upload or unsupported/malformed document }
         "401": { description: Authentication required }
         "409": { description: Document already exists and overwrite was not requested }
         "413": { description: Upload too large }
+        "415": { description: Content type must be application/json }
         "429": { description: Rate limit exceeded }
     delete:
       summary: Delete one document from a managed collection
+      description: Removes the file and invalidates the cached index; the response confirms removal from retrieval.
       parameters:
         - name: collection
           in: query
@@ -228,7 +277,7 @@ paths:
           required: true
           schema: { type: string, maxLength: 120 }
       responses:
-        "200": { description: Document deleted }
+        "200": { description: Document deleted and absent from retrieval }
         "400": { description: Invalid collection or filename }
         "401": { description: Authentication required }
         "404": { description: Document not found }
@@ -239,3 +288,37 @@ components:
       type: http
       scheme: bearer
       bearerFormat: API key
+  schemas:
+    Source:
+      type: object
+      required: [label, file, chunk, score]
+      properties:
+        label: { type: string, examples: ["Source 1"] }
+        file: { type: string }
+        chunk: { type: integer }
+        score: { type: number }
+        location:
+          type: object
+          description: "(0.4) Citation location when known."
+          properties:
+            page: { type: integer, description: PDF page, 1-based }
+            sheet: { type: string, description: XLSX worksheet }
+            row_start: { type: integer, description: First spreadsheet/CSV row in the chunk }
+            row_end: { type: integer }
+        duplicate_files: { type: array, items: { type: string } }
+        duplicate_content: { type: boolean }
+        flags:
+          type: array
+          description: "(0.4) instruction_like_text marks passages that look like prompt injection; they are passed to the model as data with a warning."
+          items: { type: string, enum: [instruction_like_text] }
+    UpstreamError:
+      type: object
+      properties:
+        error: { type: string }
+        reason:
+          type: string
+          description: >
+            upstream_timeout, upstream_unreachable, upstream_bad_response or
+            upstream_http_<code> (for example upstream_http_400 when the prompt
+            exceeds the model context).
+        error_id: { type: string }

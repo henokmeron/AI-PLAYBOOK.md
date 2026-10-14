@@ -4,12 +4,30 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from document_loaders import DocumentLoadError, SUPPORTED_EXTENSIONS, read_document
+from document_loaders import (
+    DocumentLoadError,
+    SUPPORTED_EXTENSIONS,
+    Segment,
+    read_document_segments,
+)
 
 TOKEN_RE = re.compile(r"[\w]+", re.UNICODE)
+INDEX_TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
+ROW_NUMBER_RE = re.compile(r"(?:^|\| )Row (\d+):")
+MAX_HEADER_CHARS = 150
+# Function words that carry no evidence; used only for query coverage scoring.
+STOPWORDS = frozenset(
+    "a an and any are as at be by can do does did for from has have how i if in is it its "
+    "me my of on or our per should that the their there this to was we what when where "
+    "which who whom why will with would you your give list tell show "
+    # Request-framing words ("list every ... in the complete table") are not evidence.
+    "every all each complete full entire table summary summarise summarize detail please".split()
+)
+
+
 @dataclass
 class Chunk:
     source: str
@@ -17,48 +35,35 @@ class Chunk:
     text: str
     tokens: list[str]
     term_counts: Counter[str]
+    # Location metadata for citations: page, sheet, row_start, row_end, kind.
+    meta: dict[str, object] = field(default_factory=dict)
+    # Short document/table context (title or CSV header) indexed with the chunk.
+    header: str = ""
 
 
 def tokenize(text: str) -> list[str]:
     return [token.casefold() for token in TOKEN_RE.findall(text)]
 
 
-def split_chunks(text: str, max_chars: int = 1200, overlap: int = 160) -> list[str]:
-    """Split document text into overlapping chunks, preferring spreadsheet row bounds."""
-    text = text.strip()
-    if not text:
-        return []
-    # Keep each "Sheet: … | Row N:" line intact so age-band/rate associations survive.
-    if "| Row " in text:
-        lines = text.splitlines()
-        chunks: list[str] = []
-        current: list[str] = []
-        current_len = 0
-        for line in lines:
-            line_len = len(line) + (1 if current else 0)
-            if current and current_len + line_len > max_chars:
-                chunks.append("\n".join(current))
-                # Overlap with prior spreadsheet rows when possible.
-                overlap_lines: list[str] = []
-                overlap_len = 0
-                for prior in reversed(current):
-                    add = len(prior) + (1 if overlap_lines else 0)
-                    if overlap_len + add > overlap and overlap_lines:
-                        break
-                    overlap_lines.insert(0, prior)
-                    overlap_len += add
-                current = overlap_lines
-                current_len = overlap_len
-            if current:
-                current.append(line)
-                current_len += line_len
-            else:
-                current = [line]
-                current_len = len(line)
-        if current:
-            chunks.append("\n".join(current))
-        return chunks
+def stem(token: str) -> str:
+    """Conservative S-stemmer: folds plurals only (passwords -> password)."""
+    if len(token) <= 3 or token.isdigit():
+        return token
+    if token.endswith("ies") and len(token) > 4:
+        return token[:-3] + "y"
+    if token.endswith("sses"):
+        return token[:-2]
+    if token.endswith("s") and not token.endswith(("ss", "us", "is")):
+        return token[:-1]
+    return token
 
+
+def index_terms(text: str) -> list[str]:
+    """Terms used for ranking: underscore-split, case-folded, plural-folded."""
+    return [stem(token.casefold()) for token in INDEX_TOKEN_RE.findall(text)]
+
+
+def _char_split(text: str, max_chars: int, overlap: int) -> list[str]:
     chunks = []
     start = 0
     while start < len(text):
@@ -73,6 +78,83 @@ def split_chunks(text: str, max_chars: int = 1200, overlap: int = 160) -> list[s
         if end >= len(text):
             break
         start = max(start + 1, end - overlap)
+    return chunks
+
+
+def _pack_units(units: list[str], max_chars: int, overlap: int, joiner: str) -> list[str]:
+    """Greedily pack whole units (rows/paragraphs/lines) into chunks with unit overlap."""
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for unit in units:
+        if len(unit) > max_chars:
+            if current:
+                chunks.append(joiner.join(current))
+                current, current_len = [], 0
+            chunks.extend(_char_split(unit, max_chars, overlap))
+            continue
+        add = len(unit) + (len(joiner) if current else 0)
+        if current and current_len + add > max_chars:
+            chunks.append(joiner.join(current))
+            carried: list[str] = []
+            carried_len = 0
+            for prior in reversed(current):
+                extra = len(prior) + (len(joiner) if carried else 0)
+                if carried_len + extra > overlap:
+                    break
+                carried.insert(0, prior)
+                carried_len += extra
+            # Keep room for the unit that triggered the flush.
+            while carried and carried_len + len(joiner) + len(unit) > max_chars:
+                carried_len -= len(carried.pop(0)) + len(joiner)
+            current = carried
+            current_len = max(carried_len, 0)
+            add = len(unit) + (len(joiner) if current else 0)
+        current.append(unit)
+        current_len += add
+    if current:
+        chunks.append(joiner.join(current))
+    return chunks
+
+
+def split_chunks(text: str, max_chars: int = 1200, overlap: int = 160) -> list[str]:
+    """Split text into chunks on structural boundaries.
+
+    Spreadsheet/CSV rows and paragraphs are kept whole; a single unit longer
+    than ``max_chars`` falls back to a newline-preferring character split.
+    """
+    text = text.strip()
+    if not text:
+        return []
+    if "| Row " in text:
+        return _pack_units(text.splitlines(), max_chars, overlap, "\n")
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    if len(paragraphs) > 1:
+        return _pack_units(paragraphs, max_chars, overlap, "\n\n")
+    return _pack_units([line for line in text.splitlines() if line.strip()], max_chars, overlap, "\n")
+
+
+def chunk_segments(source: str, segments: list[Segment], max_chars: int = 1200, overlap: int = 160) -> list[Chunk]:
+    """Chunk one document's segments, attaching location metadata to each chunk."""
+    chunks: list[Chunk] = []
+    # Users refer to documents by name ("the rate register"), so filename words
+    # are indexed with every chunk of that file.
+    name_terms = index_terms(Path(source).stem)
+    for segment in segments:
+        context = str(segment.meta.get("table_header") or "")[:MAX_HEADER_CHARS]
+        for part in split_chunks(segment.text, max_chars=max_chars, overlap=overlap):
+            meta: dict[str, object] = {"kind": segment.meta.get("kind", "text")}
+            for key in ("page", "sheet"):
+                if segment.meta.get(key) not in (None, ""):
+                    meta[key] = segment.meta[key]
+            rows = [int(n) for n in ROW_NUMBER_RE.findall(part)]
+            if rows:
+                meta["row_start"], meta["row_end"] = min(rows), max(rows)
+            header = context if context and context not in part else ""
+            body_terms = index_terms(header + "\n" + part if header else part)
+            terms = name_terms + body_terms if body_terms else []
+            if terms:
+                chunks.append(Chunk(source, len(chunks) + 1, part, terms, Counter(terms), meta, header))
     return chunks
 
 
@@ -108,51 +190,83 @@ def dedupe_ranked_chunks(
     return groups
 
 
-def load_chunks(folder: Path) -> list[Chunk]:
-    if not folder.exists() or not folder.is_dir():
-        raise RuntimeError(f"Document folder does not exist or is not a directory: {folder}")
-    paths = sorted(
+def load_document_chunks(path: Path, source: str) -> list[Chunk]:
+    """Parse and chunk one file. Raises DocumentLoadError/OSError on bad input."""
+    return chunk_segments(source, read_document_segments(path))
+
+
+def supported_paths(folder: Path) -> list[Path]:
+    return sorted(
         p for p in folder.rglob("*")
         if p.is_file() and p.suffix.casefold() in SUPPORTED_EXTENSIONS
     )
+
+
+def load_chunks(folder: Path) -> list[Chunk]:
+    if not folder.exists() or not folder.is_dir():
+        raise RuntimeError(f"Document folder does not exist or is not a directory: {folder}")
     chunks: list[Chunk] = []
-    for path in paths:
+    for path in supported_paths(folder):
+        relative = path.relative_to(folder).as_posix()
         try:
-            text = read_document(path)
+            chunks.extend(load_document_chunks(path, relative))
         except (DocumentLoadError, OSError) as exc:
             raise RuntimeError(f"Could not read document {path}: {exc}") from exc
-        relative = path.relative_to(folder).as_posix()
-        for index, part in enumerate(split_chunks(text), start=1):
-            tokens = tokenize(part)
-            if tokens:
-                chunks.append(Chunk(relative, index, part, tokens, Counter(tokens)))
     if not chunks:
         raise RuntimeError(f"No readable non-empty supported document chunks found in {folder}")
     return chunks
 
 
-def retrieve(question: str, chunks: list[Chunk], top_k: int = 4) -> list[tuple[float, Chunk]]:
-    q_tokens = list(dict.fromkeys(tokenize(question)))
-    if not q_tokens:
-        return []
-    doc_freq: Counter[str] = Counter()
-    for chunk in chunks:
-        doc_freq.update(set(chunk.tokens))
-    total_docs = len(chunks)
-    average_length = sum(len(chunk.tokens) for chunk in chunks) / max(total_docs, 1)
-    k1, b = 1.5, 0.75
-    ranked: list[tuple[float, Chunk]] = []
-    for chunk in chunks:
-        length_norm = k1 * (1 - b + b * len(chunk.tokens) / max(average_length, 1))
-        score = 0.0
-        for term in q_tokens:
+class Bm25Index:
+    """Precomputed BM25 statistics over a fixed chunk list."""
+
+    k1 = 1.5
+    b = 0.75
+
+    def __init__(self, chunks: list[Chunk]) -> None:
+        self.chunks = chunks
+        self.doc_freq: Counter[str] = Counter()
+        for chunk in chunks:
+            self.doc_freq.update(set(chunk.tokens))
+        self.total = len(chunks)
+        self.average_length = sum(len(c.tokens) for c in chunks) / max(self.total, 1)
+
+    def idf(self, term: str) -> float:
+        df = self.doc_freq.get(term, 0)
+        return math.log(1 + (self.total - df + 0.5) / (df + 0.5))
+
+    def score(self, q_terms: list[str], chunk: Chunk) -> float:
+        length_norm = self.k1 * (1 - self.b + self.b * len(chunk.tokens) / max(self.average_length, 1))
+        total = 0.0
+        for term in q_terms:
             frequency = chunk.term_counts.get(term, 0)
-            if not frequency:
-                continue
-            df = doc_freq.get(term, 0)
-            idf = math.log(1 + (total_docs - df + 0.5) / (df + 0.5))
-            score += idf * (frequency * (k1 + 1)) / (frequency + length_norm)
-        if score > 0:
-            ranked.append((score, chunk))
-    ranked.sort(key=lambda item: item[0], reverse=True)
-    return ranked[:top_k]
+            if frequency:
+                total += self.idf(term) * (frequency * (self.k1 + 1)) / (frequency + length_norm)
+        return total
+
+    def search(self, question: str, top_k: int) -> list[tuple[float, Chunk]]:
+        q_terms = list(dict.fromkeys(index_terms(question)))
+        if not q_terms:
+            return []
+        ranked = [(s, c) for c in self.chunks if (s := self.score(q_terms, c)) > 0]
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        return ranked[:top_k]
+
+    def coverage(self, question: str, chunk: Chunk) -> float:
+        """IDF-weighted share of informative query terms present in the chunk."""
+        q_terms = [t for t in dict.fromkeys(index_terms(question)) if t not in STOPWORDS]
+        if not q_terms:
+            return 0.0
+        weights = {t: self.idf(t) for t in q_terms}
+        total = sum(weights.values())
+        hit = sum(w for t, w in weights.items() if chunk.term_counts.get(t))
+        return hit / total if total else 0.0
+
+
+def retrieve(
+    question: str,
+    chunks: list[Chunk],
+    top_k: int = 4,
+    index: Bm25Index | None = None,
+) -> list[tuple[float, Chunk]]:
+    return (index or Bm25Index(chunks)).search(question, top_k)

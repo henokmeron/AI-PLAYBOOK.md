@@ -200,6 +200,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .sources li { padding: 10px 12px; border-radius: 10px; background: #f7f4ef; }
 .sources strong, .sources span { display: block; }
 .sources span { color: var(--muted); font-size: 0.88rem; }
+.sources span.source-warning { color: #8a4b00; font-weight: 600; }
 .message-sources { margin-top: 10px; }
 .message-sources h3 {
   margin: 0 0 6px;

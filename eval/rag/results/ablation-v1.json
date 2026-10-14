@@ -1,0 +1,92 @@
+{
+  "all_changes": {
+    "recall@1": 0.8302,
+    "recall@3": 0.9677,
+    "recall@5": 0.974,
+    "mrr": 0.9688,
+    "answerable_false_abstain_rate": 0.0,
+    "unanswerable_gate_abstain_rate": 0.0,
+    "mean_context_chars": 4880.3
+  },
+  "no_plural_folding": {
+    "recall@1": 0.8146,
+    "recall@3": 0.9365,
+    "recall@5": 0.9427,
+    "mrr": 0.9414,
+    "answerable_false_abstain_rate": 0.0,
+    "unanswerable_gate_abstain_rate": 0.0,
+    "mean_context_chars": 4876.8
+  },
+  "no_filename_terms": {
+    "recall@1": 0.8302,
+    "recall@3": 0.9677,
+    "recall@5": 0.974,
+    "mrr": 0.9688,
+    "answerable_false_abstain_rate": 0.0,
+    "unanswerable_gate_abstain_rate": 0.0,
+    "mean_context_chars": 4854.1
+  },
+  "no_underscore_split": {
+    "recall@1": 0.7865,
+    "recall@3": 0.9552,
+    "recall@5": 0.9615,
+    "mrr": 0.9323,
+    "answerable_false_abstain_rate": 0.0,
+    "unanswerable_gate_abstain_rate": 0.0,
+    "mean_context_chars": 4734.6
+  },
+  "no_csv_header_pairing": {
+    "recall@1": 0.8302,
+    "recall@3": 0.9552,
+    "recall@5": 0.9552,
+    "mrr": 0.9688,
+    "answerable_false_abstain_rate": 0.0,
+    "unanswerable_gate_abstain_rate": 0.0,
+    "mean_context_chars": 4662.8
+  },
+  "coverage_gate_0.10": {
+    "recall@1": 0.8302,
+    "recall@3": 0.9677,
+    "recall@5": 0.974,
+    "mrr": 0.9688,
+    "answerable_false_abstain_rate": 0.0,
+    "unanswerable_gate_abstain_rate": 0.125,
+    "mean_context_chars": 4710.6
+  },
+  "coverage_gate_0.15": {
+    "recall@1": 0.8302,
+    "recall@3": 0.9677,
+    "recall@5": 0.974,
+    "mrr": 0.9688,
+    "answerable_false_abstain_rate": 0.0,
+    "unanswerable_gate_abstain_rate": 0.25,
+    "mean_context_chars": 4639.4
+  },
+  "coverage_gate_0.18": {
+    "recall@1": 0.8302,
+    "recall@3": 0.9677,
+    "recall@5": 0.974,
+    "mrr": 0.9688,
+    "answerable_false_abstain_rate": 0.0,
+    "unanswerable_gate_abstain_rate": 0.375,
+    "mean_context_chars": 4526.2
+  },
+  "coverage_gate_0.20": {
+    "recall@1": 0.8302,
+    "recall@3": 0.9677,
+    "recall@5": 0.974,
+    "mrr": 0.9688,
+    "answerable_false_abstain_rate": 0.0,
+    "unanswerable_gate_abstain_rate": 0.375,
+    "mean_context_chars": 4526.2
+  },
+  "coverage_gate_0.25": {
+    "recall@1": 0.825,
+    "recall@3": 0.9625,
+    "recall@5": 0.9688,
+    "mrr": 0.9375,
+    "answerable_false_abstain_rate": 0.0312,
+    "unanswerable_gate_abstain_rate": 0.5,
+    "mean_context_chars": 4262.1
+  }
+}

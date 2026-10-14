@@ -95,7 +95,9 @@
           }
         }
         if (!response.ok) {
-          throw new Error(body && body.error ? body.error : "Request failed (" + response.status + ").");
+          var message = body && body.error ? body.error : "Request failed (" + response.status + ").";
+          if (body && typeof body.error_id === "string") message += " (error id " + body.error_id + ")";
+          throw new Error(message);
         }
         return body;
       });
@@ -275,6 +277,7 @@
     var parts = [];
     if (retrieval.reason === "below_min_score") parts.push("The best match was below the gateway score threshold.");
     else if (retrieval.reason === "no_match") parts.push("No document match was found.");
+    else if (retrieval.reason === "low_query_coverage") parts.push("The documents do not appear to cover the key terms of this question.");
     else if (typeof retrieval.reason === "string") parts.push("Retrieval: " + retrieval.reason);
     if (typeof retrieval.top_score === "number") parts.push("Top score " + retrieval.top_score + ".");
     if (typeof retrieval.minimum_score === "number") parts.push("Minimum score " + retrieval.minimum_score + ".");
@@ -291,12 +294,32 @@
       var item = el("li");
       item.appendChild(el("strong", null, source && source.label ? source.label : "Source"));
       item.appendChild(el("span", null, source && source.file ? source.file : "Unknown file"));
+      var where = locationText(source && source.location);
       var chunk = source && source.chunk != null ? "Chunk " + source.chunk : "Chunk unknown";
       var score = source && typeof source.score === "number" ? "Score " + source.score : "Score unavailable";
-      item.appendChild(el("span", null, chunk + " · " + score));
+      item.appendChild(el("span", null, (where ? where + " · " : "") + chunk + " · " + score));
+      if (source && Array.isArray(source.duplicate_files) && source.duplicate_files.length > 1) {
+        item.appendChild(el("span", null, "Identical content also in: " + source.duplicate_files.slice(1).join(", ")));
+      }
+      if (source && Array.isArray(source.flags) && source.flags.indexOf("instruction_like_text") !== -1) {
+        item.appendChild(el("span", "source-warning", "Warning: this passage contains instruction-like text and was treated as data only."));
+      }
       list.appendChild(item);
     });
     return list;
+  }
+
+  function locationText(location) {
+    if (!location || typeof location !== "object") return "";
+    var parts = [];
+    if (typeof location.page === "number") parts.push("Page " + location.page);
+    if (typeof location.sheet === "string" && location.sheet) parts.push("Sheet " + location.sheet);
+    if (typeof location.row_start === "number") {
+      var rows = location.row_start;
+      if (typeof location.row_end === "number" && location.row_end !== location.row_start) rows += "–" + location.row_end;
+      parts.push("Rows " + rows);
+    }
+    return parts.join(", ");
   }
 
   function historyPayload() {

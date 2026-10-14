@@ -1,0 +1,41 @@
+reg,model,depot,monthly_lease_gbp,annual_mileage
+NB19 ABC,Toyota Corolla,Bristol,280.00,6000
+NB20 BIF,Nissan Leaf,Surrey,317.13,6811
+NB21 CPI,Toyota Proace,Bristol,354.26,7622
+NB21 KXT,Ford Transit Custom,Leeds,489.00,18200
+NB23 EFO,Kia Niro,York,428.52,9244
+NB24 FMR,Ford Focus,Bristol,465.65,10055
+NB19 GTU,Toyota Corolla,York,502.78,10866
+NB20 HCX,Nissan Leaf,Surrey,299.91,11677
+NB21 IJD,Toyota Proace,Bristol,336.04,12488
+NB22 JQG,Vauxhall Corsa,Surrey,373.17,13299
+NB23 KXJ,Kia Niro,Bristol,410.30,14110
+NB22 LMP,Vauxhall Vivaro,Leeds,452.50,15400
+NB19 MNP,Toyota Corolla,York,484.56,15732
+NB20 NUS,Nissan Leaf,Bristol,281.69,16543
+NB21 ODV,Toyota Proace,York,318.82,17354
+NB22 PKY,Vauxhall Corsa,Surrey,355.95,18165
+NB23 QRE,Kia Niro,Bristol,392.08,18976
+NB24 RYH,Ford Focus,Surrey,429.21,19787
+NB19 SHK,Toyota Corolla,Bristol,466.34,6598
+NB23 TUV,Ford Transit Custom,Leeds,512.75,9800
+NB21 UVQ,Toyota Proace,York,300.60,8220
+NB22 VET,Vauxhall Corsa,Bristol,337.73,9031
+NB23 WLW,Kia Niro,York,374.86,9842
+NB24 XSC,Ford Focus,Surrey,411.99,10653
+NB19 YBF,Toyota Corolla,Bristol,448.12,11464
+NB20 ZII,Nissan Leaf,Surrey,485.25,12275
+NB21 APL,Toyota Proace,Bristol,282.38,13086
+NB20 HJD,Toyota Corolla,Leeds,305.40,11250
+NB23 CFR,Kia Niro,York,356.64,14708
+NB24 DMU,Ford Focus,Bristol,393.77,15519
+NB19 ETX,Toyota Corolla,York,430.90,16330
+NB20 FCD,Nissan Leaf,Surrey,467.03,17141
+NB21 GJG,Toyota Proace,Bristol,504.16,17952
+NB22 HQJ,Vauxhall Corsa,Surrey,301.29,18763
+NB24 RCE,Nissan Leaf,Leeds,298.90,7600
+NB24 JGP,Ford Focus,Surrey,375.55,6385
+NB19 KNS,Toyota Corolla,York,412.68,7196
+NB20 LUV,Nissan Leaf,Bristol,449.81,8007
+NB21 MDY,Toyota Proace,York,486.94,8818
+NB22 NKE,Vauxhall Corsa,Surrey,283.07,9629
