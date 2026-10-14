@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-14** (Qwen is the routed default for chat and Document Q&A in the local tree; not deployed).
+Last updated: **2026-10-14** (feature-branch commits are pushed to GitHub; the live Pod is not restarted).
 
 ## Only this repository
 
@@ -36,6 +36,7 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 5. Keep large weights and the vLLM archive **on the Global Volume**, never in Git. Restored Python env goes under **`/tmp`**, never onto `/workspace`.
 6. Secrets stay out of git, browser JS, and reports. Key file on Pod: `/tmp/platform-gateway.key` (ephemeral; never print it).
 7. PowerShell + SSH strips embedded double quotes and CRLF breaks bash. Prefer scp’d scripts + LF conversion (`python3 /tmp/fresh/_lfconvert.py` if present).
+8. **Push feature-branch commits to `origin`.** The owner requires this. Push `feature/qwen-a100-start-hardening` and `feature/qwen3.5-27b-integration` together when they match. Never force-push. Never push or merge `main` unless the owner explicitly says so. Do not push untracked `ops/_*.sh`, `ops/_*.py`, or `__pycache__`.
 
 ---
 
@@ -67,10 +68,10 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 ### Git
 
-- **GitHub** tips of both feature branches are still **`01e76922589aeb404b054198b992fcac7e69b6e8`**. `main` is still `33160fde` and was **not** merged. Do not push without approval.
-- The `ninja` PATH change is commit **`083fa58`**. Local commit `e1e360f` locks that line with a test and is **not** on GitHub yet.
-- Local checkout is `feature/qwen-a100-start-hardening`. `feature/qwen3.5-27b-integration` matches it. Stay on the hardening branch.
-- Live Pod source is **not** that tip. `/tmp/AI-PLAYBOOK` is `0b49946` plus one uncommitted PATH line in `ops/start-first-release.sh`. `START.sh` will refuse to fast-forward that checkout. Do not restart the Pod to clean it up. The Qwen routing change below is local only until a restart is approved.
+- **GitHub** `feature/qwen-a100-start-hardening` and `feature/qwen3.5-27b-integration` were at **`e1e360fe7aebf801a31b31293fe46e38abb9b336`** before the routing commit was pushed. `main` is still `33160fde` and was **not** merged.
+- `e1e360f` is the parent of **`c2323238041cea8317d2322e6d16554d0bc967bc`** (Qwen routing). That push is a fast-forward. The `ninja` PATH change itself is **`083fa58`**, already inside `e1e360f`.
+- Local checkout is `feature/qwen-a100-start-hardening`. Keep `feature/qwen3.5-27b-integration` on the same commit.
+- Live Pod source is **not** that tip. `/tmp/AI-PLAYBOOK` is `0b49946` plus one uncommitted PATH line in `ops/start-first-release.sh`. Do not restart the Pod to pick up GitHub. The running gateway still has the old Document Q&A model selection.
 - Volume `VERSION.txt` and snapshot `…-01e7692.tar.gz` match SHA-256 `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370` (checked 2026-10-14).
 - Do not commit untracked `ops/_*.sh` / `ops/_*.py` probe helpers or `__pycache__`.
 
@@ -157,6 +158,12 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-14 — push feature branches
+
+- Owner rule: push feature-branch commits to GitHub. Do not force-push and do not push `main`.
+- `git ls-remote` showed both feature branches at `e1e360f`. Local `c232323` has that commit as its only parent, so the push is a fast-forward.
+- Did **not** restart the Pod or change `/workspace`.
 
 ### 2026-10-14 — Qwen routing, local only
 
