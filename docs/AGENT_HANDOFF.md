@@ -14,7 +14,7 @@ Do not create a new project, a new GitHub repo, or a new folder. All work stays 
 | Local folder | `C:\Users\henok\src\AI-PLAYBOOK.md` |
 | GitHub | `https://github.com/henokmeron/AI-PLAYBOOK.md.git` (remote name `origin`) |
 | Work branch | `feature/qwen-a100-start-hardening` (same commits as `feature/qwen3.5-27b-integration`) |
-| Do not merge | `main` (`33160fd`) unless the owner explicitly says so |
+| `main` | Fast-forward it to the feature tip and push it. Never force-push. |
 | Pod | RunPod only. Do not start a different app or a second paid Pod. |
 
 `git` on the Windows PATH often fails (the `git.exe` that is found is a launcher without the real binary). Use this binary:
@@ -36,7 +36,7 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 5. Keep large weights and the vLLM archive **on the Global Volume**, never in Git. Restored Python env goes under **`/tmp`**, never onto `/workspace`.
 6. Secrets stay out of git, browser JS, and reports. Key file on Pod: `/tmp/platform-gateway.key` (ephemeral; never print it).
 7. PowerShell + SSH strips embedded double quotes and CRLF breaks bash. Prefer scp’d scripts + LF conversion (`python3 /tmp/fresh/_lfconvert.py` if present).
-8. **Push feature-branch commits to `origin`.** The owner requires this. Push `feature/qwen-a100-start-hardening` and `feature/qwen3.5-27b-integration` together when they match. Never force-push. Never push or merge `main` unless the owner explicitly says so. Do not push untracked `ops/_*.sh`, `ops/_*.py`, or `__pycache__`.
+8. **Push feature-branch commits and `main`.** The owner requires this. Keep `feature/qwen-a100-start-hardening`, `feature/qwen3.5-27b-integration`, and `main` on the same commit by fast-forwarding `main`. Never force-push. Do not push untracked `ops/_*.sh`, `ops/_*.py`, or `__pycache__`.
 
 ---
 
@@ -68,7 +68,7 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 ### Git
 
-- **GitHub** `feature/qwen-a100-start-hardening` and `feature/qwen3.5-27b-integration` were at **`e1e360fe7aebf801a31b31293fe46e38abb9b336`** before the routing commit was pushed. `main` is still `33160fde` and was **not** merged.
+- **GitHub** feature branches include the Qwen routing work. `main` is fast-forwarded to the same tip and pushed. It is not force-pushed.
 - `e1e360f` is the parent of **`c2323238041cea8317d2322e6d16554d0bc967bc`** (Qwen routing). That push is a fast-forward. The `ninja` PATH change itself is **`083fa58`**, already inside `e1e360f`.
 - Local checkout is `feature/qwen-a100-start-hardening`. Keep `feature/qwen3.5-27b-integration` on the same commit.
 - Live Pod source is **not** that tip. `/tmp/AI-PLAYBOOK` is `0b49946` plus one uncommitted PATH line in `ops/start-first-release.sh`. Do not restart the Pod to pick up GitHub. The running gateway still has the old Document Q&A model selection.
@@ -158,6 +158,12 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-14 — publish the feature tip on main
+
+- Owner asked for `main` to receive the work that was only on the feature branches, and for `main` to be pushed.
+- `origin/main` (`33160fd`) is a direct ancestor of the feature tip, so `main` can fast-forward. No history rewrite.
+- Probe scripts and `__pycache__` stay untracked.
 
 ### 2026-10-14 — push feature branches
 
