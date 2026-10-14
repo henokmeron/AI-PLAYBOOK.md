@@ -151,6 +151,7 @@ fi
 
 mkdir -p "$DIAG"
 LOCK="/tmp/ai-platform-start-${GATEWAY_PORT}.lock"
+# Long-lived children are started with 9>&- so the lock is released when this script exits.
 exec 9>"$LOCK"
 flock -n 9 || fail "Another start for gateway :$GATEWAY_PORT is already running (lock $LOCK)."
 
@@ -207,7 +208,7 @@ else
     --max-num-seqs "$QWEN_MAX_NUM_SEQS" \
     --gpu-memory-utilization "$UTIL" \
     --default-chat-template-kwargs '{"enable_thinking": false}' \
-    >"$DIAG/qwen-vllm.log" 2>&1 </dev/null &
+    >"$DIAG/qwen-vllm.log" 2>&1 </dev/null 9>&- &
   QWEN_PID=$!
   echo "$QWEN_PID" >"$DIAG/qwen-vllm.pid"
   log "Waiting up to ${QWEN_READY_TIMEOUT_S}s for Qwen (cold load from the Global Volume can take 10-25 minutes)"
@@ -266,7 +267,7 @@ else
     RAG_MANAGED_DOCS_DIR="$RAG_MANAGED" \
     PYTHONPATH="$REPO_ROOT/api:$REPO_ROOT/models:$REPO_ROOT/rag:$RAG_DEPS" \
     "$QWEN_ENV/bin/python" "$REPO_ROOT/api/local_gateway.py" \
-    >"$DIAG/gateway.log" 2>&1 </dev/null &
+    >"$DIAG/gateway.log" 2>&1 </dev/null 9>&- &
   GW_PID=$!
   echo "$GW_PID" >"$DIAG/gateway.pid"
   wait_healthy "$GATEWAY_URL" "$GW_PID" 30 "$DIAG/gateway.log" || fail "Gateway :$GATEWAY_PORT failed; see $DIAG/gateway.log"
@@ -283,7 +284,7 @@ else
     PLATFORM_API_KEY_FILE="$KEY" \
     PLATFORM_MODEL_ID=qwen3.5-27b \
     /usr/bin/python3 "$REPO_ROOT/web/server.py" \
-    >"$DIAG/console.log" 2>&1 </dev/null &
+    >"$DIAG/console.log" 2>&1 </dev/null 9>&- &
   WEB_PID=$!
   echo "$WEB_PID" >"$DIAG/console.pid"
   wait_healthy "$CONSOLE_URL" "$WEB_PID" 30 "$DIAG/console.log" || fail "Console :$CONSOLE_PORT failed; see $DIAG/console.log"
