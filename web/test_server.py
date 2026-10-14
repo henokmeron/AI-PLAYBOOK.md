@@ -311,6 +311,8 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("Chat", text)
         self.assertIn("Document Q&amp;A", text)
         self.assertIn("System Status", text)
+        self.assertIn(">Agent<", text)
+        self.assertIn('id="agent-task"', text)
         self.assertIn('id="rag-log"', text)
         self.assertIn('id="rag-clear"', text)
         self.assertIn("Clear conversation", text)
@@ -659,6 +661,23 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(proxy.hits, [])
         self.assertTrue(any(hit["path"] == "/v1/chat/completions" for hit in gateway.hits))
+
+    def test_agent_page_lists_microsoft_as_disconnected_and_does_not_leak_the_key(self) -> None:
+        gateway = FakeGateway()
+        base = self.web(gateway)
+        status, body = self.request(base, "GET", "/api/connectors")
+        payload = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["connectors"][0]["connector_id"], "microsoft365")
+        self.assertFalse(payload["connectors"][0]["connected"])
+        status, body = self.request(base, "POST", "/api/agent", {"task": "What is 2 + 2?"})
+        text = body.decode("utf-8")
+        self.assertEqual(status, 200)
+        view = json.loads(text)
+        self.assertEqual(view["state"], "failed")
+        self.assertNotIn(KEY, text)
+        self.assertNotIn("SECRET", text)
+        self.assertNotIn("messages", view)
 
 
 if __name__ == "__main__":

@@ -55,7 +55,7 @@ Keep Qwen3.5-27B as the RunPod-first production default, preserve volume recover
 - 2026-10-13 (honest integration status): **Partially yes — not fully the platform** (historical). Superseded by 2026-10-14 status.
 - 2026-10-13 (tonight completion / post-acceptance): Dual-model registry; Qwen runtime archived to `/workspace/runtime-setup/qwen-vllm/`.
 - 2026-10-14: **Qwen is the production default.** A100 SXM cold start + main `:8002`/`:8010`/`:8080` E2E (chat, text/PDF/XLSX RAG, console UI) **VERIFIED**. Snapshot `0b49946` checksum OK. Evidence: `ops/results/qwen-integration-status-2026-10-14.md`, `docs/AGENT_HANDOFF.md`.
-- **Next action requiring owner:** run the calculator smoke and Document Q&A steps in the latest handover. Do not restart the Pod unless you explicitly approve a deployment. Stop the Pod when you are finished testing if you want to stop the hourly charge.
+- **Next action requiring owner:** approve a Pod restart only when you want the new Agent page on the live console. Until then, Microsoft 365 stays disconnected. Do not install more plugins. The Teams plugin is a Cursor tool, not the product connector.
 
 ## Required handover format
 Report briefly:

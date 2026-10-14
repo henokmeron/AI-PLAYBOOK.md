@@ -1,7 +1,6 @@
 # Integration framework and provider assessment
 
-Status: **framework is a local prototype tested only against an in-memory fake connector.
-No real provider integration exists or has been tested. No accounts were connected.**
+Status: **framework is a local prototype. The Microsoft 365 catalog entry refuses every call until an account is connected. No Graph request has been sent. No accounts were connected.**
 Provider facts below come from the vendors' public documentation as generally known in 2026.
 Re-verify scopes, limits and pricing against current vendor docs before building, because they change.
 

@@ -20,6 +20,13 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from agents.model import OpenAICompatibleClient
+from agents.workspace import AgentDesk
+
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 DEFAULT_KEY_FILE = "/tmp/platform-gateway.key"
 DEFAULT_GATEWAY_URL = "http://127.0.0.1:8010"
@@ -343,6 +350,7 @@ class WebServer(ThreadingHTTPServer):
 
     def __init__(self, config: Config) -> None:
         self.config = config
+        self.desk = AgentDesk()
         super().__init__((config.host, config.port), Handler)
 
 
@@ -392,6 +400,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/documents":
             self.handle_document_list(parsed)
             return
+        if path == "/api/connectors":
+            self.handle_connectors()
+            return
         static_file = resolve_static(self.config.static_dir, path)
         if static_file is None:
             self.send_error_json(404, "not found")
@@ -414,6 +425,10 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_rag()
         elif path == "/api/documents":
             self.handle_document_upload()
+        elif path == "/api/agent":
+            self.handle_agent()
+        elif path == "/api/agent/decision":
+            self.handle_agent_decision()
         else:
             self.send_error_json(404, "not found")
 
@@ -452,6 +467,57 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error_json(400, "JSON object required")
             return None
         return payload
+
+    def handle_connectors(self) -> None:
+        self.send_json(200, {"connectors": self.server.desk.connectors()})  # type: ignore[attr-defined]
+
+    def _agent_model(self) -> OpenAICompatibleClient:
+        model_id = self.config.model_id if MODEL_ID_RE.fullmatch(self.config.model_id or "") else None
+        return OpenAICompatibleClient(
+            self.config.gateway_url.rstrip("/") + "/v1",
+            api_key_provider=self.config.resolve_api_key,
+            model=model_id,
+        )
+
+    def handle_agent(self) -> None:
+        if self.require_key() is None:
+            return
+        payload = self.read_json_object()
+        if payload is None:
+            return
+        goal = payload.get("task")
+        try:
+            view = self.server.desk.start(  # type: ignore[attr-defined]
+                goal, self._agent_model(), wall_seconds=min(60.0, self.config.upstream_timeout),
+            )
+        except ValueError as exc:
+            self.send_error_json(400, str(exc))
+            return
+        self.send_json(200, view)
+
+    def handle_agent_decision(self) -> None:
+        if self.require_key() is None:
+            return
+        payload = self.read_json_object()
+        if payload is None:
+            return
+        task_id = payload.get("task_id")
+        approved = payload.get("approved")
+        if not isinstance(task_id, str) or not task_id or not isinstance(approved, bool):
+            self.send_error_json(400, "task_id and approved are required")
+            return
+        try:
+            view = self.server.desk.decide(task_id, approved, "console-operator")  # type: ignore[attr-defined]
+        except KeyError:
+            self.send_error_json(404, "task not found")
+            return
+        except RuntimeError as exc:
+            self.send_error_json(409, str(exc))
+            return
+        except ValueError as exc:
+            self.send_error_json(400, str(exc))
+            return
+        self.send_json(200, view)
 
     def require_key(self) -> str | None:
         key = self.config.resolve_api_key()

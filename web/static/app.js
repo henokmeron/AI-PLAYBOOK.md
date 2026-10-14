@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var views = ["chat", "documents", "status"];
+  var views = ["chat", "documents", "agent", "status"];
   var messages = [];
   var ragTurns = [];
   var busy = false;
@@ -117,7 +117,8 @@
       }
     });
     if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
-    document.title = name === "documents" ? "Document Q&A" : name === "status" ? "System Status" : "Chat";
+    document.title = name === "documents" ? "Document Q&A" : name === "agent" ? "Agent" : name === "status" ? "System Status" : "Chat";
+    if (name === "agent") loadConnectors();
     if (name === "status") renderStatus();
   }
 
@@ -637,6 +638,103 @@
     var collection = ragCollection.value.trim();
     if (collection) syncCollectionFields(collection);
   });
+
+  var agentForm = document.getElementById("agent-form");
+  var agentTask = document.getElementById("agent-task");
+  var agentError = document.getElementById("agent-error");
+  var agentLog = document.getElementById("agent-log");
+  var agentSend = document.getElementById("agent-send");
+  var agentLoading = document.getElementById("agent-loading");
+  var agentApproval = document.getElementById("agent-approval");
+  var agentApprovalText = document.getElementById("agent-approval-text");
+  var agentApprovalArgs = document.getElementById("agent-approval-args");
+  var connectorList = document.getElementById("connector-list");
+  var agentTaskId = "";
+
+  function renderAgent(view) {
+    agentLog.textContent = "";
+    if (!view) {
+      agentLog.appendChild(el("p", "empty", "Run a task to see what the agent did."));
+      agentApproval.hidden = true;
+      return;
+    }
+    var heading = el("p", null, view.state === "final" ? (view.answer || "Finished.") : (view.failure || view.state));
+    agentLog.appendChild(heading);
+    (view.activity || []).forEach(function (item) {
+      var labels = {
+        tool_requested: "Used a tool",
+        tool_result: "Tool result",
+        tool_error: "Tool problem",
+        approval_required: "Waiting for approval",
+        approval_decision: "Approval recorded",
+        task_final: "Finished",
+        task_failed: "Failed",
+        task_cancelled: "Cancelled"
+      };
+      var line = (labels[item.kind] || item.kind) + (item.tool ? ": " + item.tool : "");
+      if (item.detail) line += " — " + item.detail;
+      agentLog.appendChild(el("p", "meta", line));
+    });
+    var pending = view.pending_approval;
+    agentApproval.hidden = !pending;
+    if (pending) {
+      agentTaskId = view.task_id;
+      agentApprovalText.textContent = pending.reason || "This action needs approval.";
+      agentApprovalArgs.textContent = JSON.stringify(pending.arguments || {}, null, 2);
+    }
+  }
+
+  function loadConnectors() {
+    request("/api/connectors").then(function (result) {
+      connectorList.textContent = "";
+      var rows = result.connectors || [];
+      if (!rows.length) {
+        connectorList.appendChild(el("li", null, "No connectors are registered."));
+        return;
+      }
+      rows.forEach(function (row) {
+        var label = row.service + (row.connected ? " — connected" : " — not connected");
+        if (row.detail) label += ". " + row.detail;
+        connectorList.appendChild(el("li", null, label));
+      });
+    }).catch(function (error) {
+      showError(agentError, errorMessage(error));
+    });
+  }
+
+  agentForm.addEventListener("submit", function (event) {
+    event.preventDefault();
+    var task = agentTask.value.trim();
+    if (!task) return;
+    agentSend.disabled = true;
+    agentLoading.hidden = false;
+    showError(agentError, "");
+    request("/api/agent", { method: "POST", body: { task: task } }).then(function (result) {
+      agentTaskId = result.task_id || "";
+      renderAgent(result);
+    }).catch(function (error) {
+      showError(agentError, errorMessage(error));
+    }).then(function () {
+      agentSend.disabled = false;
+      agentLoading.hidden = true;
+    });
+  });
+
+  function decide(approved) {
+    if (!agentTaskId) return;
+    request("/api/agent/decision", {
+      method: "POST",
+      body: { task_id: agentTaskId, approved: approved }
+    }).then(function (result) {
+      renderAgent(result);
+    }).catch(function (error) {
+      showError(agentError, errorMessage(error));
+    });
+  }
+
+  document.getElementById("agent-approve").addEventListener("click", function () { decide(true); });
+  document.getElementById("agent-reject").addEventListener("click", function () { decide(false); });
+  renderAgent(null);
 
   document.getElementById("status-refresh").addEventListener("click", refreshStatus);
 
