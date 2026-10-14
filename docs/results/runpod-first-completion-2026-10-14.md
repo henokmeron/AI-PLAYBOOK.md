@@ -5,7 +5,8 @@
 - Branch: `feature/qwen3.5-27b-integration`
 - Base tip before this finish pass: `d748762`
 - Functional finish commit: `5281ab3`
-- Branch tip: `91b5bbc`
+- Branch tip at the end of this pass: `9b8a383` (docs/helper commits after `91b5bbc`)
+- Follow-up start hardening and A100 readiness: `docs/results/a100-switch-readiness-2026-10-14.md`
 
 ## 2. Qwen as default
 
