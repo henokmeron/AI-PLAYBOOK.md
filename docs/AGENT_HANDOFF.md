@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-14** (Pod `00n856z3eue5v9` started; Qwen, gateway, and console healthy).
+Last updated: **2026-10-14** (live calculator verified; Microsoft sign-in is in source only).
 
 ## Only this repository
 
@@ -102,7 +102,9 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 ### Agents / security / integrations
 
 - `agents/`, `integrations/`, security review, fine-tuning plan: committed (`de40330`, smoke `473d119`).
-- Live agent smoke vs Qwen: **calculator only VERIFIED**. Document/table/approval tools: local fake-model tests only.
+- Live agent smoke vs Qwen on Pod `00n856z3eue5v9`, deployed code `98511df`: **calculator VERIFIED**. `agents.live_smoke` and `POST /api/agent` both returned `696.486` from the calculator tool. Document Q&A on `POST /api/rag` answered the receipt question from the demo corpus and abstained on CEO salary. The Agent desk does not search documents.
+- Approval pause is unit-tested. No live external approval was clicked, and no email was sent.
+- Microsoft 365 OAuth is implemented in source (`integrations/microsoft_oauth.py`) for read-only mail. **No Entra application id is configured. No real account was authorised. No real Graph request succeeded.** The live console is still `98511df` and was not restarted. See `docs/integrations/microsoft-365-signin.md`.
 - Nginx on some Pods listens on `0.0.0.0:8081` → console without login. User **deferred** fixing auth/nginx until a later “login” phase. Treat Pod docs as non-sensitive until then (`docs/security/baseline-review.md`).
 
 ---
@@ -158,6 +160,13 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-14 — live calculator check and Microsoft sign-in source
+
+- Confirmed Pod `00n856z3eue5v9`, volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace`, checkout `98511df`. Qwen `:8002`, gateway `:8010`, and console `:8080` returned HTTP 200. The Pod was not restarted and the new sign-in code was not deployed.
+- Live calculator: final state, one calculator call, answer contains `696.486`. Live Agent page returned the same answer and the tool activity. Live Document Q&A answered the 10-business-day receipt question and abstained on CEO salary.
+- Added the Entra PKCE sign-in and read-only Graph mail path. Send and the other writes still make no request. Automated tests use a fake transport. A real Microsoft account is not connected.
+- Next owner step, when they want the live connection: register the Entra public client in `docs/integrations/microsoft-365-signin.md`, set `MICROSOFT_CLIENT_ID`, and approve a console restart. Do not stop the Pod without approval. Last known billing was $1.79/hour with a balance warning near $4.79.
 
 ### 2026-10-14 — owner started Pod `00n856z3eue5v9`
 

@@ -663,13 +663,26 @@ class ConsoleTests(unittest.TestCase):
         self.assertTrue(any(hit["path"] == "/v1/chat/completions" for hit in gateway.hits))
 
     def test_agent_page_lists_microsoft_as_disconnected_and_does_not_leak_the_key(self) -> None:
+        previous = os.environ.pop("MICROSOFT_CLIENT_ID", None)
         gateway = FakeGateway()
-        base = self.web(gateway)
+        try:
+            base = self.web(gateway)
+        finally:
+            if previous is not None:
+                os.environ["MICROSOFT_CLIENT_ID"] = previous
         status, body = self.request(base, "GET", "/api/connectors")
         payload = json.loads(body)
         self.assertEqual(status, 200)
         self.assertEqual(payload["connectors"][0]["connector_id"], "microsoft365")
         self.assertFalse(payload["connectors"][0]["connected"])
+        self.assertFalse(payload["connectors"][0]["sign_in"]["configured"])
+        self.assertNotIn("access_token", body.decode("utf-8"))
+        page_status, page = self.request(base, "GET", "/")
+        self.assertEqual(page_status, 200)
+        self.assertIn(b"Connect Microsoft 365", page)
+        start_status, start_body = self.request(base, "GET", "/api/microsoft/start")
+        self.assertEqual(start_status, 409)
+        self.assertIn(b"MICROSOFT_CLIENT_ID", start_body)
         status, body = self.request(base, "POST", "/api/agent", {"task": "What is 2 + 2?"})
         text = body.decode("utf-8")
         self.assertEqual(status, 200)
@@ -678,6 +691,32 @@ class ConsoleTests(unittest.TestCase):
         self.assertNotIn(KEY, text)
         self.assertNotIn("SECRET", text)
         self.assertNotIn("messages", view)
+
+    def test_configured_sign_in_redirects_to_microsoft_without_a_secret(self) -> None:
+        previous = os.environ.get("MICROSOFT_CLIENT_ID")
+        os.environ["MICROSOFT_CLIENT_ID"] = "11111111-2222-3333-4444-555555555555"
+        try:
+            base = self.web(None)
+            class RefuseRedirect(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, request, fp, code, msg, headers, newurl):
+                    raise urllib.error.HTTPError(newurl, code, msg, headers, fp)
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), RefuseRedirect)
+            try:
+                opener.open(base + "/api/microsoft/start", timeout=5)
+                location = ""
+                status = 200
+            except urllib.error.HTTPError as exc:
+                status = exc.code
+                location = exc.headers.get("Location") or exc.url
+        finally:
+            if previous is None:
+                os.environ.pop("MICROSOFT_CLIENT_ID", None)
+            else:
+                os.environ["MICROSOFT_CLIENT_ID"] = previous
+        self.assertEqual(status, 302)
+        self.assertTrue(location.startswith("https://login.microsoftonline.com/"))
+        self.assertIn("code_challenge_method=S256", location)
+        self.assertNotIn("client_secret", location)
 
 
 if __name__ == "__main__":

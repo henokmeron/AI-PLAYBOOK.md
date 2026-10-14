@@ -284,6 +284,10 @@ else
     PLATFORM_GATEWAY_URL="http://127.0.0.1:${GATEWAY_PORT}" \
     PLATFORM_API_KEY_FILE="$KEY" \
     PLATFORM_MODEL_ID=qwen3.5-27b \
+    MICROSOFT_CLIENT_ID="${MICROSOFT_CLIENT_ID:-}" \
+    MICROSOFT_TENANT="${MICROSOFT_TENANT:-common}" \
+    MICROSOFT_REDIRECT_URI="${MICROSOFT_REDIRECT_URI:-http://127.0.0.1:18080/api/microsoft/callback}" \
+    MICROSOFT_TOKEN_FILE="${MICROSOFT_TOKEN_FILE:-/tmp/microsoft-365-token.json}" \
     /usr/bin/python3 "$REPO_ROOT/web/server.py" \
     >"$DIAG/console.log" 2>&1 </dev/null 9>&- &
   WEB_PID=$!

@@ -1,15 +1,44 @@
 """Microsoft 365 catalog entry.
 
-This does not call Microsoft Graph. Until an account is connected through the
-platform's own consent flow, every operation stops before a network request.
-The Cursor Teams plugin is not used here: it talks to Cursor's own service.
+Read-only Outlook mail can call Microsoft Graph after the console completes
+Entra sign-in. Sending mail and every other write stay disabled. The Cursor
+Teams plugin is not used here.
 """
 from __future__ import annotations
 
 from typing import Any
 
+import re
+
 from .catalog import Catalog, ConnectorSpec, Effect, OperationSpec
-from .errors import AuthenticationError
+from .errors import AuthenticationError, InvalidRequest
+from .microsoft_oauth import MicrosoftOAuth
+
+_MESSAGE_ID = re.compile(r"[A-Za-z0-9_\-=]{8,180}\Z")
+_MAIL_RESULT = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["status", "messages"],
+    "properties": {
+        "status": {"type": "string"},
+        "messages": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["id", "subject", "sender", "preview"],
+                "properties": {
+                    "id": {"type": "string", "maxLength": 180},
+                    "subject": {"type": "string", "maxLength": 300},
+                    "sender": {"type": "string", "maxLength": 200},
+                    "preview": {"type": "string", "maxLength": 500},
+                    "link": {"type": "string", "maxLength": 400},
+                },
+            },
+        },
+    },
+}
 
 _QUERY = {
     "type": "object",
@@ -42,6 +71,7 @@ def _op(
     scope: str,
     permissions: tuple[str, ...],
     schema: dict[str, Any] | None = None,
+    output_schema: dict[str, Any] | None = None,
 ) -> OperationSpec:
     return OperationSpec(
         name=name,
@@ -49,7 +79,7 @@ def _op(
         effect=effect,
         scope=scope,
         input_schema=schema or _QUERY,
-        output_schema=_OBJECT_RESULT,
+        output_schema=output_schema or _OBJECT_RESULT,
         provider_permissions=permissions,
         tool_name="m365_" + name,
         requires_approval=effect in {Effect.REVERSIBLE, Effect.CONSEQUENTIAL},
@@ -64,13 +94,14 @@ MICROSOFT_365 = ConnectorSpec(
     summary="Outlook, Teams, files and calendar through Microsoft Graph. Not connected.",
     auth="oauth_delegated",
     operations=(
-        _op("search_mail", "Search the connected mailbox.", Effect.READ, "mail:read", ("Mail.Read",)),
+        _op("search_mail", "Search the connected mailbox.", Effect.READ, "mail:read", ("Mail.Read",),
+            _QUERY, _MAIL_RESULT),
         _op("read_mail", "Read one authorised message.", Effect.READ, "mail:read", ("Mail.Read",), {
             "type": "object",
             "additionalProperties": False,
             "required": ["message_id"],
-            "properties": {"message_id": {"type": "string", "minLength": 1, "maxLength": 200}},
-        }),
+            "properties": {"message_id": {"type": "string", "minLength": 8, "maxLength": 180}},
+        }, _MAIL_RESULT),
         _op("create_mail_draft", "Create an unsent mail draft.", Effect.DRAFT, "mail:write",
             ("Mail.ReadWrite",), _MESSAGE),
         _op("send_mail", "Send an email.", Effect.CONSEQUENTIAL, "mail:write", ("Mail.Send",), _MESSAGE),
@@ -101,18 +132,88 @@ MICROSOFT_365 = ConnectorSpec(
 )
 
 
-class Microsoft365Client:
-    """Placeholder. ``network_calls`` stays zero until a Graph client exists."""
+def _clip(value: Any, limit: int) -> str:
+    text = value if isinstance(value, str) else ""
+    return text.replace("\r", " ").replace("\n", " ")[:limit]
 
-    def __init__(self) -> None:
+
+def _message(item: dict[str, Any]) -> dict[str, str]:
+    sender = item.get("from") if isinstance(item.get("from"), dict) else {}
+    email = sender.get("emailAddress") if isinstance(sender.get("emailAddress"), dict) else {}
+    row = {
+        "id": _clip(item.get("id"), 180),
+        "subject": _clip(item.get("subject"), 300) or "(no subject)",
+        "sender": _clip(email.get("address"), 200) or "(unknown sender)",
+        "preview": _clip(item.get("bodyPreview"), 500),
+    }
+    link = _clip(item.get("webLink"), 400)
+    if link.startswith("https://"):
+        row["link"] = link
+    return row
+
+
+class Microsoft365Client:
+    """Read-only Graph mail. Sending and other writes are refused."""
+
+    def __init__(self, oauth: MicrosoftOAuth | None = None) -> None:
+        self.oauth = oauth
         self.network_calls = 0
 
+    def apply(self, catalog: Catalog, tenant_id: str) -> None:
+        record = catalog.connection(tenant_id, MICROSOFT_365.connector_id)
+        bundle = self.oauth.bundle if self.oauth is not None else None
+        if bundle is None:
+            record.connected = False
+            record.account = None
+            record.granted_scopes = frozenset()
+            record.detail = "Connect a work or school account before mail can be read."
+            return
+        record.connected = True
+        record.account = bundle.account
+        record.granted_scopes = frozenset({"mail:read"})
+        record.detail = "Read-only mail is connected. Sending a message is not available."
+
     def perform(self, connector_id: str, operation: str, params: dict[str, Any]) -> Any:
-        raise AuthenticationError("Microsoft 365 is not connected. No request was sent.")
+        if operation == "search_mail":
+            return self._search(str(params.get("query", "")))
+        if operation == "read_mail":
+            return self._read(str(params.get("message_id", "")))
+        raise AuthenticationError(
+            f"Microsoft 365 {operation} is not enabled. No request was sent."
+        )
+
+    def _search(self, query: str) -> dict[str, Any]:
+        cleaned = " ".join(query.replace('"', " ").split())
+        if not cleaned:
+            raise InvalidRequest("mail search text is empty")
+        payload = self._get("/me/messages", {
+            "$search": f'"{cleaned[:200]}"',
+            "$top": "5",
+            "$select": "id,subject,from,receivedDateTime,bodyPreview,webLink",
+        })
+        rows = [_message(item) for item in payload.get("value", []) if isinstance(item, dict)]
+        return {"status": "ok", "messages": rows[:5]}
+
+    def _read(self, message_id: str) -> dict[str, Any]:
+        if not _MESSAGE_ID.fullmatch(message_id):
+            raise InvalidRequest("message id is not usable")
+        payload = self._get(f"/me/messages/{message_id}", {
+            "$select": "id,subject,from,receivedDateTime,bodyPreview,webLink",
+        })
+        return {"status": "ok", "messages": [_message(payload)]}
+
+    def _get(self, path: str, query: dict[str, str]) -> dict[str, Any]:
+        if self.oauth is None or self.oauth.bundle is None:
+            raise AuthenticationError("Microsoft 365 is not connected. No request was sent.")
+        before = self.oauth.graph_calls
+        try:
+            return self.oauth.graph_get(path, query)
+        finally:
+            self.network_calls += self.oauth.graph_calls - before
 
 
-def platform_catalog() -> tuple[Catalog, Microsoft365Client]:
-    client = Microsoft365Client()
+def platform_catalog(oauth: MicrosoftOAuth | None = None) -> tuple[Catalog, Microsoft365Client]:
+    client = Microsoft365Client(oauth)
 
     def perform(connector_id: str, operation: str, params: dict[str, Any]) -> Any:
         if connector_id != MICROSOFT_365.connector_id:

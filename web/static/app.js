@@ -684,6 +684,15 @@
     }
   }
 
+  function renderMicrosoft(signIn) {
+    var setup = document.getElementById("microsoft-setup");
+    var connect = document.getElementById("microsoft-connect");
+    var disconnect = document.getElementById("microsoft-disconnect");
+    setup.textContent = signIn.setup || "";
+    connect.hidden = !signIn.configured || !!signIn.connected;
+    disconnect.hidden = !signIn.connected;
+  }
+
   function loadConnectors() {
     request("/api/connectors").then(function (result) {
       connectorList.textContent = "";
@@ -694,8 +703,10 @@
       }
       rows.forEach(function (row) {
         var label = row.service + (row.connected ? " — connected" : " — not connected");
+        if (row.account) label += " as " + row.account;
         if (row.detail) label += ". " + row.detail;
         connectorList.appendChild(el("li", null, label));
+        if (row.connector_id === "microsoft365") renderMicrosoft(row.sign_in || {});
       });
     }).catch(function (error) {
       showError(agentError, errorMessage(error));
@@ -732,6 +743,13 @@
     });
   }
 
+  document.getElementById("microsoft-disconnect").addEventListener("click", function () {
+    request("/api/microsoft/disconnect", { method: "POST", body: {} }).then(function () {
+      loadConnectors();
+    }).catch(function (error) {
+      showError(agentError, errorMessage(error));
+    });
+  });
   document.getElementById("agent-approve").addEventListener("click", function () { decide(true); });
   document.getElementById("agent-reject").addEventListener("click", function () { decide(false); });
   renderAgent(null);

@@ -25,7 +25,8 @@ _OBSERVABLE = {
     "approval_required", "approval_decision",
     "task_final", "task_failed", "task_cancelled",
 }
-_CONSOLE_TENANT = "local-console"
+CONSOLE_TENANT = "local-console"
+_CONSOLE_TENANT = CONSOLE_TENANT
 _CONSOLE_PRINCIPAL = "console-user"
 
 

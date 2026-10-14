@@ -18,14 +18,17 @@ from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from agents.model import OpenAICompatibleClient
-from agents.workspace import AgentDesk
+from agents.workspace import CONSOLE_TENANT, AgentDesk
+from integrations.errors import AuthenticationError
+from integrations.microsoft365 import platform_catalog
+from integrations.microsoft_oauth import MicrosoftOAuth
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 DEFAULT_KEY_FILE = "/tmp/platform-gateway.key"
@@ -350,7 +353,10 @@ class WebServer(ThreadingHTTPServer):
 
     def __init__(self, config: Config) -> None:
         self.config = config
-        self.desk = AgentDesk()
+        self.oauth = MicrosoftOAuth.from_env()
+        catalog, self.microsoft = platform_catalog(self.oauth)
+        self.microsoft.apply(catalog, CONSOLE_TENANT)
+        self.desk = AgentDesk(catalog)
         super().__init__((config.host, config.port), Handler)
 
 
@@ -403,6 +409,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/connectors":
             self.handle_connectors()
             return
+        if path == "/api/microsoft/start":
+            self.handle_microsoft_start()
+            return
+        if path == "/api/microsoft/callback":
+            self.handle_microsoft_callback(parsed)
+            return
         static_file = resolve_static(self.config.static_dir, path)
         if static_file is None:
             self.send_error_json(404, "not found")
@@ -429,6 +441,8 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_agent()
         elif path == "/api/agent/decision":
             self.handle_agent_decision()
+        elif path == "/api/microsoft/disconnect":
+            self.handle_microsoft_disconnect()
         else:
             self.send_error_json(404, "not found")
 
@@ -468,8 +482,46 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return payload
 
+    def send_redirect(self, location: str) -> None:
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        for name, value in SECURITY_HEADERS:
+            self.send_header(name, value)
+        self.end_headers()
+
     def handle_connectors(self) -> None:
-        self.send_json(200, {"connectors": self.server.desk.connectors()})  # type: ignore[attr-defined]
+        rows = self.server.desk.connectors()  # type: ignore[attr-defined]
+        sign_in = self.server.oauth.public_status()  # type: ignore[attr-defined]
+        for row in rows:
+            if row.get("connector_id") == "microsoft365":
+                row["sign_in"] = sign_in
+        self.send_json(200, {"connectors": rows})
+
+    def handle_microsoft_start(self) -> None:
+        try:
+            target = self.server.oauth.authorization_url()  # type: ignore[attr-defined]
+        except AuthenticationError as exc:
+            self.send_error_json(409, exc.message)
+            return
+        self.send_redirect(target)
+
+    def handle_microsoft_callback(self, parsed) -> None:
+        query = parse_qs(parsed.query)
+        code = (query.get("code") or [""])[0]
+        state = (query.get("state") or [""])[0]
+        try:
+            self.server.oauth.complete(code, state)  # type: ignore[attr-defined]
+            self.server.microsoft.apply(self.server.desk.catalog, CONSOLE_TENANT)  # type: ignore[attr-defined]
+        except AuthenticationError:
+            self.send_redirect("/#agent")
+            return
+        self.send_redirect("/#agent")
+
+    def handle_microsoft_disconnect(self) -> None:
+        self.server.oauth.disconnect()  # type: ignore[attr-defined]
+        self.server.microsoft.apply(self.server.desk.catalog, CONSOLE_TENANT)  # type: ignore[attr-defined]
+        self.send_json(200, {"connected": False})
 
     def _agent_model(self) -> OpenAICompatibleClient:
         model_id = self.config.model_id if MODEL_ID_RE.fullmatch(self.config.model_id or "") else None
