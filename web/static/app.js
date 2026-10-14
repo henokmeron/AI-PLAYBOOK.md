@@ -180,8 +180,7 @@
     var preferred = previous;
     var match = catalogModels.filter(function (item) { return item.id === preferred && modelUsable(item); })[0];
     if (!match) {
-      match = catalogModels.filter(function (item) { return item.is_active_default && modelUsable(item); })[0]
-        || catalogModels.filter(function (item) { return modelUsable(item); })[0];
+      match = catalogModels.filter(function (item) { return item.is_active_default && modelUsable(item); })[0];
     }
     selectedModelId = match ? match.id : "";
     modelSelect.value = selectedModelId;
@@ -189,7 +188,7 @@
     if (modelHint) {
       modelHint.textContent = selectedModelId
         ? ("Selected " + selectedModelId + ". Unavailable models stay listed but cannot be used until an operator switches the GPU runtime.")
-        : "No loaded model is available for chat right now.";
+        : "The configured default model is not loaded. Another model is not selected automatically.";
     }
   }
 

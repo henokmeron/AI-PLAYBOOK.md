@@ -21,6 +21,7 @@ from registry_loader import (  # noqa: E402
     get_model,
     load_registry,
     public_model_catalog,
+    matching_upstream_model_id,
     resolve_requested_model,
     selection_decision,
     upstream_model_token,
@@ -38,6 +39,7 @@ class RegistryLoaderTests(unittest.TestCase):
         defaults = self.registry.get("defaults") or {}
         self.assertEqual(defaults.get("active_model_id"), "qwen3.5-27b")
         self.assertFalse(defaults.get("concurrent_gpu_models"))
+        self.assertFalse(defaults.get("silent_model_fallback"))
 
     def test_qwen_is_first_release_primary_with_gemma_alternative(self) -> None:
         qwen = get_model(self.registry, "qwen3.5-27b")
@@ -83,6 +85,30 @@ class RegistryLoaderTests(unittest.TestCase):
         self.assertEqual(
             upstream_model_token(self.registry, "qwen3.5-27b"),
             "/workspace/models/Qwen3.5-27B/fc05daec18b0a78c049392ed2e771dde82bdf654",
+        )
+
+    def test_unknown_model_is_rejected(self) -> None:
+        decision = selection_decision(self.registry, "not-a-real-model", upstream_port=8002)
+        self.assertFalse(decision["allowed"])
+        self.assertEqual(decision["reason"], "unknown_model")
+        self.assertIsNone(decision["resolved_id"])
+
+    def test_omitted_model_is_qwen_only_when_that_checkpoint_is_served(self) -> None:
+        decision = selection_decision(self.registry, None, upstream_port=8002)
+        self.assertTrue(decision["allowed"])
+        self.assertEqual(decision["resolved_id"], "qwen3.5-27b")
+        self.assertEqual(decision["reason"], "default")
+        qwen_path = upstream_model_token(self.registry, "qwen3.5-27b")
+        self.assertEqual(
+            matching_upstream_model_id(self.registry, "qwen3.5-27b", [qwen_path]),
+            qwen_path,
+        )
+        self.assertIsNone(
+            matching_upstream_model_id(
+                self.registry,
+                "qwen3.5-27b",
+                ["/workspace/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it"],
+            )
         )
 
     def test_invalid_registry_rejected(self) -> None:

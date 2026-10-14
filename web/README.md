@@ -45,14 +45,14 @@ Use this on the RunPod Pod, in a second terminal, while vLLM and the gateway are
 ```bash
 cd /path/to/AI-PLAYBOOK.md
 export PLATFORM_GATEWAY_URL=http://127.0.0.1:8010
-export PLATFORM_MODEL_ID=/workspace/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it
+export PLATFORM_MODEL_ID=qwen3.5-27b
 export PLATFORM_API_KEY_FILE=/tmp/platform-gateway.key
 export WEB_HOST=127.0.0.1
 export WEB_PORT=8080
 python3 web/server.py
 ```
 
-Open `http://127.0.0.1:8080` from that same machine. System Status should say the gateway is ready only after `/health` succeeds. Document Q&A shows the `sources` metadata returned by `POST /v1/rag/ask`. Chat uses the model id above, which is the id recorded for the current vLLM server.
+Open `http://127.0.0.1:8080` from that same machine. System Status should say the gateway is ready only after `/health` succeeds. Document Q&A shows the `sources` metadata returned by `POST /v1/rag/ask`. Chat uses `qwen3.5-27b` unless you explicitly choose another loaded model.
 
 An SSH local forward to `127.0.0.1:8080` on the Pod would let a browser on another computer reach the console without publishing it. This repository does not configure that tunnel, and it was not tested from the development machine. Do not forward port 8010.
 
@@ -62,7 +62,7 @@ PowerShell:
 
 ```powershell
 $env:PLATFORM_GATEWAY_URL = "http://127.0.0.1:8010"
-$env:PLATFORM_MODEL_ID = "/workspace/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it"
+$env:PLATFORM_MODEL_ID = "qwen3.5-27b"
 $env:PLATFORM_API_KEY_FILE = ""
 $env:PLATFORM_API_KEY = "replace-with-a-local-test-key-of-32-plus-chars"
 python web/server.py

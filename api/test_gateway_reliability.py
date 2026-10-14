@@ -33,6 +33,7 @@ DOC_MARKER = "UNIQUEDOCMARKER"
 class FakeUpstream(BaseHTTPRequestHandler):
     mode = "ok"
     answer = "The deadline is 10 business days [Source 1]."
+    model_id = "fake-model"
     requests: list[dict] = []
 
     def log_message(self, *args) -> None:
@@ -51,7 +52,7 @@ class FakeUpstream(BaseHTTPRequestHandler):
         elif FakeUpstream.mode == "http500" and self.path.endswith("/models"):
             self._send(500, b"{}")
         else:
-            self._send(200, json.dumps({"data": [{"id": "fake-model"}]}).encode())
+            self._send(200, json.dumps({"data": [{"id": FakeUpstream.model_id}]}).encode())
 
     def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
@@ -120,6 +121,7 @@ class GatewayReliabilityTests(unittest.TestCase):
     def setUp(self) -> None:
         FakeUpstream.mode = "ok"
         FakeUpstream.answer = "The deadline is 10 business days [Source 1]."
+        FakeUpstream.model_id = "fake-model"
         FakeUpstream.requests = []
 
     def call(self, method: str, path: str, body=None, *, auth: bool = True, raw: bytes | None = None,
@@ -353,6 +355,35 @@ class GatewayReliabilityTests(unittest.TestCase):
         self.assertLessEqual(total_chars, limit + 1500)
         self.assertGreater(body["retrieval"]["history_messages_dropped"], 0)
         self.assertGreater(body["retrieval"]["sources_dropped_for_budget"], 0)
+
+    def test_rag_reaches_qwen_and_refuses_a_different_upstream_model(self) -> None:
+        try:
+            import yaml  # noqa: F401
+        except ImportError:
+            self.skipTest("PyYAML required for registry-backed selection")
+        registry = Path(__file__).resolve().parent.parent / "models" / "registry.yaml"
+        qwen_path = "/workspace/models/Qwen3.5-27B/fc05daec18b0a78c049392ed2e771dde82bdf654"
+        original_port = gateway.upstream_listen_port
+        gateway.PLATFORM_MODEL_REGISTRY = str(registry)
+        gateway.upstream_listen_port = lambda: 8002
+        try:
+            FakeUpstream.model_id = "/workspace/gemma-4-31B-it/gemma-4-31B-it/gemma-4-31B-it"
+            status, body, _ = self.ask("When are receipts due in business days?")
+            self.assertEqual(status, 409)
+            self.assertEqual(body["selection"]["reason"], "model_not_loaded")
+            self.assertEqual(body["selection"]["resolved_id"], "qwen3.5-27b")
+            self.assertEqual(FakeUpstream.requests, [])
+
+            FakeUpstream.model_id = qwen_path
+            status, body, _ = self.ask("When are receipts due in business days?")
+            self.assertEqual(status, 200, body)
+            self.assertEqual(body["model"], "qwen3.5-27b")
+            self.assertEqual(body["upstream_model"], qwen_path)
+            self.assertEqual(FakeUpstream.requests[-1]["model"], qwen_path)
+        finally:
+            gateway.upstream_listen_port = original_port
+            gateway.PLATFORM_MODEL_REGISTRY = self.saved["PLATFORM_MODEL_REGISTRY"]
+            FakeUpstream.model_id = "fake-model"
 
     def test_gemma_request_while_qwen_live_is_refused_with_409(self) -> None:
         try:

@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-14** (repo connection for the next agent; local integration branch fast-forwarded to GitHub).
+Last updated: **2026-10-14** (Qwen is the routed default for chat and Document Q&A in the local tree; not deployed).
 
 ## Only this repository
 
@@ -67,10 +67,10 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 ### Git
 
-- **GitHub** tips of `feature/qwen3.5-27b-integration` and `feature/qwen-a100-start-hardening` are both **`01e76922589aeb404b054198b992fcac7e69b6e8`**. `main` is still `33160fde` and was **not** merged.
-- The `ninja` PATH change itself is the parent commit **`083fa5850c1c3b572fad8b63aa938192f58e8b45`**. `01e76922` only refreshes this handoff.
-- Local checkout is `feature/qwen-a100-start-hardening` at `01e76922`. The local ref `feature/qwen3.5-27b-integration` is **stale** at `467ca3ef` and must not be committed on until it is fast-forwarded to GitHub.
-- Live Pod source is **not** that tip. `/tmp/AI-PLAYBOOK` is `0b49946` plus one uncommitted PATH line in `ops/start-first-release.sh`. `START.sh` will refuse to fast-forward that checkout. Do not restart the Pod to clean it up.
+- **GitHub** tips of both feature branches are still **`01e76922589aeb404b054198b992fcac7e69b6e8`**. `main` is still `33160fde` and was **not** merged. Do not push without approval.
+- The `ninja` PATH change is commit **`083fa58`**. Local commit `e1e360f` locks that line with a test and is **not** on GitHub yet.
+- Local checkout is `feature/qwen-a100-start-hardening`. `feature/qwen3.5-27b-integration` matches it. Stay on the hardening branch.
+- Live Pod source is **not** that tip. `/tmp/AI-PLAYBOOK` is `0b49946` plus one uncommitted PATH line in `ops/start-first-release.sh`. `START.sh` will refuse to fast-forward that checkout. Do not restart the Pod to clean it up. The Qwen routing change below is local only until a restart is approved.
 - Volume `VERSION.txt` and snapshot `…-01e7692.tar.gz` match SHA-256 `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370` (checked 2026-10-14).
 - Do not commit untracked `ops/_*.sh` / `ops/_*.py` probe helpers or `__pycache__`.
 
@@ -157,6 +157,14 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-14 — Qwen routing, local only
+
+- Chat with no model already resolved to `qwen3.5-27b` when the registry is loaded. Document Q&A did not: it used the first id from the upstream `/models` list. The console could also auto-select the first usable model if Qwen was not loaded.
+- Document Q&A now resolves the registry default and sends that checkpoint id. If the upstream is serving something else, the gateway returns **HTTP 409** `model_not_loaded` and does not call the other model. An unknown explicit model is **HTTP 409** `unknown_model`.
+- The console selects the configured default only. It no longer falls through to Gemma.
+- Tests: `models.tests.test_registry_loader` + `ops.test_qwen_launch_path` 9 OK; `api/test_rag_conversation.py` 10 OK; `api/test_gateway_reliability.py` 17 OK; `web/test_server.py` 18 OK.
+- Did **not** restart the Pod, push, or change the volume. The live gateway still runs the previous code until an approved restart.
 
 ### 2026-10-14 — connect the next agent to this repo only
 

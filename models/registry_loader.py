@@ -120,6 +120,14 @@ def selection_decision(
         decision["error"] = "no_model_resolved"
         decision["reason"] = "unavailable"
         return decision
+    if decision["passthrough"]:
+        decision["allowed"] = False
+        decision["error"] = (
+            f"unknown model: {requested}. "
+            "Choose a configured model id such as qwen3.5-27b or gemma-4-31b-it."
+        )
+        decision["reason"] = "unknown_model"
+        return decision
     if decision["resolved_id"] is not None:
         entry = models[decision["resolved_id"]]
         if entry.get("selection_eligible") is False:
@@ -173,6 +181,25 @@ def resolve_requested_model(
     if allow_unlisted_passthrough:
         return name
     raise KeyError(f"model not allowed by registry: {name}")
+
+
+def matching_upstream_model_id(
+    registry: dict[str, Any],
+    model_id: str,
+    upstream_ids: list[str],
+) -> str | None:
+    """Return the id the upstream actually serves for this registry model.
+
+    Matches the checkpoint path first, then the registry id. Returns None when
+    that model is not in the upstream list, so callers do not substitute another.
+    """
+    token = upstream_model_token(registry, model_id)
+    seen = [item.strip() for item in upstream_ids if isinstance(item, str) and item.strip()]
+    if token in seen:
+        return token
+    if model_id in seen:
+        return model_id
+    return None
 
 
 def upstream_model_token(registry: dict[str, Any], model_id: str) -> str:

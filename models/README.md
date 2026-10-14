@@ -7,7 +7,7 @@ Git tracks model **metadata and serving profiles**. Multi-gigabyte weights stay 
 - `requirements.txt` — `PyYAML` for the loader
 - `tests/` — no-GPU unit tests
 
-Gemma (`gemma-4-31b-it`) remains the production default until Qwen live validation passes and an explicit switch is approved.
+Qwen (`qwen3.5-27b`) is the production default. Gemma (`gemma-4-31b-it`) stays optional and is not selected when Qwen is unavailable.
 
 Qwen weights path (not in Git):
 

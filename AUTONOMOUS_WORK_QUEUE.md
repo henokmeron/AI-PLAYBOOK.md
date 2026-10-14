@@ -3,7 +3,7 @@
 **Purpose:** Shared handover for Cursor and other collaborators working on AI Platform Build.
 **Current workstream:** Qwen3.5-27B integration.
 **Branch:** `feature/qwen3.5-27b-integration`
-**Last reported feature commit:** `01e7692` (PATH/`ninja` fix is in `083fa58` and is on GitHub; it is not pending)
+**Last reported feature commit:** `01e7692` on GitHub. Newer local commits (launch-path test, Qwen routing) are not pushed.
 **Tracking issue:** https://github.com/henokmeron/AI-PLAYBOOK.md/issues/1
 **Status:** Qwen is the RunPod-first production default. Live A100 SXM Pod serves `:8002`/`:8010`/`:8080`. Runtime archive + source snapshot `0b49946` on the Global Volume. See `ops/results/qwen-integration-status-2026-10-14.md` and `docs/AGENT_HANDOFF.md`.
 **Owner approval boundary:** Do not create new paid Pods, merge to `main`, delete volume assets, or restore Gemma onto the GPU without explicit approval. Prefer stopping idle Pods to limit GPU cost while leaving the volume intact.
@@ -55,7 +55,7 @@ Keep Qwen3.5-27B as the RunPod-first production default, preserve volume recover
 - 2026-10-13 (honest integration status): **Partially yes — not fully the platform** (historical). Superseded by 2026-10-14 status.
 - 2026-10-13 (tonight completion / post-acceptance): Dual-model registry; Qwen runtime archived to `/workspace/runtime-setup/qwen-vllm/`.
 - 2026-10-14: **Qwen is the production default.** A100 SXM cold start + main `:8002`/`:8010`/`:8080` E2E (chat, text/PDF/XLSX RAG, console UI) **VERIFIED**. Snapshot `0b49946` checksum OK. Evidence: `ops/results/qwen-integration-status-2026-10-14.md`, `docs/AGENT_HANDOFF.md`.
-- **Next action requiring owner:** stop the A100 Pod when idle to save cost (volume keeps assets). The `ninja` PATH fix is already on GitHub (`083fa58`). Do not open a different repository.
+- **Next action requiring owner:** stop the A100 Pod when idle to save cost (volume keeps assets). Do not restart it just to pick up local Qwen-routing changes. Do not open a different repository.
 
 ## Required handover format
 Report briefly:

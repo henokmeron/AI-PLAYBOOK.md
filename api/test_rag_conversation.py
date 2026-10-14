@@ -205,6 +205,19 @@ class RagConversationTests(unittest.TestCase):
             self.assertEqual(decision["resolved_id"], "qwen3.5-27b")
             self.assertIn("Qwen3.5-27B", outbound["model"])
             self.assertIn("fc05daec18b0a78c049392ed2e771dde82bdf654", outbound["model"])
+            omitted, omitted_decision = gateway.apply_chat_model_selection({
+                "messages": [{"role": "user", "content": "hi"}],
+            })
+            self.assertTrue(omitted_decision["allowed"])
+            self.assertEqual(omitted_decision["resolved_id"], "qwen3.5-27b")
+            self.assertEqual(omitted_decision["reason"], "default")
+            self.assertIn("fc05daec18b0a78c049392ed2e771dde82bdf654", omitted["model"])
+            _unknown, unknown = gateway.apply_chat_model_selection({
+                "model": "not-a-real-model",
+                "messages": [{"role": "user", "content": "hi"}],
+            })
+            self.assertFalse(unknown["allowed"])
+            self.assertEqual(unknown["reason"], "unknown_model")
         finally:
             gateway.PLATFORM_DEFAULT_MODEL_ID = previous_default
             gateway.PLATFORM_MODEL_REGISTRY = previous_registry

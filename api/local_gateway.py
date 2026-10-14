@@ -42,9 +42,9 @@ from retrieval_pipeline import (
 HOST = os.environ.get("PLATFORM_HOST", "127.0.0.1")
 PORT = int(os.environ.get("PLATFORM_PORT", "8010"))
 API_KEY = os.environ.get("PLATFORM_API_KEY", "")
-UPSTREAM = os.environ.get("VLLM_UPSTREAM_URL", "http://127.0.0.1:8000/v1").rstrip("/")
-# Optional model registry (YAML). When unset/unloadable, gateway behaviour matches the
-# prior single-upstream prototype and Gemma remains the operational default.
+UPSTREAM = os.environ.get("VLLM_UPSTREAM_URL", "http://127.0.0.1:8002/v1").rstrip("/")
+# Optional model registry (YAML). The code default upstream is Qwen's port.
+# Gemma is not selected when the registry cannot be loaded.
 PLATFORM_MODEL_REGISTRY = os.environ.get("PLATFORM_MODEL_REGISTRY", "").strip()
 PLATFORM_DEFAULT_MODEL_ID = os.environ.get("PLATFORM_DEFAULT_MODEL_ID", "").strip()
 RAG_DOCS_DIR = Path(os.environ.get("RAG_DOCS_DIR", "/workspace/rag-demo-docs"))
@@ -254,6 +254,85 @@ def apply_chat_model_selection(payload: dict[str, Any]) -> tuple[dict[str, Any],
     if not requested and PLATFORM_DEFAULT_MODEL_ID:
         updated["model"] = PLATFORM_DEFAULT_MODEL_ID
     return updated, None
+
+
+def resolve_rag_generation_model(
+    upstream_ids: list[str],
+    requested: str | None,
+) -> tuple[str | None, dict[str, Any]]:
+    """Choose the Document Q&A upstream id. Never substitute a different model.
+
+    With a registry, the omitted-model default is the configured active model
+    (Qwen) and that model's served id must appear in ``upstream_ids``.
+    Without a registry, a single reported upstream id is used so local fake
+    upstreams keep working. Several ids and no registry is an error.
+    """
+    registry = load_optional_model_registry()
+    if registry is None:
+        ids = [item.strip() for item in upstream_ids if isinstance(item, str) and item.strip()]
+        if requested:
+            if requested in ids:
+                return requested, {
+                    "allowed": True,
+                    "requested": requested,
+                    "resolved_id": None,
+                    "reason": "explicit_request",
+                    "upstream_model": requested,
+                    "error": None,
+                }
+            return None, {
+                "allowed": False,
+                "requested": requested,
+                "resolved_id": None,
+                "reason": "unknown_model",
+                "error": f"unknown model: {requested}",
+            }
+        if len(ids) == 1:
+            return ids[0], {
+                "allowed": True,
+                "requested": None,
+                "resolved_id": None,
+                "reason": "single_upstream",
+                "upstream_model": ids[0],
+                "error": None,
+            }
+        return None, {
+            "allowed": False,
+            "requested": None,
+            "resolved_id": None,
+            "reason": "model_not_loaded" if not ids else "ambiguous_upstream",
+            "error": "the inference upstream is not serving exactly one model, and no model registry is configured",
+        }
+
+    from registry_loader import matching_upstream_model_id, selection_decision
+
+    decision = selection_decision(
+        registry,
+        requested,
+        upstream_port=upstream_listen_port(),
+    )
+    if not decision.get("allowed", True):
+        return None, decision
+    resolved_id = decision.get("resolved_id")
+    if not isinstance(resolved_id, str):
+        decision = dict(decision)
+        decision["allowed"] = False
+        decision["reason"] = "no_model_resolved"
+        decision["error"] = "no model was resolved for Document Q&A"
+        return None, decision
+    token = matching_upstream_model_id(registry, resolved_id, upstream_ids)
+    if token is None:
+        decision = dict(decision)
+        decision["allowed"] = False
+        decision["reason"] = "model_not_loaded"
+        decision["error"] = (
+            f"model {resolved_id} is not being served by the inference upstream. "
+            "Refusing to use a different model."
+        )
+        return None, decision
+    decision = dict(decision)
+    decision["upstream_model"] = token
+    return token, decision
 
 
 def question_requests_broad_coverage(question: str) -> bool:
@@ -895,9 +974,27 @@ class Handler(BaseHTTPRequestHandler):
                 item.get("id") for item in model_list
                 if isinstance(item, dict) and isinstance(item.get("id"), str)
             ] if isinstance(model_list, list) else []
-            if not model_ids:
-                raise RuntimeError("No model IDs reported by inference upstream")
-            model = model_ids[0]
+            requested_model = payload.get("model")
+            if isinstance(requested_model, str):
+                requested_model = requested_model.strip() or None
+            else:
+                requested_model = None
+            model_token, decision = resolve_rag_generation_model(model_ids, requested_model)
+            if not model_token:
+                self.send_json(
+                    409,
+                    {
+                        "error": decision.get("error") or "model selection refused",
+                        "selection": {
+                            "requested": decision.get("requested"),
+                            "resolved_id": decision.get("resolved_id"),
+                            "reason": decision.get("reason"),
+                            "listen_port": decision.get("listen_port"),
+                        },
+                    },
+                )
+                return
+            reported_model = decision.get("resolved_id") or model_token
             messages = build_rag_completion_messages(
                 question,
                 evidence,
@@ -907,7 +1004,7 @@ class Handler(BaseHTTPRequestHandler):
             response = read_upstream_json(
                 "/chat/completions",
                 {
-                    "model": model,
+                    "model": model_token,
                     "messages": messages,
                     "temperature": 0,
                     "max_tokens": RAG_MAX_TOKENS,
@@ -960,7 +1057,8 @@ class Handler(BaseHTTPRequestHandler):
         body: dict[str, Any] = {
             "status": "answered",
             "answer": answer_text,
-            "model": model,
+            "model": reported_model,
+            "upstream_model": model_token,
             "collection": collection,
             "sources": sources,
             "retrieval": retrieval,

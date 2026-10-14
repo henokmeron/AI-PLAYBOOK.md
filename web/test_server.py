@@ -474,6 +474,12 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("PLATFORM_MODEL_ID", body.decode("utf-8"))
         self.assertFalse(any(hit["path"] == "/v1/chat/completions" for hit in gateway.hits))
 
+    def test_console_does_not_auto_select_a_non_default_model(self) -> None:
+        script = (Path(__file__).resolve().parent / "static" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("item.is_active_default && modelUsable(item)", script)
+        self.assertNotIn("return modelUsable(item); })[0]", script)
+        self.assertIn("Another model is not selected automatically.", script)
+
     def test_rag_returns_sources_and_abstention(self) -> None:
         gateway = FakeGateway()
         base = self.web(gateway)
