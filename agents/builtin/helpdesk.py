@@ -45,6 +45,7 @@ def _http_probe(url: str, timeout: float) -> dict[str, Any]:
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 — loopback only
             code = int(getattr(response, "status", 0) or 0)
+            content_type = str(response.headers.get("Content-Type") or "").lower()
             body = response.read(200).decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
         return {
@@ -60,10 +61,15 @@ def _http_probe(url: str, timeout: float) -> dict[str, Any]:
             "detail": _plain(type(exc).__name__ + ": " + str(exc), 200),
             "latency_ms": int((time.monotonic() - started) * 1000),
         }
+    # Keep observations compact: HTML console pages blow the agent token budget.
+    if "html" in content_type or body.lstrip().lower().startswith("<!doctype") or body.lstrip().lower().startswith("<html"):
+        detail = f"HTTP {code} HTML page"
+    else:
+        detail = _plain(body, 120) or f"HTTP {code}"
     return {
         "ok": 200 <= code < 400,
         "http_status": code,
-        "detail": _plain(body, 120) or f"HTTP {code}",
+        "detail": detail,
         "latency_ms": int((time.monotonic() - started) * 1000),
     }
 

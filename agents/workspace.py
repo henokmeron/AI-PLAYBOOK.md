@@ -360,8 +360,10 @@ class AgentDesk:
             model, registry, trace=trace, model_timeout=wall_seconds, on_progress=on_progress,
         )
         if looks_like_it_support(goal):
+            # Live Qwen helpdesk needs classify → diagnose → approve → verify →
+            # report; 16k tokens ran out after a successful remediation.
             budget = Budget(
-                max_iterations=10, max_tool_calls=8, max_total_tokens=16000,
+                max_iterations=12, max_tool_calls=10, max_total_tokens=48000,
                 max_wall_seconds=wall_seconds,
             )
         else:
