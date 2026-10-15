@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (Owner is stopping Pod `1g41ejmd99iyun` in the RunPod UI. This agent did not stop it and did not confirm the stopped state.)
+Last updated: **2026-10-15** (Owner says the Pod is restarted and open in the Cursor browser. This agent could not read the page because the desktop is locked. Live health was not checked.)
 
 ## Only this repository
 
@@ -44,7 +44,7 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 | Item | Value | Status |
 | --- | --- | --- |
-| Active test Pod | RunPod `1g41ejmd99iyun` (“brand new pod”), **A100-SXM4-80GB**, **$1.79/hr** | Owner said on 2026-10-15 they are stopping it. Use Stop, not Terminate. Keep volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373`. The stop was not confirmed from this agent. |
+| Active test Pod | RunPod `1g41ejmd99iyun` (“brand new pod”), **A100-SXM4-80GB**, **$1.79/hr** | Owner says it was stopped and then restarted, and that the RunPod page is open in the Cursor browser. The new SSH port was not read. Keep volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373`. |
 | SSH (TCP) | Last mapped port `root@216.81.248.126 -p 19091`, key `%USERPROFILE%\.ssh\id_ed25519` | That mapping dies when the Pod stops. Do not reuse `19091` or `11165` after the next start. Read the new port from the RunPod page. |
 | GPU / driver | 81,920 MiB, **0 MiB used**, driver 580.159.04 | VERIFIED 2026-10-15. Qwen is not loaded. |
 | Container | Host `uptime` printed about 9 weeks; treat that as the machine, not proof this Pod has been serving | Platform ports are down |
@@ -161,6 +161,13 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — restarted Pod is open in the browser, page not read
+
+- The owner says the Pod was restarted and is open in the Cursor browser. This process is still Linux. `id_ed25519` is absent. The old port `19091` was not used.
+- **BLOCKED:** the browser agent returned `DESKTOP_LOCKED` three times. It did not read the Pod id, the new SSH host, or the new TCP port, and it did not open a web terminal.
+- **NOT RUN:** `findmnt`, GPU, disk, weight inventory, Qwen `:8002`, gateway `:8010`, console `:8080`, `/tmp/AI-PLAYBOOK`, preflight, and `START.sh`. No service was started or stopped. No application id was invented.
+- Next action: release the desktop so the browser agent can read the open RunPod page. Then run the read-only checks. Do not run `START.sh` until `/workspace` is `fuse.geesefs` and the preflight has been read.
 
 ### 2026-10-15 — owner is stopping the Pod
 
