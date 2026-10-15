@@ -12,6 +12,7 @@ import re
 import urllib.parse
 
 from .catalog import Catalog, ConnectorSpec, Effect, OperationSpec
+from .endpoint import ENDPOINT, DeviceRegistry, EndpointService
 from .errors import AuthenticationError, InvalidRequest, NotFound
 from .microsoft_oauth import MicrosoftOAuth
 
@@ -235,12 +236,22 @@ class Microsoft365Client:
             self.network_calls += self.oauth.graph_calls - before
 
 
-def platform_catalog(oauth: MicrosoftOAuth | None = None) -> tuple[Catalog, Microsoft365Client]:
+def platform_catalog(
+    oauth: MicrosoftOAuth | None = None,
+    devices: DeviceRegistry | None = None,
+) -> tuple[Catalog, Microsoft365Client]:
     client = Microsoft365Client(oauth)
+    registry = devices if devices is not None else DeviceRegistry()
+    endpoint = EndpointService(registry)
 
     def perform(connector_id: str, operation: str, params: dict[str, Any]) -> Any:
-        if connector_id != MICROSOFT_365.connector_id:
-            raise AuthenticationError(f"{connector_id} has no client")
-        return client.perform(connector_id, operation, params)
+        if connector_id == MICROSOFT_365.connector_id:
+            return client.perform(connector_id, operation, params)
+        if connector_id == ENDPOINT.connector_id:
+            return endpoint.perform(connector_id, operation, params)
+        raise AuthenticationError(f"{connector_id} has no client. No request was sent.")
 
-    return Catalog([MICROSOFT_365], perform), client
+    catalog = Catalog([MICROSOFT_365, ENDPOINT], perform)
+    catalog.endpoint_service = endpoint  # type: ignore[attr-defined]
+    catalog.devices = registry  # type: ignore[attr-defined]
+    return catalog, client

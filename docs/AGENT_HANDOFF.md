@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (Pod restarted; old SSH port refused; this session still has no key).
+Last updated: **2026-10-15** (new Pod checked over SSH; Qwen is not loaded; source was not deployed).
 
 ## Only this repository
 
@@ -44,14 +44,14 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 | Item | Value | Status |
 | --- | --- | --- |
-| Active test Pod | RunPod `00n856z3eue5v9` (“testing system”), **A100-SXM4-80GB**, **$1.79/hr** | Running. The older Pod `3s3mh10hrkhocw` is not in the Pod list. |
-| SSH (TCP) | `root@154.54.102.31 -p 11165`, key `%USERPROFILE%\.ssh\id_ed25519` | VERIFIED 2026-10-15. Cheap health check only. |
-| GPU / driver | 81,920 MiB, **71,347 MiB used** | VERIFIED 2026-10-15. Qwen was left running. |
-| Container | 250 GB RAM, 30 GB overlay disk | OK |
-| Global Volume | Same volume id `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (fuse.geesefs) | VERIFIED |
-| Qwen | `127.0.0.1:8002` | HTTP 200 after ~1080s cold load on 2026-10-14 |
-| Gateway | `127.0.0.1:8010` | HTTP 200, `default_model_id` `qwen3.5-27b` |
-| Console | `127.0.0.1:8080` (tunnel: `-L 18080:127.0.0.1:8080`) | HTTP 200. The **running process** is still commit `98511df`. |
+| Active test Pod | RunPod `1g41ejmd99iyun` (“brand new pod”), **A100-SXM4-80GB**, **$1.79/hr** | Running and idle. The older Pod `00n856z3eue5v9` is not in the Pod list. |
+| SSH (TCP) | `root@216.81.248.126 -p 19091`, key `%USERPROFILE%\.ssh\id_ed25519` | VERIFIED 2026-10-15. The old `154.54.102.31:11165` actively refused. |
+| GPU / driver | 81,920 MiB, **0 MiB used**, driver 580.159.04 | VERIFIED 2026-10-15. Qwen is not loaded. |
+| Container | Host `uptime` printed about 9 weeks; treat that as the machine, not proof this Pod has been serving | Platform ports are down |
+| Global Volume | Same volume id `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (fuse.geesefs) | VERIFIED. The RunPod UI showed 0 bytes; SSH showed the files. |
+| Qwen | `127.0.0.1:8002` | Not listening. Weights present: 11 shards under revision `fc05daec…`. |
+| Gateway | `127.0.0.1:8010` | Not listening |
+| Console | `127.0.0.1:8080` | Not listening. `/tmp/AI-PLAYBOOK` is absent, so there is no running commit. |
 | Other Pod | “Qwen model testing system” **H100 NVL** showed **$0.00/hr** earlier; do not assume it is still needed or safe to delete | Leave alone unless user says otherwise |
 
 ### Exact volume paths that must remain
@@ -71,7 +71,7 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 - **GitHub** feature branches include the Qwen routing work. `main` is fast-forwarded to the same tip and pushed. It is not force-pushed.
 - `e1e360f` is the parent of **`c2323238041cea8317d2322e6d16554d0bc967bc`** (Qwen routing). That push is a fast-forward. The `ninja` PATH change itself is **`083fa58`**, already inside `e1e360f`.
 - Local checkout is `feature/qwen-a100-start-hardening`. Keep `feature/qwen3.5-27b-integration` on the same commit.
-- Live Pod source is `/tmp/AI-PLAYBOOK` at `98511df` on `feature/qwen3.5-27b-integration`, verified 2026-10-15. Qwen `:8002`, gateway `:8010`, and console `:8080` returned HTTP 200. Gemma on `:8000` was down. `MICROSOFT_CLIENT_ID` was unset. Weights were still present. The Pod was not restarted.
+- Live Pod source was `/tmp/AI-PLAYBOOK` at `98511df` on an earlier Pod. On 2026-10-15 that checkout is **absent** on `1g41ejmd99iyun`. Nothing is listening on `:8002`, `:8010`, or `:8080`. Gemma on `:8000` is down. `MICROSOFT_CLIENT_ID` is unset. Weights are still present. The Pod was not stopped and Qwen was not started.
 - Volume `VERSION.txt` and snapshot `…-01e7692.tar.gz` match SHA-256 `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370` (checked 2026-10-14).
 - Do not commit untracked `ops/_*.sh` / `ops/_*.py` probe helpers or `__pycache__`.
 
@@ -161,6 +161,14 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — idle Pod checked; read-only device check-in added in source
+
+- **VERIFIED:** Pod `1g41ejmd99iyun` (“brand new pod”), SSH `root@216.81.248.126 -p 19091`. Volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (`fuse.geesefs`). Official Qwen revision has 11 shards. Runtime archive is present (about 3.8G). GPU memory 0 / 81,920 MiB. `:8002`, `:8010`, `:8080`, and `:8000` did not answer. `/tmp/AI-PLAYBOOK` is absent. `MICROSOFT_CLIENT_ID` is unset. The old SSH port `11165` refused. The Pod was left running. Balance was about $4.89 against a $5 warning, at $1.79/hour, with the GPU idle.
+- **NOT RUN:** `START.sh`, the console-only reload, a model load, a Graph call, and a new volume snapshot. `ops/release/deploy-console-only.sh` refuses unless Qwen and the gateway are already healthy, and it does not signal those processes. It was not executed.
+- Entra app registrations did not load. The signed-in personal Microsoft account got AADSTS16000 against the Microsoft Services tenant. No app was created. No client id was copied.
+- Source adds a read-only enrolled-computer check-in and the console-only reload guard. The device secret is hashed. Extra fields, including a command, are rejected. The catalog stays `mock-tested`. A local collector call on this Windows PC returned a schema-valid report and was not sent to the Pod.
+- Tests: `integrations.tests.test_endpoint`, `ops.test_console_deploy`, `integrations.tests.test_catalog`, `integrations.tests.test_framework`, `agents.tests.test_execution`, `agents.tests.test_runtime`, `agents.tests.test_workspace`, `agents.tests.test_tools`, and `web.test_server` passed. `integrations.tests.test_microsoft_oauth` has one pre-existing failure on Windows because a test hard-codes `dir="/tmp"`. That test was not changed. No live Graph call and no model load.
 
 ### 2026-10-15 — Pod turned back on, still no deployment session
 

@@ -1,10 +1,10 @@
-# Endpoint support research — not a connector
+# Endpoint support
 
-Checked 2026-10-15 from public vendor pages. Nothing here is installed, configured, or able to reach a device. Do not treat this note as a working integration.
+Checked 2026-10-15. Remote screen control is still not installed. A read-only check-in now exists in source. It is not deployed on the Pod, and the catalog still says `mock-tested`, not `live-tested`.
 
 ## What was not done
 
-No TeamViewer, Intune Remote Help, or RustDesk package was installed. No device was enrolled. No API token was created. The catalog has no device connector, and the agent cannot start a remote session.
+No TeamViewer, Intune Remote Help, or RustDesk package was installed. No device was enrolled on the Pod. No API token was created. The agent cannot start a remote session, and there is no command that runs a repair.
 
 ## TeamViewer
 
@@ -28,14 +28,26 @@ The open-source RustDesk server is AGPL-3.0. Running a modified copy as a networ
 
 Sources: `github.com/rustdesk/rustdesk-server` LICENSE, `github.com/rustdesk/rustdesk-server-pro` terms, and RustDesk's Server Pro license page.
 
+## Read-only check-in in source
+
+`integrations/endpoint.py` and `integrations/endpoint_worker.py` implement the first payload only.
+
+- The operator creates a one-time enrolment code in the Agent page. The code is returned once and is not stored in the clear.
+- The worker runs on the computer the operator chose. It generates its own secret, sends that secret once, and writes it to a file the operator names. The server stores only a SHA-256 hash.
+- Later reports are `POST /api/devices/report` to `http://127.0.0.1` or `http://localhost` with an explicit port. Any other address is refused. The worker does not follow redirects and does not use an HTTP proxy.
+- The accepted fields are operating system, disk free and total bytes, memory, and boot time. A `command` field, a path, or any other extra field is rejected. Newlines in the operating-system text are flattened so the text stays data.
+- Revocation is an operator button. After revocation the same secret is rejected. Another customer cannot read or revoke the device.
+- The agent tool `read_device_diagnostics` appears only after a computer is enrolled. It reads the stored report. It cannot ask the computer to do anything else.
+- State defaults to memory. `ENDPOINT_STATE_FILE` may point at an absolute file outside this repository and, on Linux, outside `/workspace`.
+
+Evidence: unit tests, including a real `collect_local_diagnostics()` call on the developer Windows PC, and a loopback console test that rejected a command field and did not echo the device secret. Nothing was posted to the Pod. Do not describe this as a live customer integration.
+
 ## First safe diagnostic design
 
-This is a design only. There is no worker process.
-
 - The device runs a small program the operator installed on purpose. It opens only outbound connections to this platform. It does not listen for inbound control, and it does not install a remote-desktop client.
-- The device generates its own identity key. The server stores the public key and a display name. The private key stays on the device. Losing the server does not give anyone a way to drive the device.
+- The device generates its own secret. The server stores a SHA-256 hash and a display name. The secret stays on the device. Losing the server does not reveal a way to drive the device, because this connector has no command channel.
 - The server can revoke that identity. After revocation the worker's next connection is refused and it stops sending. Revocation is an operator action, recorded like any other approval.
 - The first payload is a diagnostic the person at the device can read locally before it is sent: operating system, disk free space, and last boot time. No screen capture, no keystroke log, no file contents, no stored passwords.
 - A later remote-help session, if the business buys TeamViewer, Intune Remote Help, or a properly licensed RustDesk deployment, starts only after a person at the device accepts it in that product. This agent would record the request and the approval. It would not send the input itself.
 
-Until that worker exists, the catalog must keep any device row at `unavailable`.
+The catalog row is `mock-tested` until a check-in is stored on the running console. It must not be marked `live-tested` from unit tests alone. Remote control stays unavailable.

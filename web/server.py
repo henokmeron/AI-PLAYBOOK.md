@@ -27,7 +27,8 @@ if str(_REPO_ROOT) not in sys.path:
 from agents.adapters.rag_library import GroundedDocumentRetriever
 from agents.model import OpenAICompatibleClient
 from agents.workspace import CONSOLE_TENANT, AgentDesk
-from integrations.errors import AuthenticationError, InvalidRequest
+from integrations.endpoint import DeviceRegistry
+from integrations.errors import AuthenticationError, InvalidRequest, RateLimited
 from integrations.microsoft365 import platform_catalog
 from integrations.microsoft_oauth import MicrosoftOAuth
 
@@ -402,8 +403,11 @@ class WebServer(ThreadingHTTPServer):
     def __init__(self, config: Config) -> None:
         self.config = config
         self.oauth = MicrosoftOAuth.from_env()
-        catalog, self.microsoft = platform_catalog(self.oauth)
+        self.devices = DeviceRegistry.from_env()
+        catalog, self.microsoft = platform_catalog(self.oauth, self.devices)
         self.microsoft.apply(catalog, CONSOLE_TENANT)
+        self.endpoint = catalog.endpoint_service  # type: ignore[attr-defined]
+        self.endpoint.apply(catalog)
         documents = GroundedDocumentRetriever(
             Path(os.environ.get("RAG_DOCS_DIR", "/workspace/rag-demo-docs")),
             Path(os.environ.get("RAG_MANAGED_DOCS_DIR", "/workspace/rag-managed-docs")),
@@ -467,6 +471,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/microsoft/callback":
             self.handle_microsoft_callback(parsed)
             return
+        if path == "/api/devices":
+            self.handle_device_list()
+            return
         static_file = resolve_static(self.config.static_dir, path)
         if static_file is None:
             self.send_error_json(404, "not found")
@@ -499,6 +506,14 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_agent_cancel()
         elif path == "/api/microsoft/disconnect":
             self.handle_microsoft_disconnect()
+        elif path == "/api/devices/enrolment":
+            self.handle_device_enrolment()
+        elif path == "/api/devices/enroll":
+            self.handle_device_enroll()
+        elif path == "/api/devices/report":
+            self.handle_device_report()
+        elif path == "/api/devices/revoke":
+            self.handle_device_revoke()
         else:
             self.send_error_json(404, "not found")
 
@@ -595,6 +610,97 @@ class Handler(BaseHTTPRequestHandler):
         self.server.oauth.disconnect()  # type: ignore[attr-defined]
         self.server.microsoft.apply(self.server.desk.catalog, CONSOLE_TENANT)  # type: ignore[attr-defined]
         self.send_json(200, {"connected": False})
+
+    def _loopback_client(self) -> bool:
+        return self.client_address[0] in {"127.0.0.1", "::1"}
+
+    def _refresh_endpoint(self) -> None:
+        self.server.endpoint.apply(self.server.desk.catalog)  # type: ignore[attr-defined]
+
+    def handle_device_list(self) -> None:
+        if not self._loopback_client():
+            self.send_error_json(403, "device routes are only available on the loopback console")
+            return
+        if not self.require_key():
+            return
+        self.send_json(200, {
+            "devices": self.server.devices.public_devices(CONSOLE_TENANT),  # type: ignore[attr-defined]
+            "remote_control": False,
+        })
+
+    def handle_device_enrolment(self) -> None:
+        if not self._loopback_client():
+            self.send_error_json(403, "device routes are only available on the loopback console")
+            return
+        if not self.require_key():
+            return
+        created = self.server.devices.create_enrolment(CONSOLE_TENANT)  # type: ignore[attr-defined]
+        self.send_json(200, created)
+
+    def handle_device_enroll(self) -> None:
+        if not self._loopback_client():
+            self.send_error_json(403, "device routes are only available on the loopback console")
+            return
+        payload = self.read_json_object(max_bytes=4096)
+        if payload is None:
+            return
+        try:
+            device_id = self.server.devices.enrol(  # type: ignore[attr-defined]
+                str(payload.get("code", "")),
+                str(payload.get("display_name", "")),
+                str(payload.get("device_secret", "")),
+            )
+        except AuthenticationError as exc:
+            self.send_error_json(401, exc.message)
+            return
+        except InvalidRequest as exc:
+            self.send_error_json(400, exc.message)
+            return
+        self._refresh_endpoint()
+        self.send_json(200, {"device_id": device_id, "remote_control": False})
+
+    def handle_device_report(self) -> None:
+        if not self._loopback_client():
+            self.send_error_json(403, "device routes are only available on the loopback console")
+            return
+        header = self.headers.get("Authorization", "")
+        secret = header[7:] if header.startswith("Bearer ") else ""
+        payload = self.read_json_object(max_bytes=4096)
+        if payload is None:
+            return
+        try:
+            result = self.server.devices.submit(secret, payload)  # type: ignore[attr-defined]
+        except AuthenticationError as exc:
+            self.send_error_json(401, exc.message)
+            return
+        except InvalidRequest as exc:
+            self.send_error_json(400, exc.message)
+            return
+        except RateLimited as exc:
+            self.send_error_json(429, exc.message)
+            return
+        self._refresh_endpoint()
+        self.send_json(200, result)
+
+    def handle_device_revoke(self) -> None:
+        if not self._loopback_client():
+            self.send_error_json(403, "device routes are only available on the loopback console")
+            return
+        if not self.require_key():
+            return
+        payload = self.read_json_object(max_bytes=4096)
+        if payload is None:
+            return
+        try:
+            self.server.devices.revoke(CONSOLE_TENANT, str(payload.get("device_id", "")))  # type: ignore[attr-defined]
+        except AuthenticationError as exc:
+            self.send_error_json(401, exc.message)
+            return
+        except InvalidRequest as exc:
+            self.send_error_json(400, exc.message)
+            return
+        self._refresh_endpoint()
+        self.send_json(200, {"revoked": True, "remote_control": False})
 
     def _agent_model(self) -> OpenAICompatibleClient:
         model_id = self.config.model_id if MODEL_ID_RE.fullmatch(self.config.model_id or "") else None

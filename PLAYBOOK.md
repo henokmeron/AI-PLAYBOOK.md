@@ -1078,3 +1078,10 @@ Research should lead to a decision, not a pile of links. Every research report s
 - New Pod `usual_coral_ape` (SSH `216.81.151.54:13774`) has NVIDIA **driver 570** / CUDA 12.8. Current vLLM wheels need cudart 13 → engine fails with insufficient driver. Weights + archives on Global Volume remain intact.
 - **Next:** redeploy same volume on driver ≥580, then `bash ops/start-first-release.sh --start` and E2E browser tests.
 - Acceptance: `ops/results/final-mission-acceptance-2026-10-13.md`.
+
+### 2026-10-15 — Idle Pod confirmed; read-only device check-in is source-only
+
+- Pod `1g41ejmd99iyun` is an A100 SXM at $1.79/hour. SSH `root@216.81.248.126 -p 19091` worked. The old port `11165` refused. The Global Volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373` is mounted. Qwen weights (11 shards) and the 3.8G runtime archive are present. GPU memory was 0. Ports 8002, 8010, and 8080 were not listening. Nothing was started or stopped.
+- `ops/release/deploy-console-only.sh` can replace only the console, and only after Qwen and the gateway are already healthy. It was not run.
+- Enrolled computers can submit operating system, disk, memory, and boot time through `integrations/endpoint_worker.py`. The server stores a hash of the device secret. There is no remote-control command. Catalog evidence is mock-tested. A collector call on the developer Windows PC was schema-valid and was not sent to the Pod.
+- Microsoft Graph is still not connected. A personal Microsoft account cannot open Entra app registrations (AADSTS16000). No application was created.

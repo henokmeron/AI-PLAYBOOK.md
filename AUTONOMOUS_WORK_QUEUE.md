@@ -5,7 +5,7 @@
 **Branch:** `feature/qwen3.5-27b-integration`
 **Last reported feature commit:** `main` and both feature branches match. Qwen routing is `c232323`. Completion audit is `docs/results/completion-audit-2026-10-14.md`.
 **Tracking issue:** https://github.com/henokmeron/AI-PLAYBOOK.md/issues/1
-**Status:** Qwen is the RunPod-first production default. Live A100 SXM Pod serves `:8002`/`:8010`/`:8080`. Runtime archive + source snapshot `0b49946` on the Global Volume. See `ops/results/qwen-integration-status-2026-10-14.md` and `docs/AGENT_HANDOFF.md`.
+**Status:** Qwen is the RunPod-first production default, but on 2026-10-15 Pod `1g41ejmd99iyun` had the volume mounted and the weights present while `:8002`/`:8010`/`:8080` were down. Do not assume the old SSH port `11165`. See `docs/AGENT_HANDOFF.md`.
 **Owner approval boundary:** Do not create new paid Pods, merge to `main`, delete volume assets, or restore Gemma onto the GPU without explicit approval. Prefer stopping idle Pods to limit GPU cost while leaving the volume intact.
 
 ## Read first
@@ -55,7 +55,7 @@ Keep Qwen3.5-27B as the RunPod-first production default, preserve volume recover
 - 2026-10-13 (honest integration status): **Partially yes — not fully the platform** (historical). Superseded by 2026-10-14 status.
 - 2026-10-13 (tonight completion / post-acceptance): Dual-model registry; Qwen runtime archived to `/workspace/runtime-setup/qwen-vllm/`.
 - 2026-10-14: **Qwen is the production default.** A100 SXM cold start + main `:8002`/`:8010`/`:8080` E2E (chat, text/PDF/XLSX RAG, console UI) **VERIFIED**. Snapshot `0b49946` checksum OK. Evidence: `ops/results/qwen-integration-status-2026-10-14.md`, `docs/AGENT_HANDOFF.md`.
-- **Next action requiring owner:** approve a Pod restart only when you want the new Agent page on the live console. Until then, Microsoft 365 stays disconnected. Do not install more plugins. The Teams plugin is a Cursor tool, not the product connector.
+- **Next action requiring owner:** the idle A100 is billing at $1.79/hour with a balance near $4.89. Stopping it, or approving `START.sh` on the already-running Pod, is the owner's call. Microsoft sign-in still needs a work or school account that can open Entra app registrations. The personal account returned AADSTS16000. Do not paste a client id into chat.
 
 ## Required handover format
 Report briefly:

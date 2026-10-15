@@ -131,6 +131,15 @@
             <button type="button" id="microsoft-disconnect" class="secondary" hidden>Disconnect Microsoft</button>
           </div>
         </section>
+        <section class="composer" aria-labelledby="device-title">
+          <h2 id="device-title">Enrolled computers</h2>
+          <p class="meta">A computer you enrol sends its operating system, disk space, memory, and boot time. It does not send files, passwords, or the screen, and this console cannot control it. No computer is connected until a check-in is stored.</p>
+          <ul id="device-list" class="sources"></ul>
+          <p id="device-code" class="meta" role="status"></p>
+          <div class="form-row">
+            <button type="button" id="device-enrol" class="secondary">Create an enrolment code</button>
+          </div>
+        </section>
         <p id="agent-execution" class="meta"></p>
         <div id="agent-record" class="log"></div>
         <div id="agent-log" class="log" aria-live="polite"></div>

@@ -827,10 +827,61 @@
         });
         if (row.connector_id === "microsoft365") renderMicrosoft(row.sign_in || {});
       });
+      loadDevices();
     }).catch(function (error) {
       showError(agentError, errorMessage(error));
     });
   }
+
+  function loadDevices() {
+    var list = document.getElementById("device-list");
+    request("/api/devices").then(function (body) {
+      list.textContent = "";
+      var devices = body.devices || [];
+      if (!devices.length) {
+        list.appendChild(el("li", null, "No computer is enrolled."));
+        return;
+      }
+      devices.forEach(function (device) {
+        var text = device.display_name + " — " + device.status;
+        if (device.report && device.report.status === "ok") {
+          text += ". " + device.report.os_family + ", " + device.report.disk_free_bytes + " bytes free. Remote control is off.";
+        } else {
+          text += ". No diagnostic has arrived. Remote control is off.";
+        }
+        var item = el("li");
+        item.appendChild(document.createTextNode(text + " "));
+        if (device.status === "enrolled") {
+          var button = el("button", "secondary", "Revoke");
+          button.type = "button";
+          button.addEventListener("click", function () {
+            request("/api/devices/revoke", { method: "POST", body: { device_id: device.device_id } }).then(function () {
+              loadDevices();
+              loadConnectors();
+            }).catch(function (error) {
+              showError(agentError, errorMessage(error));
+            });
+          });
+          item.appendChild(button);
+        }
+        list.appendChild(item);
+      });
+    }).catch(function (error) {
+      showError(agentError, errorMessage(error));
+    });
+  }
+
+  document.getElementById("device-enrol").addEventListener("click", function () {
+    var node = document.getElementById("device-code");
+    request("/api/devices/enrolment", { method: "POST", body: {} }).then(function (body) {
+      node.textContent = "On that computer run python -m integrations.endpoint_worker enrol --code " +
+        body.enrolment_code + " --name \"Office PC\" --console http://127.0.0.1:8080 --token-file <private-file>. " +
+        "The code works once, expires in " + body.expires_in_seconds +
+        " seconds, and cannot control the computer. It is not shown again.";
+    }).catch(function (error) {
+      showError(agentError, errorMessage(error));
+    });
+  });
 
   agentForm.addEventListener("submit", function (event) {
     event.preventDefault();

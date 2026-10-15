@@ -45,6 +45,7 @@ transition raises `InvalidTransition`. `final`, `failed` and `cancelled` are ter
 | `table_analysis` | `builtin/tables.py` | CSV/XLSX `describe`, `select` (filters, ≤50 rows), `aggregate` (sum/mean/min/max/count, grouping, ≤100 groups). Limits: ≤20k rows, ≤100 columns, ZIP-bomb pre-check on XLSX. Values like `N/A` are counted as skipped, never invented. |
 | `document_search` | `builtin/search.py` + `adapters/rag_library.RagLibrarySearchBackend` | Calls `rag_engine.load_chunks/retrieve/dedupe_ranked_chunks` and `document_library.get_collection_dir/list_documents`. The backend takes an explicit `allowed_collections` grant (the tenant boundary). |
 | `document_qa` | `adapters/rag_library.GatewayDocumentQABackend` | `POST /v1/rag/ask` on the loopback gateway, with a collection grant, no proxy and no redirects. Gateway has no retrieval-only endpoint, so this returns the gateway's answer + sources. |
+| `read_device_diagnostics` | `integrations/endpoint.py` | Latest enrolled-computer check-in (OS, disk, memory, boot time). Hidden until a device is enrolled. No command channel. Mock-tested, not live on the Pod. |
 | `validate_structured_output` | `builtin/structured.py` | Lets the model check a value against a named, pre-registered schema. |
 
 There are deliberately **no** shell, network-fetch, write, delete or arbitrary-path tools.

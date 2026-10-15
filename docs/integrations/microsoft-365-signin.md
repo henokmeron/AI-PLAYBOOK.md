@@ -4,8 +4,11 @@ This is the first real Microsoft connection. It is not connected. No Entra
 application was created, no application id is stored in this repository, no
 account has consented, and no request has reached Microsoft Graph.
 
-The running console on the Pod is still commit `98511df`. Publishing this file
-to GitHub does not deploy it.
+On 2026-10-15 the paid Pod was `1g41ejmd99iyun` (“brand new pod”), not the
+older checkout. SSH `root@216.81.248.126 -p 19091` answered. Qwen `:8002`,
+the gateway `:8010`, and the console `:8080` did not. `/tmp/AI-PLAYBOOK` was
+absent. The same Global Volume was mounted and the Qwen weights were present.
+Publishing this file does not deploy it, and `MICROSOFT_CLIENT_ID` was unset.
 
 ## What the code does
 
@@ -22,18 +25,22 @@ to GitHub does not deploy it.
 7. The connection record grants `mail:read` only when the token's scope list contains `Mail.Read`. Search and read then go through `Catalog.execute` as `m365_search_mail` and `m365_read_mail`. An empty search says that nothing matched. A Graph rejection is reported without the response body.
 8. Message ids are URL-encoded, including `/`, which real Graph ids contain. Send, draft, Teams, files, and calendar operations do not call Graph, even when `authorised=True` or when someone edits the connection record.
 
-The redirect host is the laptop tunnel, not a public address. The SSH tunnel
-must be `ssh -N -L 18080:127.0.0.1:8080 -p 11165`. Keep the console on
+The redirect host is the laptop tunnel, not a public address. The mapped SSH
+port changes when the Pod is recreated. The port seen on 2026-10-15 was
+`19091` on `216.81.248.126`. The tunnel shape is
+`ssh -N -L 18080:127.0.0.1:8080 -p <mapped-port>`. Keep the console on
 `127.0.0.1`. Microsoft ignores the port when matching a `localhost` redirect,
 but `127.0.0.1` must match exactly. The portal's redirect text box rejects
 `http://127.0.0.1`, so that URI is added in the application manifest.
 
 ## Exact registration
 
-The Cursor browser reached Entra and was shown Microsoft's sign-in page. No
-application was created. Sign in yourself at the Microsoft Entra admin center
-and create **one** app registration, only if an app named `Business AI local`
-is not already there:
+On 2026-10-15 the Entra app-registration blade was signed in with a personal
+Microsoft account. The portal returned AADSTS16000: that live.com account is
+not a member of the Microsoft Services tenant, so the application list did not
+load. No application named `Business AI local` could be confirmed, and none
+was created. Sign in with a work or school account that can open App
+registrations, then create **one** app only if that name is not already there:
 
 - Name: `Business AI local`
 - Supported account types: accounts in any organizational directory and personal Microsoft accounts
@@ -77,9 +84,11 @@ until that process is replaced.
 
 ## Console replacement
 
-The owner approved a console-only replacement on 2026-10-15. It was **not done**. This environment can open TCP `154.54.102.31:11165`, but it has no SSH private key, so it cannot log in, inspect the process, or replace it.
+A console-only replacement was requested earlier on 2026-10-15 and was not done then. It was not done in this session either.
 
-`bash /workspace/ai-platform-release/START.sh` is the wrong command while the stack is healthy. That launcher reuses a healthy Qwen, gateway, and console, so the new code would not load. A cold Qwen start is the expensive path (last cold load was about 1080 seconds at $1.79/hour).
+`ops/release/deploy-console-only.sh` is the guard. Without `CONSOLE_RESTART_APPROVED=yes` it only prints a dry run. With that variable it still refuses unless Qwen `:8002` and the gateway `:8010` already return HTTP 200, and it does not signal those processes. On Pod `1g41ejmd99iyun` both ports were down, so the script would refuse. It was not executed.
+
+`bash /workspace/ai-platform-release/START.sh` would cold-start Qwen. The last cold load was about 1080 seconds. The Pod is already billing at $1.79/hour with the GPU idle, and the balance was about $4.89. That start was not run.
 
 What may stop: **only the console process** on `127.0.0.1:8080`. Do not stop
 Qwen on `127.0.0.1:8002`. Do not stop the gateway on `127.0.0.1:8010`. Do not
