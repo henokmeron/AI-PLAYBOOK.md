@@ -79,6 +79,7 @@ class AgentRunner:
         max_reply_tokens: int = DEFAULT_MAX_REPLY_TOKENS,
         model_timeout: float = 120.0,
         retry_backoff_seconds: float = 0.5,
+        on_progress: Callable[[AgentTask], None] | None = None,
     ) -> None:
         self.model = model
         self.registry = registry
@@ -88,6 +89,7 @@ class AgentRunner:
         self.max_reply_tokens = max_reply_tokens
         self.model_timeout = model_timeout
         self.retry_backoff_seconds = retry_backoff_seconds
+        self.on_progress = on_progress
 
     # ----- public API -----------------------------------------------------
     def new_task(
@@ -245,6 +247,16 @@ class AgentRunner:
         if task.execution == status and status == ExecutionStatus.INVESTIGATING:
             return
         task.set_execution(status)
+        self._emit_progress(task)
+
+    def _emit_progress(self, task: AgentTask) -> None:
+        if self.on_progress is None:
+            return
+        try:
+            self.on_progress(task)
+        except Exception:
+            # Progress sinks must never break the run.
+            pass
 
     def _note(self, text: str, limit: int = 300) -> str:
         cleaned = redact_text(text)
@@ -270,6 +282,7 @@ class AgentRunner:
         task.transition(state)
         self.trace.record(task.task_id, "task_" + state.value, state.value,
                           reason=reason, usage=dict(task.usage.__dict__))
+        self._emit_progress(task)
 
     def _step(self, task: AgentTask, cancel: CancellationToken | None) -> None:
         task.usage.iterations += 1

@@ -120,7 +120,10 @@
       history.replaceState(null, "", location.pathname + location.search + "#" + name);
     }
     document.title = name === "documents" ? "Document Q&A" : name === "agent" ? "Agent" : name === "status" ? "System Status" : "Chat";
-    if (name === "agent") loadConnectors();
+    if (name === "agent") {
+      loadConnectors();
+      loadAgentHistory();
+    }
     if (name === "status") renderStatus();
   }
 
@@ -657,9 +660,12 @@
   var agentInfoText = document.getElementById("agent-info-text");
   var agentInfoInput = document.getElementById("agent-info-input");
   var agentCancel = document.getElementById("agent-cancel");
+  var agentHistory = document.getElementById("agent-history");
+  var agentHistoryEmpty = document.getElementById("agent-history-empty");
   var connectorList = document.getElementById("connector-list");
   var agentTaskId = "";
   var agentCallId = "";
+  var agentPollTimer = null;
   var executionLabels = {
     received: "Received",
     investigating: "Investigating",
@@ -672,6 +678,70 @@
     escalated: "Escalated",
     cancelled: "Cancelled"
   };
+  var terminalExecution = {
+    completed: true,
+    failed: true,
+    escalated: true,
+    cancelled: true
+  };
+
+  function stopAgentPoll() {
+    if (agentPollTimer) {
+      window.clearInterval(agentPollTimer);
+      agentPollTimer = null;
+    }
+  }
+
+  function loadAgentHistory() {
+    return request("/api/agent/history?limit=12").then(function (result) {
+      agentHistory.textContent = "";
+      var tasks = (result && result.tasks) || [];
+      agentHistoryEmpty.hidden = tasks.length > 0;
+      tasks.forEach(function (item) {
+        var label = executionLabels[item.execution] || item.execution || item.state || "unknown";
+        var goal = item.goal || "(no goal)";
+        if (goal.length > 80) goal = goal.slice(0, 77) + "...";
+        var row = el("li", null, label + " — " + goal);
+        row.title = item.task_id || "";
+        row.addEventListener("click", function () {
+          if (!item.task_id) return;
+          request("/api/agent?task_id=" + encodeURIComponent(item.task_id)).then(function (view) {
+            agentTaskId = view.task_id || "";
+            renderAgent(view);
+            if (view.running) startAgentPoll(view.task_id);
+          }).catch(function (error) {
+            showError(agentError, errorMessage(error));
+          });
+        });
+        agentHistory.appendChild(row);
+      });
+    }).catch(function () {
+      agentHistoryEmpty.hidden = false;
+      agentHistoryEmpty.textContent = "Task history is unavailable.";
+    });
+  }
+
+  function startAgentPoll(taskId) {
+    stopAgentPoll();
+    if (!taskId) return;
+    agentPollTimer = window.setInterval(function () {
+      request("/api/agent?task_id=" + encodeURIComponent(taskId)).then(function (view) {
+        renderAgent(view);
+        var execution = view.execution || view.state;
+        var paused = execution === "awaiting_approval" || execution === "awaiting_information";
+        if (!view.running && (terminalExecution[execution] || paused)) {
+          stopAgentPoll();
+          agentLoading.hidden = true;
+          agentSend.disabled = false;
+          loadAgentHistory();
+        }
+      }).catch(function () {
+        stopAgentPoll();
+        agentLoading.hidden = true;
+        agentSend.disabled = false;
+      });
+    }, 750);
+  }
 
   function renderAgent(view) {
     agentLog.textContent = "";
@@ -686,6 +756,7 @@
     }
     var execution = view.execution || view.state;
     var label = executionLabels[execution] || execution;
+    if (view.running) label = label + " (in progress)";
     var states = (view.states || []).map(function (item) {
       return executionLabels[item] || item;
     });
@@ -724,7 +795,7 @@
     var pending = view.pending_approval;
     agentApproval.hidden = !pending;
     agentInfo.hidden = execution !== "awaiting_information";
-    agentCancel.hidden = execution !== "awaiting_approval" && execution !== "awaiting_information";
+    agentCancel.hidden = !(view.cancellable || view.running || execution === "awaiting_approval" || execution === "awaiting_information");
     if (pending) {
       agentTaskId = view.task_id;
       agentCallId = pending.call_id || "";
@@ -887,15 +958,22 @@
     event.preventDefault();
     var task = agentTask.value.trim();
     if (!task) return;
+    stopAgentPoll();
     agentSend.disabled = true;
     agentLoading.hidden = false;
     showError(agentError, "");
-    request("/api/agent", { method: "POST", body: { task: task } }).then(function (result) {
+    request("/api/agent", { method: "POST", body: { task: task, wait: false } }).then(function (result) {
       agentTaskId = result.task_id || "";
       renderAgent(result);
+      if (result.running || !(terminalExecution[result.execution] || result.execution === "awaiting_approval" || result.execution === "awaiting_information")) {
+        startAgentPoll(agentTaskId);
+      } else {
+        agentSend.disabled = false;
+        agentLoading.hidden = true;
+        loadAgentHistory();
+      }
     }).catch(function (error) {
       showError(agentError, errorMessage(error));
-    }).then(function () {
       agentSend.disabled = false;
       agentLoading.hidden = true;
     });
@@ -947,11 +1025,22 @@
       body: { task_id: agentTaskId }
     }).then(function (result) {
       renderAgent(result);
+      if (result.running) startAgentPoll(agentTaskId);
+      else {
+        stopAgentPoll();
+        agentLoading.hidden = true;
+        agentSend.disabled = false;
+        loadAgentHistory();
+      }
     }).catch(function (error) {
       showError(agentError, errorMessage(error));
     });
   });
   renderAgent(null);
+  loadAgentHistory();
+  document.getElementById("nav-agent").addEventListener("click", function () {
+    loadAgentHistory();
+  });
 
   document.getElementById("status-refresh").addEventListener("click", refreshStatus);
 

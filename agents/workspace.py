@@ -5,7 +5,9 @@ not receive the system prompt, model transcripts, or hidden reasoning.
 """
 from __future__ import annotations
 
+import os
 import threading
+from pathlib import Path
 from typing import Any
 
 from integrations.approvals import payload_hash
@@ -16,10 +18,11 @@ from integrations.tenancy import TenantContext
 
 from .builtin.calculator import calculator_tool
 from .builtin.search import search_documents_tool
+from .history import TaskHistoryStore
 from .model import ModelClient
 from .redaction import redact
-from .runtime import AgentRunner
-from .state import AgentTask, Budget
+from .runtime import AgentRunner, CancellationToken
+from .state import EXECUTION_TERMINAL, AgentTask, Budget, ExecutionStatus, TaskState
 from .tools import Tool, ToolError, ToolRegistry
 from .trace import ExecutionTrace
 
@@ -31,6 +34,7 @@ _OBSERVABLE = {
 CONSOLE_TENANT = "local-console"
 _CONSOLE_TENANT = CONSOLE_TENANT
 _CONSOLE_PRINCIPAL = "console-user"
+_PAUSED = frozenset({TaskState.AWAITING_APPROVAL, TaskState.AWAITING_INFORMATION})
 
 
 def _tool(catalog: Catalog, ctx: TenantContext, connector_id: str, operation: str, spec_tool: str,
@@ -86,7 +90,7 @@ def tools_for(catalog: Catalog, ctx: TenantContext, documents: Any = None) -> li
     return tools
 
 
-def public_view(task: AgentTask, trace: ExecutionTrace) -> dict[str, Any]:
+def public_view(task: AgentTask, trace: ExecutionTrace, *, running: bool = False) -> dict[str, Any]:
     pending = None
     if task.pending_approval is not None:
         item = task.pending_approval
@@ -119,23 +123,33 @@ def public_view(task: AgentTask, trace: ExecutionTrace) -> dict[str, Any]:
         "pending_approval": pending,
         "activity": activity,
         "record": redact(task.record.to_dict()),
+        "running": bool(running),
+        "cancellable": bool(
+            running
+            or task.state in _PAUSED
+            or (not task.is_terminal and task.execution not in EXECUTION_TERMINAL)
+        ),
     }
 
 
 class AgentDesk:
-    """In-memory tasks for one loopback console. Not a customer tenant store."""
+    """In-memory tasks for one loopback console, with optional on-disk history."""
 
     def __init__(
         self,
         catalog: Catalog | None = None,
         ctx: TenantContext | None = None,
         documents: Any = None,
+        history_dir: Path | str | None = None,
     ) -> None:
         self.catalog = catalog if catalog is not None else platform_catalog()[0]
         self.ctx = ctx or TenantContext.create(_CONSOLE_TENANT, _CONSOLE_PRINCIPAL, [])
         self.documents = documents
         self._lock = threading.Lock()
-        self._sessions: dict[str, tuple[AgentRunner, AgentTask, ExecutionTrace]] = {}
+        self._sessions: dict[str, dict[str, Any]] = {}
+        if history_dir is None:
+            history_dir = os.environ.get("AGENT_HISTORY_DIR", "")
+        self.history = TaskHistoryStore(history_dir) if history_dir else None
 
     def connectors(self) -> list[dict[str, Any]]:
         rows = self.catalog.describe(self.ctx.tenant_id)
@@ -194,19 +208,108 @@ class AgentDesk:
         })
         return rows
 
-    def start(self, goal: str, model: ModelClient, *, wall_seconds: float = 60.0) -> dict[str, Any]:
+    def _view(self, task: AgentTask, trace: ExecutionTrace, *, running: bool = False) -> dict[str, Any]:
+        view = public_view(task, trace, running=running)
+        if self.history is not None:
+            self.history.save(view)
+        return view
+
+    def _session(self, task_id: str) -> dict[str, Any]:
+        with self._lock:
+            session = self._sessions.get(task_id)
+        if session is None:
+            raise KeyError(task_id)
+        return session
+
+    def start(
+        self,
+        goal: str,
+        model: ModelClient,
+        *,
+        wall_seconds: float = 60.0,
+        wait: bool = True,
+    ) -> dict[str, Any]:
         if not isinstance(goal, str) or not goal.strip() or len(goal) > 2000:
             raise ValueError("task must be 1 to 2000 characters")
+        cancel = CancellationToken()
         trace = ExecutionTrace()
+
+        def on_progress(task: AgentTask) -> None:
+            with self._lock:
+                session = self._sessions.get(task.task_id)
+                running = bool(session and session.get("thread") and session["thread"].is_alive())
+            self._view(task, trace, running=running)
+
         registry = ToolRegistry(tools_for(self.catalog, self.ctx, self.documents))
-        runner = AgentRunner(model, registry, trace=trace, model_timeout=wall_seconds)
+        runner = AgentRunner(
+            model, registry, trace=trace, model_timeout=wall_seconds, on_progress=on_progress,
+        )
         task = runner.new_task(goal, budget=Budget(
             max_iterations=6, max_tool_calls=4, max_total_tokens=12000, max_wall_seconds=wall_seconds,
         ))
-        runner.run(task)
+        session = {
+            "runner": runner,
+            "task": task,
+            "trace": trace,
+            "cancel": cancel,
+            "thread": None,
+        }
         with self._lock:
-            self._sessions[task.task_id] = (runner, task, trace)
-        return public_view(task, trace)
+            self._sessions[task.task_id] = session
+
+        if wait:
+            runner.run(task, cancel)
+            return self._view(task, trace, running=False)
+
+        def worker() -> None:
+            try:
+                runner.run(task, cancel)
+            finally:
+                with self._lock:
+                    current = self._sessions.get(task.task_id)
+                    if current is not None:
+                        current["thread"] = None
+                self._view(task, trace, running=False)
+
+        thread = threading.Thread(target=worker, name=f"agent-{task.task_id[:8]}", daemon=True)
+        session["thread"] = thread
+        self._view(task, trace, running=True)
+        thread.start()
+        return public_view(task, trace, running=True)
+
+    def get(self, task_id: str) -> dict[str, Any]:
+        try:
+            session = self._session(task_id)
+        except KeyError:
+            if self.history is not None:
+                stored = self.history.get(task_id)
+                if stored is not None:
+                    return stored
+            raise
+        task = session["task"]
+        trace = session["trace"]
+        thread = session.get("thread")
+        running = bool(thread is not None and thread.is_alive())
+        return public_view(task, trace, running=running)
+
+    def history_list(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        live: dict[str, dict[str, Any]] = {}
+        with self._lock:
+            for task_id, session in self._sessions.items():
+                thread = session.get("thread")
+                running = bool(thread is not None and thread.is_alive())
+                live[task_id] = public_view(session["task"], session["trace"], running=running)
+        if self.history is None:
+            rows = sorted(
+                live.values(),
+                key=lambda row: row.get("task_id") or "",
+                reverse=True,
+            )
+            return rows[:limit]
+        # Refresh history for live tasks, then list from disk (newest first).
+        for view in live.values():
+            self.history.save(view)
+        return self.history.list(limit=limit)
 
     def decide(
         self, task_id: str, approved: bool, approver: str, call_id: str,
@@ -214,33 +317,37 @@ class AgentDesk:
     ) -> dict[str, Any]:
         if not isinstance(call_id, str) or not call_id:
             raise ValueError("call_id is required")
-        with self._lock:
-            session = self._sessions.get(task_id)
-        if session is None:
-            raise KeyError(task_id)
-        runner, task, trace = session
+        session = self._session(task_id)
+        runner, task, trace, cancel = (
+            session["runner"], session["task"], session["trace"], session["cancel"],
+        )
         pending = task.pending_approval
         if pending is None or pending.call_id != call_id:
             raise ValueError("approval does not match the pending action")
         if arguments is not None and arguments != pending.arguments:
             raise ValueError("approval arguments do not match the pending action")
-        runner.resolve_approval(task, approved=approved, approver=approver, call_id=call_id)
-        return public_view(task, trace)
+        runner.resolve_approval(
+            task, approved=approved, approver=approver, call_id=call_id, cancel=cancel,
+        )
+        return self._view(task, trace, running=False)
 
     def inform(self, task_id: str, text: str) -> dict[str, Any]:
-        with self._lock:
-            session = self._sessions.get(task_id)
-        if session is None:
-            raise KeyError(task_id)
-        runner, task, trace = session
-        runner.provide_information(task, text)
-        return public_view(task, trace)
+        session = self._session(task_id)
+        runner, task, trace, cancel = (
+            session["runner"], session["task"], session["trace"], session["cancel"],
+        )
+        runner.provide_information(task, text, cancel)
+        return self._view(task, trace, running=False)
 
     def cancel(self, task_id: str) -> dict[str, Any]:
-        with self._lock:
-            session = self._sessions.get(task_id)
-        if session is None:
-            raise KeyError(task_id)
-        runner, task, trace = session
+        session = self._session(task_id)
+        runner, task, trace, cancel = (
+            session["runner"], session["task"], session["trace"], session["cancel"],
+        )
+        cancel.cancel()
+        thread = session.get("thread")
+        if thread is not None and thread.is_alive():
+            # Cooperative: the worker checks the token between steps.
+            return public_view(task, trace, running=True)
         runner.cancel(task, "cancelled by the operator")
-        return public_view(task, trace)
+        return self._view(task, trace, running=False)

@@ -73,6 +73,11 @@ Azure is an option, not a requirement. We will choose infrastructure after evalu
 
 Do not buy large cloud resources until the technical design requires them.
 
+### 2026-10-15 — Agent execution loop (progress + history)
+
+- Console Agent desk supports async runs (`wait: false`), live status polling, cooperative cancel, and redacted task history under `AGENT_HISTORY_DIR`.
+- Details: `docs/agents/README.md`, `docs/results/agent-async-history-2026-10-15.md`.
+
 ### 2026-10-14 — RunPod-first first release (Qwen primary)
 
 - **Hosting:** RunPod Global Volume + Pod GPU is the standalone first-release deployment. Azure is optional/deferred and not required to start, chat, or recover.

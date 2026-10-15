@@ -146,12 +146,17 @@
         <form id="agent-form" class="composer">
           <label for="agent-task">Task</label>
           <textarea id="agent-task" rows="3" maxlength="2000" required placeholder="For example: what is 99.498 times 7?"></textarea>
-          <p class="meta">File attachments on this page are not supported and are not indexed. Upload a file on Document Q&amp;A if it should be searchable.</p>
+          <p class="meta">File attachments on this page are not supported and are not indexed. Upload a file on Document Q&amp;A if it should be searchable. Progress updates while the task runs, and recent tasks are listed below for audit.</p>
           <div class="form-row">
             <button type="submit" id="agent-send">Run task</button>
             <span id="agent-loading" class="loading" role="status" hidden>Working…</span>
           </div>
         </form>
+        <section class="composer" aria-labelledby="agent-history-title">
+          <h2 id="agent-history-title">Recent tasks</h2>
+          <ul id="agent-history" class="sources"></ul>
+          <p id="agent-history-empty" class="meta">No saved tasks yet on this console.</p>
+        </section>
         <div id="agent-approval" class="composer" hidden>
           <h2>Approve this exact action</h2>
           <p id="agent-approval-text"></p>

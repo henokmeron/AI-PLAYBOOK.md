@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (Pod `vx4oe3oyfsqnz8` / `romantic_gray_canidae` on driver **580**; Qwen + gateway + console **VERIFIED**).
+Last updated: **2026-10-15** (Agent async progress + task history shipped locally; CUDA-13 Pod still **VERIFIED** on driver **580** — stop when idle).
 
 ## Only this repository
 
@@ -161,6 +161,13 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — agent async progress + auditable history (local)
+
+- **VERIFIED (local):** `AgentDesk.start(wait=False)`, cooperative cancel, `TaskHistoryStore`, `GET /api/agent`, `GET /api/agent/history`, Agent UI poll + recent-task list. Tests: `agents.tests.test_history` 4 OK; agents suite 90 OK; `web.test_server` 23 OK.
+- **Live Pod cheap recheck:** `vx4oe3oyfsqnz8` still at `154.54.102.49:18454`, driver 580.126.16, `:8002`/`:8010`/`:8080` HTTP 200, model `qwen3.5-27b`. Expensive E2E/agent live smoke **not** re-run. Evidence: `docs/results/agent-async-history-2026-10-15.md`.
+- **E2E script note:** `_pod_e2e_verify.py` covers real chat + RAG only; it does not cover Agent desk/history.
+- Cost: stop (do not terminate) the Pod when idle; keep Global Volume.
 
 ### 2026-10-15 — replace driver-570 Pod with CUDA-13 A100; platform VERIFIED
 

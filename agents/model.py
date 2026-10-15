@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -165,14 +166,23 @@ Script = str | Callable[[list[dict[str, str]]], str] | Exception
 class ScriptedModel:
     """Deterministic fake model. Each step is a string, a callable or an exception."""
 
-    def __init__(self, steps: list[Script], tokens_per_reply: int = 50) -> None:
+    def __init__(
+        self,
+        steps: list[Script],
+        tokens_per_reply: int = 50,
+        *,
+        delay_seconds: float = 0.0,
+    ) -> None:
         self._steps = list(steps)
         self.calls: list[list[dict[str, str]]] = []
         self.tokens_per_reply = tokens_per_reply
+        self.delay_seconds = max(0.0, float(delay_seconds))
 
     def complete(
         self, messages: list[dict[str, str]], *, max_tokens: int, timeout: float
     ) -> ModelReply:
+        if self.delay_seconds:
+            time.sleep(self.delay_seconds)
         self.calls.append([dict(m) for m in messages])
         if not self._steps:
             raise ModelError("scripted model has no more steps")

@@ -412,7 +412,11 @@ class WebServer(ThreadingHTTPServer):
             Path(os.environ.get("RAG_DOCS_DIR", "/workspace/rag-demo-docs")),
             Path(os.environ.get("RAG_MANAGED_DOCS_DIR", "/workspace/rag-managed-docs")),
         )
-        self.desk = AgentDesk(catalog, documents=documents)
+        history_dir = os.environ.get(
+            "AGENT_HISTORY_DIR",
+            "/tmp/agent-task-history",
+        )
+        self.desk = AgentDesk(catalog, documents=documents, history_dir=history_dir)
         super().__init__((config.host, config.port), Handler)
 
 
@@ -464,6 +468,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/connectors":
             self.handle_connectors()
+            return
+        if path == "/api/agent":
+            self.handle_agent_get(parsed)
+            return
+        if path == "/api/agent/history":
+            self.handle_agent_history(parsed)
             return
         if path == "/api/microsoft/start":
             self.handle_microsoft_start()
@@ -717,14 +727,57 @@ class Handler(BaseHTTPRequestHandler):
         if payload is None:
             return
         goal = payload.get("task")
+        wait = payload.get("wait", True)
+        if not isinstance(wait, bool):
+            self.send_error_json(400, "wait must be a boolean")
+            return
         try:
             view = self.server.desk.start(  # type: ignore[attr-defined]
-                goal, self._agent_model(), wall_seconds=min(60.0, self.config.upstream_timeout),
+                goal,
+                self._agent_model(),
+                wall_seconds=min(60.0, self.config.upstream_timeout),
+                wait=wait,
             )
         except ValueError as exc:
             self.send_error_json(400, str(exc))
             return
         self.send_json(200, view)
+
+    def handle_agent_get(self, parsed) -> None:  # type: ignore[no-untyped-def]
+        if self.require_key() is None:
+            return
+        query = parse_qs(parsed.query or "")
+        task_ids = query.get("task_id") or []
+        task_id = task_ids[0] if task_ids else ""
+        if not task_id:
+            self.send_error_json(400, "task_id is required")
+            return
+        try:
+            view = self.server.desk.get(task_id)  # type: ignore[attr-defined]
+        except KeyError:
+            self.send_error_json(404, "task not found")
+            return
+        except ValueError as exc:
+            self.send_error_json(400, str(exc))
+            return
+        self.send_json(200, view)
+
+    def handle_agent_history(self, parsed) -> None:  # type: ignore[no-untyped-def]
+        if self.require_key() is None:
+            return
+        query = parse_qs(parsed.query or "")
+        raw_limit = (query.get("limit") or ["20"])[0]
+        try:
+            limit = int(raw_limit)
+        except ValueError:
+            self.send_error_json(400, "limit must be an integer")
+            return
+        try:
+            rows = self.server.desk.history_list(limit=limit)  # type: ignore[attr-defined]
+        except ValueError as exc:
+            self.send_error_json(400, str(exc))
+            return
+        self.send_json(200, {"tasks": rows, "count": len(rows)})
 
     def handle_agent_decision(self) -> None:
         if self.require_key() is None:

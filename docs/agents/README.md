@@ -1,9 +1,10 @@
 # Controlled agent foundation (`agents/`)
 
-Status: **prototype, unit-tested locally with a scripted fake model. Live smoke against Qwen3.5-27B
-via the gateway: VERIFIED for one calculator task** (see `live-smoke-2026-10-14.md`).
-Pure Python standard library (openpyxl is used only if installed, for XLSX tables).
-Nothing in `rag/`, `api/` or `web/` was modified; the agent calls them through adapters.
+Status: **prototype with an operator execution loop, async progress, and auditable history.**
+Unit-tested locally with a scripted fake model. Live smoke against Qwen3.5-27B via the gateway:
+**VERIFIED** for one calculator task (see `live-smoke-2026-10-14.md`). Pure Python standard library
+(openpyxl is used only if installed, for XLSX tables). The console (`web/`) hosts `AgentDesk`;
+RAG is reached only through adapters.
 
 ## What it is
 
@@ -29,6 +30,8 @@ transition raises `InvalidTransition`. `final`, `failed` and `cancelled` are ter
 | Retries | `runtime._execute` | Only `idempotent=True` tools, only `retryable` errors (timeout/transient), with exponential backoff. Tools that aren't idempotent or need approval have `max_retries` forced to 0. |
 | Approval gate | `Tool.requires_approval` | The run pauses in `awaiting_approval` with the exact pending call. `resolve_approval(approved=…, approver=…)` executes it or reports a denial. The operator API also requires the pending `call_id`. A catalog write is authorised only by a one-time grant for those exact arguments. |
 | Operator status | `ExecutionStatus` on the task | The runner records received, investigating, awaiting information, awaiting approval, executing, verifying, completed, failed, escalated, and cancelled. The console shows that record. It does not draw steps the runner did not take. |
+| Async progress | `AgentDesk.start(..., wait=False)` | Console POST defaults to `wait: false`, returns immediately, and polls `GET /api/agent?task_id=…` for live status, tool activity, and verification. Mid-run cancel sets a cooperative token. |
+| Auditable history | `agents/history.TaskHistoryStore` | Public (redacted) task snapshots under `AGENT_HISTORY_DIR` (default `/tmp/agent-task-history`). `GET /api/agent/history` lists recent tasks. Bounded retention. No system prompts or keys. |
 | Loop prevention | `Budget.max_repeated_calls` | An identical `(tool, arguments)` call is blocked and the model is told to reuse the earlier result. Repeats count as consecutive errors, so a stuck model ends in `failed: loop detected`. |
 | Protocol robustness | `agents/protocol.py` | One JSON action per turn (`tool` / `final` / `refuse`); fenced or prose-wrapped JSON is accepted; `<think>` blocks are stripped. Bounded format-error retries. |
 | Structured output | `new_task(output_schema=…)` | The final `output` is validated, with a bounded number of correction turns. |
