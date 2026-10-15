@@ -55,7 +55,7 @@ Keep Qwen3.5-27B as the RunPod-first production default, preserve volume recover
 - 2026-10-13 (honest integration status): **Partially yes — not fully the platform** (historical). Superseded by 2026-10-14 status.
 - 2026-10-13 (tonight completion / post-acceptance): Dual-model registry; Qwen runtime archived to `/workspace/runtime-setup/qwen-vllm/`.
 - 2026-10-14: **Qwen is the production default.** A100 SXM cold start + main `:8002`/`:8010`/`:8080` E2E (chat, text/PDF/XLSX RAG, console UI) **VERIFIED**. Snapshot `0b49946` checksum OK. Evidence: `ops/results/qwen-integration-status-2026-10-14.md`, `docs/AGENT_HANDOFF.md`.
-- **Next action requiring owner:** the desktop was free and Chrome on this machine has no RunPod tab. The new SSH port is unknown. Open the restarted Pod page here, or run the PowerShell check from the Windows PC with the new port and `C:\Users\henok\.ssh\id_ed25519`. Do not reuse `19091`. Live Pod health was not checked and `START.sh` was not run.
+- **Next action requiring owner:** on 2026-10-15, `216.81.248.126:19091` refused the connection and this machine has no `id_ed25519`. Pod health was not read and `START.sh` was not run. Read the new SSH host and port from the RunPod page and connect from the Windows PC with `C:\Users\henok\.ssh\id_ed25519`. Do not reuse `19091`.
 
 ## Required handover format
 Report briefly:

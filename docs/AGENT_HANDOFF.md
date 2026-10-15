@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (Desktop was free. Chrome has no RunPod tab. The new SSH port is still unknown. Live Pod health was not checked.)
+Last updated: **2026-10-15** (`216.81.248.126:19091` refused the connection. The SSH key is absent on this machine. Pod health was not read.)
 
 ## Only this repository
 
@@ -45,7 +45,7 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 | Item | Value | Status |
 | --- | --- | --- |
 | Active test Pod | RunPod `1g41ejmd99iyun` (“brand new pod”), **A100-SXM4-80GB**, **$1.79/hr** | Owner says it was stopped and then restarted, and that the RunPod page is open in the Cursor browser. The new SSH port was not read. Keep volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373`. |
-| SSH (TCP) | Last mapped port `root@216.81.248.126 -p 19091`, key `%USERPROFILE%\.ssh\id_ed25519` | That mapping dies when the Pod stops. Do not reuse `19091` or `11165` after the next start. Read the new port from the RunPod page. |
+| SSH (TCP) | Tried `root@216.81.248.126 -p 19091` on 2026-10-15 after the owner said the Pod was running | **FAILED.** TCP connection refused. `$HOME/.ssh/id_ed25519` is absent. Read the new host and port from the RunPod page. Do not reuse `19091` or `11165`. |
 | GPU / driver | 81,920 MiB, **0 MiB used**, driver 580.159.04 | VERIFIED 2026-10-15. Qwen is not loaded. |
 | Container | Host `uptime` printed about 9 weeks; treat that as the machine, not proof this Pod has been serving | Platform ports are down |
 | Global Volume | Same volume id `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (fuse.geesefs) | VERIFIED. The RunPod UI showed 0 bytes; SSH showed the files. |
@@ -161,6 +161,13 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — documented SSH port refused
+
+- Started from `934056fed638409a390ceb3aab340e67de10c168`. Working tree had only untracked `ops/__pycache__/` and `ops/release/__pycache__/`. Those were not committed. This process is Linux. `USERPROFILE` is unset. `%USERPROFILE%\.ssh\id_ed25519` is not here.
+- **FAILED:** TCP `216.81.248.126:19091` returned connection refused. SSH with `BatchMode=yes`, `IdentitiesOnly=yes`, connect timeout 8 seconds, identity `$HOME/.ssh/id_ed25519` printed `Identity file /home/ubuntu/.ssh/id_ed25519 not accessible: No such file or directory` and `ssh: connect to host 216.81.248.126 port 19091: Connection refused`. Exit 255. No key was generated.
+- **NOT RUN:** `/workspace` mount, GPU, weights, runtime archive, source revision, preflight, Qwen `:8002`, gateway `:8010`, console `:8080`, and `START.sh`. No Pod was created and nothing was deleted.
+- Next action: on the Windows PC, read the new SSH host and port from the running Pod’s RunPod page and connect with `C:\Users\henok\.ssh\id_ed25519`. Do not reuse port `19091`.
 
 ### 2026-10-15 — desktop free, RunPod page not open here
 
