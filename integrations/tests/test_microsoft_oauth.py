@@ -322,7 +322,7 @@ class OAuthTests(unittest.TestCase):
 
     def test_revoked_refresh_removes_the_saved_sign_in(self) -> None:
         transport = Transport()
-        with tempfile.TemporaryDirectory(dir="/tmp") as directory:
+        with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "token.json"
             oauth = MicrosoftOAuth(
                 client_id=CLIENT, transport=transport, token_file=path, clock=lambda: 1_000.0,
