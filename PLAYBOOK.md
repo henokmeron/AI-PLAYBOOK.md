@@ -1079,6 +1079,11 @@ Research should lead to a decision, not a pile of links. Every research report s
 - **Next:** redeploy same volume on driver ≥580, then `bash ops/start-first-release.sh --start` and E2E browser tests.
 - Acceptance: `ops/results/final-mission-acceptance-2026-10-13.md`.
 
+### 2026-10-15 — Cloud Agent cannot use the RunPod key
+
+- Started from `4f3f4f82af268e6363182b886dac3a9a5cc01faf`. TCP `216.81.248.126:19091` accepts a connection. This Cloud Agent has no private key, no RunPod credential, and no self-hosted worker. The Pod was not changed.
+- Resume in Cursor on the Windows PC at `C:\Users\henok\src\AI-PLAYBOOK.md`. The key is `C:\Users\henok\.ssh\id_ed25519`. The read-only SSH check and the console-only deploy command are in `docs/AGENT_HANDOFF.md`. Deploy the console only after `:8002` and `:8010` already return HTTP 200. Do not run `START.sh` without a separate approval. Do not paste the key or a Microsoft application id into chat.
+
 ### 2026-10-15 — Idle Pod confirmed; read-only device check-in is source-only
 
 - Pod `1g41ejmd99iyun` is an A100 SXM at $1.79/hour. SSH `root@216.81.248.126 -p 19091` worked. The old port `11165` refused. The Global Volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373` is mounted. Qwen weights (11 shards) and the 3.8G runtime archive are present. GPU memory was 0. Ports 8002, 8010, and 8080 were not listening. Nothing was started or stopped.

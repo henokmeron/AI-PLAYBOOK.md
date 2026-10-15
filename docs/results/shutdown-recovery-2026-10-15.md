@@ -2,6 +2,8 @@
 
 The owner was about to stop RunPod `00n856z3eue5v9`. This note records what was saved and what was not. A new Global Volume snapshot was **not** created.
 
+**Current Pod, checked again on 2026-10-15:** SSH is `root@216.81.248.126 -p 19091`, not `154.54.102.31:11165`. The command later in this file that uses port `11165` is the historical shutdown attempt. Port `11165` refuses connections. Use the Windows command in `docs/AGENT_HANDOFF.md`.
+
 ## Where this was run
 
 | Check | Result |

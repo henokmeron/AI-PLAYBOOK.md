@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (Pod SSH port 19091 still accepts TCP; this machine cannot log in; source was not deployed).
+Last updated: **2026-10-15** (Cloud Agent searched for the RunPod key and does not have it. Resume from the Windows PC. Nothing on the Pod was changed.)
 
 ## Only this repository
 
@@ -161,6 +161,28 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — existing RunPod key is not on this Cloud Agent
+
+- Started from GitHub `4f3f4f82af268e6363182b886dac3a9a5cc01faf`.
+- **VERIFIED:** TCP `216.81.248.126:19091` still accepts a connection. No SSH login was attempted in this pass. The earlier login from this VM returned `Permission denied (publickey,password)`.
+- **VERIFIED:** this VM has no private key. `~/.ssh` contains `known_hosts` only. A filename search and a header search found no OpenSSH or RSA private key outside test data. No SSH config, no `ssh-agent`, no RunPod API credential, no RunPod config file, and no connected self-hosted worker. GitHub Actions secret names are not readable from this token (HTTP 403). The cloud environment JSON is owner-restricted and was not exposed. `/workspace` here is the root disk, not `fuse.geesefs`.
+- The documented key remains `%USERPROFILE%\.ssh\id_ed25519` on the owner’s Windows PC (`C:\Users\henok\.ssh\id_ed25519`). It was not copied, printed, or committed.
+- **NOT RUN:** a new Pod, a firewall change, an SSH reset, `START.sh`, `ops/release/deploy-console-only.sh`, and any Graph call. The 35 passing tests were not rerun. No Entra application id was invented.
+- **Next action, on the Windows PC, in PowerShell.** Confirm the key file exists, then run the read-only check. Do not paste the key into chat.
+
+```powershell
+Test-Path "$env:USERPROFILE\.ssh\id_ed25519"
+ssh -o BatchMode=yes -o ConnectTimeout=8 -p 19091 -i "$env:USERPROFILE\.ssh\id_ed25519" root@216.81.248.126 "echo SSH_OK; findmnt -n -o FSTYPE /workspace; curl -s -o /dev/null -w 'qwen:%{http_code}\n' --max-time 3 http://127.0.0.1:8002/health; curl -s -o /dev/null -w 'gateway:%{http_code}\n' --max-time 3 http://127.0.0.1:8010/health; curl -s -o /dev/null -w 'console:%{http_code}\n' --max-time 3 http://127.0.0.1:8080/; if test -d /tmp/AI-PLAYBOOK; then git -C /tmp/AI-PLAYBOOK rev-parse HEAD; else echo NO_CHECKOUT; fi"
+```
+
+Replace the console only when that check prints `qwen:200` and `gateway:200`. Run it on the Pod from a checkout of `feature/qwen3.5-27b-integration`. The script refuses otherwise, and it does not signal Qwen or the gateway. A lone download of the shell script is not enough: it calls `ops/release/console_deploy.py` from `/tmp/AI-PLAYBOOK`.
+
+```powershell
+ssh -o BatchMode=yes -p 19091 -i "$env:USERPROFILE\.ssh\id_ed25519" root@216.81.248.126 "if test ! -d /tmp/AI-PLAYBOOK/.git; then git clone --branch feature/qwen3.5-27b-integration --depth 1 https://github.com/henokmeron/AI-PLAYBOOK.md.git /tmp/AI-PLAYBOOK; fi; CONSOLE_RESTART_APPROVED=yes bash /tmp/AI-PLAYBOOK/ops/release/deploy-console-only.sh"
+```
+
+The last successful login, earlier on 2026-10-15, found `:8002`, `:8010`, and `:8080` down. If they are still down, stop. `START.sh` is a cold Qwen load of about 1080 seconds on a Pod billing $1.79/hour. It needs a separate approval. The command in `docs/results/shutdown-recovery-2026-10-15.md` that uses port `11165` is stale. Microsoft sign-in still waits for a work or school account. Do not paste a client id.
 
 ### 2026-10-15 — GitHub tip rechecked; sign-in test no longer hard-codes `/tmp`
 
