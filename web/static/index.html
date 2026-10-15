@@ -119,8 +119,13 @@
           <h2 id="connector-title">Connected accounts</h2>
           <ul id="connector-list" class="sources"></ul>
           <p id="microsoft-setup" class="meta"></p>
+          <div id="microsoft-signin" class="sign-in-options">
+            <a class="sign-in" href="/api/microsoft/start?account=any">Sign in with a work, school, or personal account</a>
+            <a class="sign-in secondary" href="/api/microsoft/start?account=work">Sign in with a work or school account</a>
+            <a class="sign-in secondary" href="/api/microsoft/start?account=personal">Sign in with a personal Microsoft account</a>
+          </div>
+          <p id="microsoft-mail" class="meta"></p>
           <div class="form-row">
-            <a id="microsoft-connect" href="/api/microsoft/start">Connect Microsoft 365</a>
             <button type="button" id="microsoft-disconnect" class="secondary" hidden>Disconnect</button>
           </div>
         </section>

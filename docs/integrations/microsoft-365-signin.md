@@ -9,7 +9,11 @@ to GitHub does not deploy it.
 
 ## What the code does
 
-1. The Agent page links to `/api/microsoft/start` only after `MICROSOFT_CLIENT_ID` is set. Without it, sign-in returns HTTP 409 and does not redirect.
+1. The Agent page offers three Microsoft sign-in choices. Each one is a real link:
+   - `?account=any` uses the `common` directory (work, school, or personal)
+   - `?account=work` uses `organizations`
+   - `?account=personal` uses `consumers`
+   The browser cannot choose an arbitrary directory. If `MICROSOFT_TENANT` is one organisation, that directory is the only choice. Without `MICROSOFT_CLIENT_ID`, sign-in returns HTTP 409 and does not redirect.
 2. The console redirects the browser to `https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize` with `prompt=select_account`.
 3. The request is an authorization-code flow with PKCE (`S256`). There is no client secret and no client assertion. The code verifier stays on the server for ten minutes and is single-use.
 4. The redirect URI must be exactly `http://127.0.0.1:18080/api/microsoft/callback` (or `http://localhost` with a port and that same path). A public redirect is rejected.

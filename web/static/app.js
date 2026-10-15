@@ -740,11 +740,48 @@
 
   function renderMicrosoft(signIn) {
     var setup = document.getElementById("microsoft-setup");
-    var connect = document.getElementById("microsoft-connect");
+    var mail = document.getElementById("microsoft-mail");
+    var options = document.getElementById("microsoft-signin");
     var disconnect = document.getElementById("microsoft-disconnect");
-    setup.textContent = signIn.setup || "";
-    connect.hidden = !signIn.configured || !!signIn.connected;
+    var notice = microsoftNotice();
+    setup.textContent = notice || signIn.setup || "";
+    options.textContent = "";
+    if (!signIn.connected) {
+      (signIn.accounts || []).forEach(function (account) {
+        var link = document.createElement("a");
+        link.className = account.id === "any" ? "sign-in" : "sign-in secondary";
+        link.href = "/api/microsoft/start?account=" + encodeURIComponent(account.id);
+        link.textContent = account.label;
+        if (!signIn.configured) {
+          link.addEventListener("click", function (event) {
+            event.preventDefault();
+            setup.textContent = signIn.setup || "Microsoft sign-in is not configured.";
+          });
+        }
+        options.appendChild(link);
+      });
+    }
+    options.hidden = !!signIn.connected;
     disconnect.hidden = !signIn.connected;
+    if (signIn.connected) {
+      mail.textContent = signIn.mail_read
+        ? "Signed in as " + (signIn.account || "the connected account") + ". Mail search is read-only."
+        : "Signed in as " + (signIn.account || "the connected account") + ". Mail.Read was not granted, so mail search stays hidden.";
+    } else {
+      mail.textContent = "";
+    }
+  }
+
+  function microsoftNotice() {
+    var params = new URLSearchParams(location.search);
+    var result = params.get("microsoft");
+    if (result !== "connected" && result !== "denied" && result !== "unconfigured") return "";
+    params.delete("microsoft");
+    var query = params.toString();
+    history.replaceState(null, "", location.pathname + (query ? "?" + query : "") + (location.hash || "#agent"));
+    if (result === "connected") return "Microsoft sign-in finished. The account stays on this server.";
+    if (result === "unconfigured") return "Microsoft sign-in needs an application id before it can start.";
+    return "Microsoft did not complete sign-in. No mailbox was read.";
   }
 
   function loadConnectors() {

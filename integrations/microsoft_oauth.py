@@ -38,6 +38,12 @@ from .errors import (
 
 SCOPES = ("openid", "profile", "email", "offline_access", "User.Read", "Mail.Read")
 GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
+# The browser may choose one of these. It cannot supply an arbitrary directory.
+SIGN_IN_ACCOUNTS = (
+    ("any", "common", "Sign in with a work, school, or personal account"),
+    ("work", "organizations", "Sign in with a work or school account"),
+    ("personal", "consumers", "Sign in with a personal Microsoft account"),
+)
 _TENANT_RE = re.compile(
     r"(?:common|organizations|consumers|"
     r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|"
@@ -169,12 +175,37 @@ class MicrosoftOAuth:
     def configured(self) -> bool:
         return bool(self.client_id)
 
+    def account_choices(self) -> list[dict[str, str]]:
+        """Sign-in options the page may offer. A locked directory is not widened."""
+        if self.tenant == "common":
+            rows = SIGN_IN_ACCOUNTS
+        elif self.tenant == "organizations":
+            rows = (SIGN_IN_ACCOUNTS[1],)
+        elif self.tenant == "consumers":
+            rows = (SIGN_IN_ACCOUNTS[2],)
+        else:
+            rows = (("directory", self.tenant, "Sign in with your organisation"),)
+        return [{"id": key, "label": label, "tenant": tenant} for key, tenant, label in rows]
+
+    def tenant_for_account(self, account: str | None) -> str:
+        choice = (account or "").strip().lower()
+        choices = {item["id"]: item["tenant"] for item in self.account_choices()}
+        if choice in {"", "any"} and "any" in choices:
+            return choices["any"]
+        if choice in {"", "any", "directory"} and len(choices) == 1:
+            return next(iter(choices.values()))
+        if choice not in choices:
+            raise InvalidRequest("Choose a work, personal, or any Microsoft account.")
+        return choices[choice]
+
     def public_status(self) -> dict[str, Any]:
         account = self.bundle.account if self.bundle else None
         return {
             "configured": self.configured(),
             "connected": self.bundle is not None,
             "account": account,
+            "mail_read": self.has_mail_read(),
+            "accounts": self.account_choices(),
             "redirect_uri": self.redirect_uri if self.configured() else None,
             "provider_scopes": list(SCOPES) if self.configured() else [],
             "setup": "" if self.configured() else (
@@ -183,12 +214,12 @@ class MicrosoftOAuth:
             ),
         }
 
-    def authorization_url(self) -> str:
+    def authorization_url(self, account: str | None = None) -> str:
         if not self.configured():
             raise AuthenticationError(self.public_status()["setup"])
         client_id = validate_client_id(self.client_id)
         redirect = validate_redirect(self.redirect_uri)
-        tenant = validate_tenant(self.tenant)
+        tenant = validate_tenant(self.tenant_for_account(account))
         verifier = secrets.token_urlsafe(64)
         state = secrets.token_urlsafe(32)
         now = self._clock()

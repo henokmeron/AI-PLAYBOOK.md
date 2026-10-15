@@ -73,6 +73,25 @@ class OAuthTests(unittest.TestCase):
         self.assertIn("Mail.Read", url)
         self.assertNotIn("client_secret", url)
         self.assertNotIn("Mail.Send", url)
+        self.assertIn("prompt=select_account", url)
+        work = oauth.authorization_url("work")
+        personal = oauth.authorization_url("personal")
+        self.assertIn("/organizations/oauth2/v2.0/authorize?", work)
+        self.assertIn("/consumers/oauth2/v2.0/authorize?", personal)
+        self.assertNotIn("client_secret", work)
+        with self.assertRaises(InvalidRequest):
+            oauth.authorization_url("https://evil.example")
+        locked = MicrosoftOAuth(
+            client_id=CLIENT, tenant="contoso.onmicrosoft.com", transport=Transport(),
+        )
+        self.assertEqual(locked.tenant_for_account("any"), "contoso.onmicrosoft.com")
+        with self.assertRaises(InvalidRequest):
+            locked.tenant_for_account("personal")
+        self.assertEqual([item["id"] for item in locked.account_choices()], ["directory"])
+        status = oauth.public_status()
+        self.assertEqual([item["id"] for item in status["accounts"]], ["any", "work", "personal"])
+        self.assertNotIn("access_token", json.dumps(status))
+        self.assertNotIn(CLIENT, json.dumps(status))
         with self.assertRaises(Exception):
             validate_redirect("https://evil.example/api/microsoft/callback")
 

@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (agent execution states are in source only; the Pod was not restarted).
+Last updated: **2026-10-15** (Microsoft sign-in options are in source only; no Entra app was created and the Pod was not restarted).
 
 ## Only this repository
 
@@ -161,6 +161,12 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — Microsoft sign-in choices, source only
+
+- The Agent page now offers three sign-in links: any Microsoft account (`common`), a work or school account (`organizations`), and a personal account (`consumers`). The server maps those names. A query cannot point the login at another host or directory. A console locked to one tenant keeps that tenant. PKCE, the loopback redirect, and the read-only scopes are unchanged. There is still no client secret and no `Mail.Send`.
+- No Entra application was created. This environment has no signed-in Microsoft session, so an application id was not invented and was not written into the repo or the Pod. `MICROSOFT_CLIENT_ID` is still unset. Mail remains mock-tested.
+- The Pod was not restarted. Qwen, the gateway, and the console were left as they were. Last known rate is $1.79/hour. The live console is still the older checkout until a console-only replacement is done.
 
 ### 2026-10-15 — execution states, catalog evidence, source only
 

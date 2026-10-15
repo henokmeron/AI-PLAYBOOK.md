@@ -27,7 +27,7 @@ if str(_REPO_ROOT) not in sys.path:
 from agents.adapters.rag_library import GroundedDocumentRetriever
 from agents.model import OpenAICompatibleClient
 from agents.workspace import CONSOLE_TENANT, AgentDesk
-from integrations.errors import AuthenticationError
+from integrations.errors import AuthenticationError, InvalidRequest
 from integrations.microsoft365 import platform_catalog
 from integrations.microsoft_oauth import MicrosoftOAuth
 
@@ -524,8 +524,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, {"connectors": rows})
 
     def handle_microsoft_start(self) -> None:
+        account = (parse_qs(urlsplit(self.path).query).get("account") or ["any"])[0]
         try:
-            target = self.server.oauth.authorization_url()  # type: ignore[attr-defined]
+            target = self.server.oauth.authorization_url(account)  # type: ignore[attr-defined]
+        except InvalidRequest as exc:
+            self.send_error_json(400, exc.message)
+            return
         except AuthenticationError as exc:
             self.send_error_json(409, exc.message)
             return
@@ -533,15 +537,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_microsoft_callback(self, parsed) -> None:
         query = parse_qs(parsed.query)
+        if query.get("error"):
+            self.send_redirect("/?microsoft=denied#agent")
+            return
         code = (query.get("code") or [""])[0]
         state = (query.get("state") or [""])[0]
         try:
             self.server.oauth.complete(code, state)  # type: ignore[attr-defined]
             self.server.microsoft.apply(self.server.desk.catalog, CONSOLE_TENANT)  # type: ignore[attr-defined]
         except AuthenticationError:
-            self.send_redirect("/#agent")
+            self.send_redirect("/?microsoft=denied#agent")
             return
-        self.send_redirect("/#agent")
+        self.send_redirect("/?microsoft=connected#agent")
 
     def handle_microsoft_disconnect(self) -> None:
         self.server.oauth.disconnect()  # type: ignore[attr-defined]

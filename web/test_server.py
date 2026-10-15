@@ -684,7 +684,9 @@ class ConsoleTests(unittest.TestCase):
         self.assertNotIn("access_token", body.decode("utf-8"))
         page_status, page = self.request(base, "GET", "/")
         self.assertEqual(page_status, 200)
-        self.assertIn(b"Connect Microsoft 365", page)
+        self.assertIn(b"Sign in with a work or school account", page)
+        self.assertIn(b"Sign in with a personal Microsoft account", page)
+        self.assertNotIn(b"Mail.Send", page)
         start_status, start_body = self.request(base, "GET", "/api/microsoft/start")
         self.assertEqual(start_status, 409)
         self.assertIn(b"MICROSOFT_CLIENT_ID", start_body)
@@ -719,9 +721,40 @@ class ConsoleTests(unittest.TestCase):
             else:
                 os.environ["MICROSOFT_CLIENT_ID"] = previous
         self.assertEqual(status, 302)
-        self.assertTrue(location.startswith("https://login.microsoftonline.com/"))
+        self.assertTrue(location.startswith("https://login.microsoftonline.com/common/"))
         self.assertIn("code_challenge_method=S256", location)
         self.assertNotIn("client_secret", location)
+        self.assertNotIn("Mail.Send", location)
+
+    def test_sign_in_account_choice_is_limited_to_microsoft_directories(self) -> None:
+        previous = os.environ.get("MICROSOFT_CLIENT_ID")
+        os.environ["MICROSOFT_CLIENT_ID"] = "11111111-2222-3333-4444-555555555555"
+        try:
+            base = self.web(None)
+
+            def location_for(path: str) -> tuple[int, str]:
+                class RefuseRedirect(urllib.request.HTTPRedirectHandler):
+                    def redirect_request(self, request, fp, code, msg, headers, newurl):
+                        raise urllib.error.HTTPError(newurl, code, msg, headers, fp)
+                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), RefuseRedirect)
+                try:
+                    opener.open(base + path, timeout=5)
+                except urllib.error.HTTPError as exc:
+                    return exc.code, exc.headers.get("Location") or ""
+                return 200, ""
+
+            work_status, work_location = location_for("/api/microsoft/start?account=work")
+            bad_status, bad_body = self.request(base, "GET", "/api/microsoft/start?account=evil.example")
+        finally:
+            if previous is None:
+                os.environ.pop("MICROSOFT_CLIENT_ID", None)
+            else:
+                os.environ["MICROSOFT_CLIENT_ID"] = previous
+        self.assertEqual(work_status, 302)
+        self.assertIn("/organizations/", work_location)
+        self.assertNotIn("client_secret", work_location)
+        self.assertEqual(bad_status, 400)
+        self.assertNotIn(b"11111111", bad_body)
 
 
 if __name__ == "__main__":

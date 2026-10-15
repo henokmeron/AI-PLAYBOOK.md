@@ -162,6 +162,21 @@ main {
 
 .form-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
 
+.sign-in-options { display: grid; gap: 8px; margin-top: 12px; }
+a.sign-in {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  max-width: 100%;
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  text-decoration: none;
+}
+a.sign-in.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+
 button {
   border: 0;
   border-radius: 999px;
