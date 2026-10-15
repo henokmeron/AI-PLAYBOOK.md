@@ -19,7 +19,7 @@
       <nav class="nav-list" aria-label="Primary">
         <button type="button" data-view="chat" id="nav-chat">Chat</button>
         <button type="button" data-view="documents" id="nav-documents">Document Q&amp;A</button>
-        <button type="button" data-view="agent" id="nav-agent">Agent</button>
+        <button type="button" data-view="agent" id="nav-agent">IT Helpdesk</button>
         <button type="button" data-view="status" id="nav-status-tab">System Status</button>
       </nav>
       <p class="nav-status" id="nav-status" role="status">Checking gateway…</p>
@@ -111,8 +111,8 @@
 
       <section id="agent-view" aria-labelledby="agent-title" hidden>
         <header class="view-head">
-          <h1 id="agent-title">Agent</h1>
-          <p>Give the agent a task. It can calculate, and it can search the same document library as Document Q&amp;A. It cites the file it used and says when the library does not contain the answer. External accounts are listed below and are not used until you connect them. Sending or changing records waits for your approval.</p>
+          <h1 id="agent-title">IT Helpdesk</h1>
+          <p>Describe an IT problem. The agent classifies it, searches support docs, checks local platform health, and can propose a safe change that waits for your approval. You see real tool results, can cancel anytime, and receive an incident report with evidence and verification. External accounts below stay unused until you connect them.</p>
         </header>
         <div id="agent-error" class="banner banner-error" role="alert" hidden></div>
         <section class="composer" aria-labelledby="connector-title">
@@ -142,14 +142,18 @@
         </section>
         <p id="agent-execution" class="meta"></p>
         <div id="agent-record" class="log"></div>
+        <div id="agent-incident" class="composer" hidden>
+          <h2>Incident report</h2>
+          <div id="agent-incident-body" class="log"></div>
+        </div>
         <div id="agent-log" class="log" aria-live="polite"></div>
         <form id="agent-form" class="composer">
-          <label for="agent-task">Task</label>
-          <textarea id="agent-task" rows="3" maxlength="2000" required placeholder="For example: what is 99.498 times 7?"></textarea>
-          <p class="meta">File attachments on this page are not supported and are not indexed. Upload a file on Document Q&amp;A if it should be searchable. Progress updates while the task runs, and recent tasks are listed below for audit.</p>
+          <label for="agent-task">IT issue or task</label>
+          <textarea id="agent-task" rows="3" maxlength="2000" required placeholder="For example: Helpdesk ticket — the gateway looks down and users cannot chat."></textarea>
+          <p class="meta">File attachments on this page are not supported. Upload on Document Q&amp;A if a procedure should be searchable. Progress updates while the task runs; recent tasks below are kept for audit.</p>
           <div class="form-row">
-            <button type="submit" id="agent-send">Run task</button>
-            <span id="agent-loading" class="loading" role="status" hidden>Working…</span>
+            <button type="submit" id="agent-send">Submit issue</button>
+            <span id="agent-loading" class="loading" role="status" hidden>Investigating…</span>
           </div>
         </form>
         <section class="composer" aria-labelledby="agent-history-title">
@@ -158,8 +162,13 @@
           <p id="agent-history-empty" class="meta">No saved tasks yet on this console.</p>
         </section>
         <div id="agent-approval" class="composer" hidden>
-          <h2>Approve this exact action</h2>
+          <h2>Approve this change</h2>
           <p id="agent-approval-text"></p>
+          <p id="agent-approval-what" class="meta"></p>
+          <p id="agent-approval-why" class="meta"></p>
+          <p id="agent-approval-system" class="meta"></p>
+          <p id="agent-approval-risks" class="meta"></p>
+          <p id="agent-approval-verify" class="meta"></p>
           <p id="agent-approval-target" class="meta"></p>
           <pre id="agent-approval-args"></pre>
           <div class="form-row">

@@ -17,8 +17,10 @@ from integrations.microsoft365 import platform_catalog
 from integrations.tenancy import TenantContext
 
 from .builtin.calculator import calculator_tool
+from .builtin.helpdesk import helpdesk_tools
 from .builtin.search import search_documents_tool
 from .history import TaskHistoryStore
+from .it_support import approval_presentation, incident_from_output, looks_like_it_support
 from .model import ModelClient
 from .redaction import redact
 from .runtime import AgentRunner, CancellationToken
@@ -79,6 +81,7 @@ def _tool(catalog: Catalog, ctx: TenantContext, connector_id: str, operation: st
 
 def tools_for(catalog: Catalog, ctx: TenantContext, documents: Any = None) -> list[Tool]:
     tools = [calculator_tool()]
+    tools.extend(helpdesk_tools())
     if documents is not None:
         tools.append(search_documents_tool(documents))
     for spec, operation in catalog.visible_operations(ctx):
@@ -94,11 +97,17 @@ def public_view(task: AgentTask, trace: ExecutionTrace, *, running: bool = False
     pending = None
     if task.pending_approval is not None:
         item = task.pending_approval
+        presentation = approval_presentation(item.tool, item.arguments, item.reason)
         pending = {
             "call_id": item.call_id,
             "tool": item.tool,
             "arguments": redact(item.arguments),
             "reason": item.reason,
+            "what_changes": presentation["what_changes"],
+            "why": presentation["why"],
+            "system": presentation["system"],
+            "risks": presentation["risks"],
+            "verification_plan": presentation["verification_plan"],
         }
     activity = []
     for event in trace.events:
@@ -111,6 +120,7 @@ def public_view(task: AgentTask, trace: ExecutionTrace, *, running: bool = False
             "detail": event.data.get("error") or event.data.get("preview") or event.data.get("reason"),
             "approved": event.data.get("approved"),
         })
+    incident = incident_from_output(task.final_output)
     return {
         "task_id": task.task_id,
         "state": task.state.value,
@@ -123,6 +133,7 @@ def public_view(task: AgentTask, trace: ExecutionTrace, *, running: bool = False
         "pending_approval": pending,
         "activity": activity,
         "record": redact(task.record.to_dict()),
+        "incident_report": redact(incident) if incident else None,
         "running": bool(running),
         "cancellable": bool(
             running
@@ -208,6 +219,42 @@ class AgentDesk:
                 "status": "mock-tested",
                 "provider_permissions": [],
             }],
+        })
+        rows.append({
+            "connector_id": "helpdesk",
+            "version": "local",
+            "service": "IT helpdesk tools",
+            "summary": "Classify issues, check platform health, read allowlisted logs, run safe diagnostics, and apply approved local remediations.",
+            "auth": "none",
+            "connected": True,
+            "account": None,
+            "readiness": "mock-tested",
+            "detail": (
+                "Local tools only. No unrestricted shell. Remediation pauses for approval. "
+                "Microsoft 365 and enrolled-device tools stay separate and appear only when connected."
+            ),
+            "operations": [
+                {
+                    "name": name,
+                    "tool_name": name,
+                    "summary": summary,
+                    "effect": effect,
+                    "scope": "helpdesk:local",
+                    "requires_approval": approval,
+                    "available": True,
+                    "evidence": "mock-tested",
+                    "status": "mock-tested",
+                    "provider_permissions": [],
+                }
+                for name, summary, effect, approval in (
+                    ("classify_it_issue", "Classify the IT issue and desired outcome.", "read", False),
+                    ("check_platform_health", "Check local model, gateway, and console health.", "read", False),
+                    ("read_approved_log", "Read an allowlisted diagnostic log with secrets redacted.", "read", False),
+                    ("run_safe_diagnostic", "Run one allowlisted local diagnostic check.", "read", False),
+                    ("apply_safe_remediation", "Apply one allowlisted local change after approval.", "consequential", True),
+                    ("compose_incident_report", "Assemble the incident report fields.", "read", False),
+                )
+            ],
         })
         return rows
 
@@ -312,9 +359,17 @@ class AgentDesk:
         runner = AgentRunner(
             model, registry, trace=trace, model_timeout=wall_seconds, on_progress=on_progress,
         )
-        task = runner.new_task(goal, budget=Budget(
-            max_iterations=6, max_tool_calls=4, max_total_tokens=12000, max_wall_seconds=wall_seconds,
-        ))
+        if looks_like_it_support(goal):
+            budget = Budget(
+                max_iterations=10, max_tool_calls=8, max_total_tokens=16000,
+                max_wall_seconds=wall_seconds,
+            )
+        else:
+            budget = Budget(
+                max_iterations=6, max_tool_calls=4, max_total_tokens=12000,
+                max_wall_seconds=wall_seconds,
+            )
+        task = runner.new_task(goal, budget=budget)
         session = {
             "runner": runner,
             "task": task,

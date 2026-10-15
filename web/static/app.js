@@ -119,7 +119,7 @@
     if (location.hash !== "#" + name) {
       history.replaceState(null, "", location.pathname + location.search + "#" + name);
     }
-    document.title = name === "documents" ? "Document Q&A" : name === "agent" ? "Agent" : name === "status" ? "System Status" : "Chat";
+    document.title = name === "documents" ? "Document Q&A" : name === "agent" ? "IT Helpdesk" : name === "status" ? "System Status" : "Chat";
     if (name === "agent") {
       loadConnectors();
       loadAgentHistory();
@@ -652,10 +652,17 @@
   var agentLoading = document.getElementById("agent-loading");
   var agentApproval = document.getElementById("agent-approval");
   var agentApprovalText = document.getElementById("agent-approval-text");
+  var agentApprovalWhat = document.getElementById("agent-approval-what");
+  var agentApprovalWhy = document.getElementById("agent-approval-why");
+  var agentApprovalSystem = document.getElementById("agent-approval-system");
+  var agentApprovalRisks = document.getElementById("agent-approval-risks");
+  var agentApprovalVerify = document.getElementById("agent-approval-verify");
   var agentApprovalTarget = document.getElementById("agent-approval-target");
   var agentApprovalArgs = document.getElementById("agent-approval-args");
   var agentExecution = document.getElementById("agent-execution");
   var agentRecord = document.getElementById("agent-record");
+  var agentIncident = document.getElementById("agent-incident");
+  var agentIncidentBody = document.getElementById("agent-incident-body");
   var agentInfo = document.getElementById("agent-info");
   var agentInfoText = document.getElementById("agent-info-text");
   var agentInfoInput = document.getElementById("agent-info-input");
@@ -747,10 +754,12 @@
   function renderAgent(view) {
     agentLog.textContent = "";
     agentRecord.textContent = "";
+    if (agentIncidentBody) agentIncidentBody.textContent = "";
     if (!view) {
       agentExecution.textContent = "";
-      agentLog.appendChild(el("p", "empty", "Run a task to see what the agent did."));
+      agentLog.appendChild(el("p", "empty", "Submit an IT issue to see the investigation."));
       agentApproval.hidden = true;
+      if (agentIncident) agentIncident.hidden = true;
       agentInfo.hidden = true;
       agentCancel.hidden = true;
       return;
@@ -762,15 +771,15 @@
       return executionLabels[item] || item;
     });
     agentExecution.textContent = states.length
-      ? "Execution: " + label + ". Recorded states: " + states.join(" → ")
-      : "Execution: " + label;
+      ? "Status: " + label + ". Steps: " + states.join(" → ")
+      : "Status: " + label;
     var record = view.record || {};
-    if (record.objective) agentRecord.appendChild(el("p", null, "Objective: " + record.objective));
+    if (record.objective) agentRecord.appendChild(el("p", null, "Issue: " + record.objective));
     (record.plan || []).forEach(function (step) {
       agentRecord.appendChild(el("p", "meta", "Plan: " + step));
     });
     (record.tool_calls || []).forEach(function (call) {
-      agentRecord.appendChild(el("p", "meta", "Tool call: " + (call.tool || "unknown")));
+      agentRecord.appendChild(el("p", "meta", "Checked with tool: " + (call.tool || "unknown")));
     });
     (record.results || []).forEach(function (result) {
       var ok = result.ok === false ? "failed" : "ok";
@@ -778,18 +787,44 @@
       agentRecord.appendChild(el("p", "meta", "Result (" + ok + "): " + (result.tool || "tool") + preview));
     });
     (record.verification || []).forEach(function (check) {
-      var ok = check.ok === false ? "failed" : "ok";
-      agentRecord.appendChild(el("p", "meta", "Verified " + (check.check || "step") + ": " + ok + (check.tool ? " (" + check.tool + ")" : "")));
+      var ok = check.ok === false ? "not confirmed" : "confirmed";
+      agentRecord.appendChild(el("p", "meta", "Verification — " + (check.check || "step") + ": " + ok + (check.tool ? " (" + check.tool + ")" : "")));
     });
     (record.errors || []).forEach(function (err) {
-      agentRecord.appendChild(el("p", "meta", "Error: " + (err.kind || "issue") + (err.detail ? " — " + err.detail : "")));
+      agentRecord.appendChild(el("p", "meta", "Problem: " + (err.kind || "issue") + (err.detail ? " — " + err.detail : "")));
     });
     if (record.outcome) agentRecord.appendChild(el("p", "meta", "Outcome: " + record.outcome));
+    var incident = view.incident_report;
+    if (agentIncident && agentIncidentBody) {
+      if (incident) {
+        agentIncident.hidden = false;
+        agentIncidentBody.appendChild(el("p", null, incident.summary || "Incident closed."));
+        agentIncidentBody.appendChild(el("p", "meta", "Severity: " + (incident.severity || "unknown") + (incident.category ? " · Category: " + incident.category : "")));
+        if (incident.desired_outcome) {
+          agentIncidentBody.appendChild(el("p", "meta", "Desired outcome: " + incident.desired_outcome));
+        }
+        (incident.evidence || []).forEach(function (item) {
+          agentIncidentBody.appendChild(el("p", "meta", "Evidence: " + item));
+        });
+        (incident.actions_taken || []).forEach(function (item) {
+          agentIncidentBody.appendChild(el("p", "meta", "Action: " + item));
+        });
+        (incident.verification || []).forEach(function (item) {
+          agentIncidentBody.appendChild(el("p", "meta", "Verified: " + item));
+        });
+        (incident.next_steps || []).forEach(function (item) {
+          agentIncidentBody.appendChild(el("p", "meta", "Next: " + item));
+        });
+        agentIncidentBody.appendChild(el("p", "meta", "Final status: " + (incident.outcome || "unknown")));
+      } else {
+        agentIncident.hidden = true;
+      }
+    }
     var headingText = view.answer || view.failure || label;
     if (execution === "queued") headingText = "Waiting in the queue for an earlier task to finish.";
     if (execution === "completed") headingText = view.answer || "Completed.";
-    if (execution === "failed") headingText = view.failure || "Failed.";
-    if (execution === "escalated") headingText = view.answer || "Escalated.";
+    if (execution === "failed") headingText = view.failure || "The investigation could not finish. Try again or add more detail.";
+    if (execution === "escalated") headingText = view.answer || "This needs a person to continue.";
     agentLog.appendChild(el("p", null, headingText));
     (view.activity || []).forEach(function (item) {
       var labels = {
@@ -814,7 +849,12 @@
     if (pending) {
       agentTaskId = view.task_id;
       agentCallId = pending.call_id || "";
-      agentApprovalText.textContent = pending.reason || "This action needs approval.";
+      agentApprovalText.textContent = pending.reason || "This change needs your approval before it runs.";
+      if (agentApprovalWhat) agentApprovalWhat.textContent = "What changes: " + (pending.what_changes || pending.tool || "See details below.");
+      if (agentApprovalWhy) agentApprovalWhy.textContent = "Why: " + (pending.why || "Recommended to address the reported issue.");
+      if (agentApprovalSystem) agentApprovalSystem.textContent = "System affected: " + (pending.system || "local platform");
+      if (agentApprovalRisks) agentApprovalRisks.textContent = "Risks: " + (pending.risks || "May change local console state.");
+      if (agentApprovalVerify) agentApprovalVerify.textContent = "How success will be checked: " + (pending.verification_plan || "A follow-up health or diagnostic check.");
       agentApprovalTarget.textContent = "Tool " + pending.tool + ", call " + pending.call_id;
       agentApprovalArgs.textContent = JSON.stringify(pending.arguments || {}, null, 2);
     } else {
@@ -822,7 +862,7 @@
     }
     if (execution === "awaiting_information") {
       agentTaskId = view.task_id;
-      agentInfoText.textContent = view.pending_question || "The agent needs more information.";
+      agentInfoText.textContent = view.pending_question || "The agent needs a bit more information to continue.";
     }
   }
 

@@ -73,10 +73,16 @@ Azure is an option, not a requirement. We will choose infrastructure after evalu
 
 Do not buy large cloud resources until the technical design requires them.
 
+### 2026-10-15 — AI IT Helpdesk
+
+- Agent page is the IT Helpdesk: classify → docs/health/diagnostics → approval-gated local remediation → verify → incident report.
+- Tools: `agents/builtin/helpdesk.py`. Docs: `docs/agents/helpdesk.md`. Mock E2E **VERIFIED**; live Qwen helpdesk **NOT TESTED** until console redeploy.
+- Active Pod after accidental loss of `1cj381fjuujeq7`: `4lvr54b0wmkz6c` (A100 SXM, same Global Volume). Prefer Stop when idle.
+
 ### 2026-10-15 — Agent execution loop (progress + history)
 
 - Console Agent desk supports async runs (`wait: false`), live status polling, cooperative cancel, serial `queued` tasks, IT-support incident reports, and redacted task history (defaults to `/workspace/agent-task-history` on the volume).
-- Live on Pod `1cj381fjuujeq7` (tip **`a680580`**): E2E + Agent async **VERIFIED** 2026-10-15. Prefer Stop when idle. Details: `docs/results/runpod-migrate-deploy-2026-10-15.md`.
+- Live on Pod `1cj381fjuujeq7` (tip **`a680580`**): E2E + Agent async **VERIFIED** 2026-10-15 (pod later replaced by `4lvr54b0wmkz6c`). Details: `docs/results/runpod-migrate-deploy-2026-10-15.md`.
 
 ### 2026-10-14 — RunPod-first first release (Qwen primary)
 

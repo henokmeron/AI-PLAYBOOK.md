@@ -314,9 +314,10 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("Chat", text)
         self.assertIn("Document Q&amp;A", text)
         self.assertIn("System Status", text)
-        self.assertIn(">Agent<", text)
+        self.assertIn(">IT Helpdesk<", text)
         self.assertIn('id="agent-task"', text)
-        self.assertIn("not indexed", text)
+        self.assertIn('id="agent-incident"', text)
+        self.assertIn("File attachments on this page are not supported", text)
         self.assertEqual(
             server.redact_request_log("GET /api/microsoft/callback?code=secret-code&state=abc HTTP/1.1"),
             "GET /api/microsoft/callback [query redacted] HTTP/1.1",

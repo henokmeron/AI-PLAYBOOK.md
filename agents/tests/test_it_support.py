@@ -53,7 +53,7 @@ class ItSupportTests(unittest.TestCase):
         runner = AgentRunner(model, ToolRegistry([calculator_tool()]))
         task = runner.new_task("IT support: diagnose slow laptop")
         self.assertEqual(task.output_schema, INCIDENT_OUTPUT_SCHEMA)
-        self.assertIn("IT support mode", task.messages[0]["content"])
+        self.assertIn("IT helpdesk mode", task.messages[0]["content"])
         runner.run(task)
         self.assertEqual(task.execution.value, "completed")
         self.assertEqual(task.final_output["outcome"], "blocked")

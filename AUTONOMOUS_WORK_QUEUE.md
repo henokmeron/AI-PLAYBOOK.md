@@ -3,9 +3,9 @@
 **Purpose:** Shared handover for Cursor and other collaborators working on AI Platform Build.
 **Current workstream:** Qwen3.5-27B integration.
 **Branch:** `feature/qwen3.5-27b-integration`
-**Last reported feature commit:** `a680580` on `main` and both feature branches (live on Pod `1cj381fjuujeq7`).
+**Last reported feature commit:** IT Helpdesk on `feature/qwen-a100-start-hardening` (see tip after push).
 **Tracking issue:** https://github.com/henokmeron/AI-PLAYBOOK.md/issues/1
-**Status:** Live Pod `1cj381fjuujeq7` A100 SXM served Qwen + Agent async (**VERIFIED**). Prefer **Stop** when idle. Old `vx4oe3oyfsqnz8` remains stopped. See `docs/results/runpod-migrate-deploy-2026-10-15.md`.
+**Status:** IT Helpdesk mock-tested in source. Active Pod `4lvr54b0wmkz6c` (A100 SXM, same volume) after loss of `1cj381fjuujeq7`. Prefer **Stop** when idle. Helpdesk live-vs-Qwen **NOT TESTED** until console redeploy.
 **Owner approval boundary:** Do not create new paid Pods, delete volume assets, or restore Gemma onto the GPU without explicit approval. Prefer stopping idle Pods to limit GPU cost while leaving the volume intact.
 
 ## Read first

@@ -1,4 +1,7 @@
-"""Built-in, read-only or pure-compute tools. No shell or write-capable filesystem tools."""
+"""Built-in tools: read-only, pure-compute, or approval-gated local remediation.
+
+No unrestricted shell. Write tools must set requires_approval=True.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,6 +11,7 @@ from ..adapters.rag_library import SearchBackend
 from ..tools import ToolRegistry
 from .calculator import calculator_tool
 from .files import AuthorisedRoot, default_extractor, list_documents_tool, read_document_tool
+from .helpdesk import helpdesk_tools
 from .search import document_qa_tool, document_search_tool, search_documents_tool
 from .structured import structured_output_tool
 from .tables import table_analysis_tool
@@ -19,6 +23,7 @@ def default_registry(
     search_backend: SearchBackend | None = None,
     output_schemas: dict[str, dict[str, Any]] | None = None,
     use_rag_extractor: bool = True,
+    include_helpdesk: bool = False,
 ) -> ToolRegistry:
     registry = ToolRegistry([calculator_tool()])
     if document_root is not None:
@@ -31,11 +36,14 @@ def default_registry(
         registry.register(document_search_tool(search_backend))
     if output_schemas:
         registry.register(structured_output_tool(output_schemas))
+    if include_helpdesk:
+        for tool in helpdesk_tools():
+            registry.register(tool)
     return registry
 
 
 __all__ = [
     "AuthorisedRoot", "calculator_tool", "default_registry", "document_qa_tool",
-    "document_search_tool", "list_documents_tool", "read_document_tool", "search_documents_tool",
-    "structured_output_tool", "table_analysis_tool",
+    "document_search_tool", "helpdesk_tools", "list_documents_tool", "read_document_tool",
+    "search_documents_tool", "structured_output_tool", "table_analysis_tool",
 ]

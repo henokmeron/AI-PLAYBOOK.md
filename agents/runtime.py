@@ -21,7 +21,12 @@ import uuid
 from typing import Any, Callable
 
 from .model import ModelClient, ModelError
-from .it_support import INCIDENT_OUTPUT_SCHEMA, looks_like_it_support, playbook_for
+from .it_support import (
+    INCIDENT_OUTPUT_SCHEMA,
+    incident_from_output,
+    looks_like_it_support,
+    playbook_for,
+)
 from .protocol import ProtocolError, build_system_prompt, parse_action
 from .redaction import redact, redact_text
 from .schema import ValidationError, check_schema, validate
@@ -390,7 +395,11 @@ class AgentRunner:
         task.final_answer = answer
         task.final_output = output
         task.record.verification.append({"check": "final_answer", "ok": True})
-        task.record.outcome = "completed"
+        incident = incident_from_output(output)
+        if incident is not None:
+            task.record.outcome = incident["outcome"]
+        else:
+            task.record.outcome = "completed"
         self._status(task, ExecutionStatus.COMPLETED)
         self._finish(task, TaskState.FINAL, None)
 

@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (Live resume on new Pod `1cj381fjuujeq7` at tip **`a680580`**; E2E + Agent async **VERIFIED**; stop when idle).
+Last updated: **2026-10-15** (IT Helpdesk tools + UI shipped in source; Pod redeployed as `4lvr54b0wmkz6c` after accidental terminate of `1cj381fjuujeq7`).
 
 ## Only this repository
 
@@ -44,9 +44,9 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 | Item | Value | Status |
 | --- | --- | --- |
-| Active test Pod | RunPod `1cj381fjuujeq7` (“coloured_scarlet_prawn”), **A100-SXM4-80GB**, **$1.79/hr**, CUDA **13.0/13.2** | **Running** after migrate API failed. Same Global Volume. Do not start another paid Pod. Prefer **Stop** when idle. Do **not** Terminate without approval. |
-| Prior Pod | `vx4oe3oyfsqnz8` (“romantic_gray_canidae”) | **STOPPED** ($0.00/hr). Migrate failed (`Failed to get mount info`). Leave stopped unless owner wants it terminated. |
-| SSH (TCP) | `root@154.54.102.45 -p 13502`, key `%USERPROFILE%\.ssh\id_ed25519` | **VERIFIED** 2026-10-15. Also: `ssh 1cj381fjuujeq7-64412092@ssh.runpod.io -i ~/.ssh/id_ed25519` |
+| Active test Pod | RunPod `4lvr54b0wmkz6c` (“rising_chocolate_locust”), **A100-SXM4-80GB**, **$1.79/hr**, driver **580.126.16** | Redeployed 2026-10-15 after `1cj381fjuujeq7` disappeared from the Pods list (likely terminated). Same Global Volume. Prefer **Stop** when idle. Do **not** Terminate without approval. |
+| Prior Pod | `1cj381fjuujeq7` / `vx4oe3oyfsqnz8` | Gone from console / left alone. Do not recreate extras. |
+| SSH (TCP) | `root@154.54.102.40 -p 13212`, key `%USERPROFILE%\.ssh\id_ed25519` | **VERIFIED** 2026-10-15 after redeploy. |
 | GPU / driver | 81,920 MiB, ~**71,091 MiB used**, driver **580.126.16** | **VERIFIED.** |
 | Container | PyTorch 2.8.0; runtime in `/tmp/vllm-qwen-env` | Restored from volume archive. |
 | Global Volume | `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` | **VERIFIED.** |
@@ -160,6 +160,15 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — AI IT Helpdesk implemented (source + mock tests)
+
+- Added `agents/builtin/helpdesk.py`: classify, platform health, allowlisted logs (redacted), safe diagnostics, approval-gated remediation, compose incident report.
+- Wired into `AgentDesk` / console tools; richer IT playbook; approval panel fields (what/why/system/risks/verify); incident report in public view + UI.
+- Agent page retitled **IT Helpdesk**. Existing async queue, cancel, history, `search_documents`, and connector catalog reused.
+- **VERIFIED (local/mock):** `agents.tests` 101 OK; `agents.tests.test_helpdesk` 6 OK (includes scripted investigate → approve → verify → incident); `web.test_server` 23 OK.
+- **NOT TESTED:** live Qwen helpdesk on the Pod with this commit (needs console deploy after `START.sh` finishes). No Entra app created. No live Graph.
+- Emergency Pod restore earlier same day: `4lvr54b0wmkz6c`, SSH `154.54.102.40:13212`, volume OK, `START.sh` launched at tip `8dbbfbd` then this commit follows.
 
 ### 2026-10-15 — migrate failed; new A100 Pod live with `a680580`
 

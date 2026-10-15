@@ -32,7 +32,8 @@ transition raises `InvalidTransition`. `final`, `failed` and `cancelled` are ter
 | Operator status | `ExecutionStatus` on the task | The runner records queued, received, investigating, awaiting information, awaiting approval, executing, verifying, completed, failed, escalated, and cancelled. The console shows that record. It does not draw steps the runner did not take. |
 | Async progress | `AgentDesk.start(..., wait=False)` | Console POST defaults to `wait: false`, returns immediately, and polls `GET /api/agent?task_id=…` for live status, tool activity, and verification. Mid-run cancel sets a cooperative token. |
 | Serial queue | `AgentDesk` | Only one async task runs at a time. Further async starts sit in `queued` until the active task finishes or is cancelled. Queued tasks can be cancelled without running. |
-| IT support mode | `agents/it_support.py` | Helpdesk-like goals get extra playbook rules and a required incident `output` schema (evidence, verification, outcome). No remote control is granted. |
+| IT support mode | `agents/it_support.py` | Helpdesk-like goals get extra playbook rules and a required incident `output` schema (evidence, verification, outcome). No remote control is granted. See `docs/agents/helpdesk.md`. |
+| Helpdesk tools | `agents/builtin/helpdesk.py` | Classify, platform health, allowlisted logs, safe diagnostics, approval-gated local remediation, compose incident report. Mock-tested. |
 | Auditable history | `agents/history.TaskHistoryStore` | Public (redacted) task snapshots under `AGENT_HISTORY_DIR`. On a writable `/workspace` volume the console defaults to `/workspace/agent-task-history`; otherwise `/tmp/agent-task-history`. `GET /api/agent/history` lists recent tasks. |
 | Loop prevention | `Budget.max_repeated_calls` | An identical `(tool, arguments)` call is blocked and the model is told to reuse the earlier result. Repeats count as consecutive errors, so a stuck model ends in `failed: loop detected`. |
 | Protocol robustness | `agents/protocol.py` | One JSON action per turn (`tool` / `final` / `refuse`); fenced or prose-wrapped JSON is accepted; `<think>` blocks are stripped. Bounded format-error retries. |
@@ -51,9 +52,10 @@ transition raises `InvalidTransition`. `final`, `failed` and `cancelled` are ter
 | `document_search` | `builtin/search.py` + `adapters/rag_library.RagLibrarySearchBackend` | Calls `rag_engine.load_chunks/retrieve/dedupe_ranked_chunks` and `document_library.get_collection_dir/list_documents`. The backend takes an explicit `allowed_collections` grant (the tenant boundary). |
 | `document_qa` | `adapters/rag_library.GatewayDocumentQABackend` | `POST /v1/rag/ask` on the loopback gateway, with a collection grant, no proxy and no redirects. Gateway has no retrieval-only endpoint, so this returns the gateway's answer + sources. |
 | `read_device_diagnostics` | `integrations/endpoint.py` | Latest enrolled-computer check-in (OS, disk, memory, boot time). Hidden until a device is enrolled. No command channel. Mock-tested, not live on the Pod. |
+| `classify_it_issue`, `check_platform_health`, `read_approved_log`, `run_safe_diagnostic`, `apply_safe_remediation`, `compose_incident_report` | `builtin/helpdesk.py` | Local IT helpdesk tools. Remediation requires approval. No unrestricted shell. |
 | `validate_structured_output` | `builtin/structured.py` | Lets the model check a value against a named, pre-registered schema. |
 
-There are deliberately **no** shell, network-fetch, write, delete or arbitrary-path tools.
+There are deliberately **no** unrestricted shell, arbitrary network-fetch, or arbitrary-path tools. The only write tool in the helpdesk set is allowlisted and approval-gated.
 
 ## Using it
 

@@ -14,10 +14,15 @@ from integrations.tenancy import TenantContext
 
 
 class WorkspaceTests(unittest.TestCase):
-    def test_default_tools_are_only_the_calculator(self) -> None:
+    def test_default_tools_include_calculator_and_helpdesk(self) -> None:
         catalog, _client = platform_catalog()
         ctx = TenantContext.create("local-console", "console-user", [])
-        self.assertEqual([tool.name for tool in tools_for(catalog, ctx)], ["calculator"])
+        names = [tool.name for tool in tools_for(catalog, ctx)]
+        self.assertIn("calculator", names)
+        self.assertIn("classify_it_issue", names)
+        self.assertIn("check_platform_health", names)
+        self.assertIn("apply_safe_remediation", names)
+        self.assertNotIn("m365_search_mail", names)
 
     def test_public_view_omits_hidden_reasoning(self) -> None:
         desk = AgentDesk()
