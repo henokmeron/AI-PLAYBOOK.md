@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (Pod `tn28umxi9a5lqx` reached over SSH; preflight blocked on driver 570; weights and archives intact).
+Last updated: **2026-10-15** (Pod `vx4oe3oyfsqnz8` / `romantic_gray_canidae` on driver **580**; Qwen + gateway + console **VERIFIED**).
 
 ## Only this repository
 
@@ -44,15 +44,15 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 | Item | Value | Status |
 | --- | --- | --- |
-| Active test Pod | RunPod `tn28umxi9a5lqx` (“relative_emerald_ant”), **A100-SXM4-80GB**, **$1.79/hr** | Running and idle. Earlier Pods `1g41ejmd99iyun` / `00n856z3eue5v9` are not the current one. |
-| SSH (TCP) | `root@185.216.23.194 -p 45209`, key `%USERPROFILE%\.ssh\id_ed25519` | **VERIFIED** 2026-10-15. Old ports `19091` and `11165` refused. |
-| GPU / driver | 81,920 MiB, **0 MiB used**, driver **570.172.08** | **BLOCKED.** Archived Qwen runtime needs driver ≥580. |
-| Container | Fresh enough that `/tmp/platform-diagnostics` was empty before preflight | Platform ports are down |
-| Global Volume | Same volume id `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (fuse.geesefs) | **VERIFIED.** Archive checksum + zstd OK. Snapshot `01e7692` SHA OK. |
-| Qwen | `127.0.0.1:8002` | Not listening. Weights present: 11 shards. Preflight refused start. |
-| Gateway | `127.0.0.1:8010` | Not listening |
-| Console | `127.0.0.1:8080` | Not listening. Preflight cloned `/tmp/AI-PLAYBOOK` to `7708140`. |
-| Other Pod | “Qwen model testing system” **H100 NVL** showed **$0.00/hr** earlier; do not assume it is still needed or safe to delete | Leave alone unless user says otherwise |
+| Active test Pod | RunPod `vx4oe3oyfsqnz8` (“romantic_gray_canidae”), **A100-SXM4-80GB**, **$1.79/hr**, CUDA **13.0/13.2** | **Running.** Replaced `tn28umxi9a5lqx` (driver 570). Do not start a second paid Pod. |
+| SSH (TCP) | `root@154.54.102.49 -p 18454`, key `%USERPROFILE%\.ssh\id_ed25519` | **VERIFIED** 2026-10-15. Also: `ssh vx4oe3oyfsqnz8-6441200f@ssh.runpod.io -i ~/.ssh/id_ed25519` |
+| GPU / driver | 81,920 MiB, ~**71,091 MiB used**, driver **580.126.16** | **VERIFIED.** Meets archived runtime requirement (driver ≥580). |
+| Container | Fresh PyTorch 2.8.0 template; runtime restored to `/tmp/vllm-qwen-env` | OK |
+| Global Volume | Same volume id `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (fuse.geesefs) | **VERIFIED.** Weights + archives untouched across Pod replace. |
+| Qwen | `127.0.0.1:8002` | **VERIFIED** HTTP 200. Cold load ~810 s after restore. |
+| Gateway | `127.0.0.1:8010` | **VERIFIED** HTTP 200. Ephemeral key `/tmp/platform-gateway.key`. |
+| Console | `127.0.0.1:8080` | **VERIFIED** HTTP 200. Tunnel: `ssh -N -L 18080:127.0.0.1:8080 -p 18454 -i %USERPROFILE%\.ssh\id_ed25519 root@154.54.102.49` |
+| Other Pod | Older terminated/idle Pods are not the live stack | Leave alone unless user says otherwise |
 
 ### Exact volume paths that must remain
 
@@ -71,7 +71,7 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 - **GitHub** feature branches include the Qwen routing work. `main` is fast-forwarded to the same tip and pushed. It is not force-pushed.
 - `e1e360f` is the parent of **`c2323238041cea8317d2322e6d16554d0bc967bc`** (Qwen routing). That push is a fast-forward. The `ninja` PATH change itself is **`083fa58`**, already inside `e1e360f`.
 - Local checkout is `feature/qwen-a100-start-hardening`. Keep `feature/qwen3.5-27b-integration` on the same commit.
-- Live Pod source on `tn28umxi9a5lqx` is `/tmp/AI-PLAYBOOK` at `7708140` after a read-only preflight clone. Nothing is listening on `:8002`, `:8010`, or `:8080`. Gemma on `:8000` is down. `MICROSOFT_CLIENT_ID` is unset. Weights are still present. Qwen was not started because preflight failed on driver 570.
+- Live Pod source on `vx4oe3oyfsqnz8` is `/tmp/AI-PLAYBOOK` at **`2d273f6`**. Qwen `:8002`, gateway `:8010`, and console `:8080` are up. Gemma on `:8000` is down. `MICROSOFT_CLIENT_ID` is unset. Weights were not re-downloaded.
 - Volume snapshot `…-01e7692.tar.gz` SHA-256 `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370` re-checked **OK** on 2026-10-15. Runtime `SHA256SUMS` **OK**. Volume `START.sh` matches git (`6059e4c2…`).
 - Do not commit untracked `ops/_*.sh` / `ops/_*.py` probe helpers or `__pycache__`.
 
@@ -161,6 +161,14 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — replace driver-570 Pod with CUDA-13 A100; platform VERIFIED
+
+- Terminated blocked Pod `tn28umxi9a5lqx` without deleting Global Volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373`.
+- Deployed `vx4oe3oyfsqnz8` (“romantic_gray_canidae”): A100 SXM **$1.79/hr**, CUDA filter **13.x**, same volume at `/workspace`, 30 GB container disk.
+- **VERIFIED:** driver **580.126.16**; `START.sh --preflight` → `PREFLIGHT_PASS`; `START.sh` → `FIRST_RELEASE_READY` (~810 s Qwen cold load); `:8002`/`:8010`/`:8080` HTTP 200; `_pod_e2e_verify.py` → **FAILS: NONE**.
+- SSH: `root@154.54.102.49 -p 18454`. Pod checkout `2d273f6`. Evidence: `docs/results/runpod-cuda13-replace-2026-10-15.md`.
+- Balance was under $5 at deploy; stop the Pod when idle.
 
 ### 2026-10-15 — health check: driver 570 blocks start; recovery assets OK
 
