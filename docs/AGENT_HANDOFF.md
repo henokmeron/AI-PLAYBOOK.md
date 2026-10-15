@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (`216.81.248.126:19091` refused the connection. The SSH key is absent on this machine. Pod health was not read.)
+Last updated: **2026-10-15** (Pod `tn28umxi9a5lqx` reached over SSH; preflight blocked on driver 570; weights and archives intact).
 
 ## Only this repository
 
@@ -44,14 +44,14 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 | Item | Value | Status |
 | --- | --- | --- |
-| Active test Pod | RunPod `1g41ejmd99iyun` (“brand new pod”), **A100-SXM4-80GB**, **$1.79/hr** | Owner says it was stopped and then restarted, and that the RunPod page is open in the Cursor browser. The new SSH port was not read. Keep volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373`. |
-| SSH (TCP) | Tried `root@216.81.248.126 -p 19091` on 2026-10-15 after the owner said the Pod was running | **FAILED.** TCP connection refused. `$HOME/.ssh/id_ed25519` is absent. Read the new host and port from the RunPod page. Do not reuse `19091` or `11165`. |
-| GPU / driver | 81,920 MiB, **0 MiB used**, driver 580.159.04 | VERIFIED 2026-10-15. Qwen is not loaded. |
-| Container | Host `uptime` printed about 9 weeks; treat that as the machine, not proof this Pod has been serving | Platform ports are down |
-| Global Volume | Same volume id `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (fuse.geesefs) | VERIFIED. The RunPod UI showed 0 bytes; SSH showed the files. |
-| Qwen | `127.0.0.1:8002` | Not listening. Weights present: 11 shards under revision `fc05daec…`. |
+| Active test Pod | RunPod `tn28umxi9a5lqx` (“relative_emerald_ant”), **A100-SXM4-80GB**, **$1.79/hr** | Running and idle. Earlier Pods `1g41ejmd99iyun` / `00n856z3eue5v9` are not the current one. |
+| SSH (TCP) | `root@185.216.23.194 -p 45209`, key `%USERPROFILE%\.ssh\id_ed25519` | **VERIFIED** 2026-10-15. Old ports `19091` and `11165` refused. |
+| GPU / driver | 81,920 MiB, **0 MiB used**, driver **570.172.08** | **BLOCKED.** Archived Qwen runtime needs driver ≥580. |
+| Container | Fresh enough that `/tmp/platform-diagnostics` was empty before preflight | Platform ports are down |
+| Global Volume | Same volume id `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (fuse.geesefs) | **VERIFIED.** Archive checksum + zstd OK. Snapshot `01e7692` SHA OK. |
+| Qwen | `127.0.0.1:8002` | Not listening. Weights present: 11 shards. Preflight refused start. |
 | Gateway | `127.0.0.1:8010` | Not listening |
-| Console | `127.0.0.1:8080` | Not listening. `/tmp/AI-PLAYBOOK` is absent, so there is no running commit. |
+| Console | `127.0.0.1:8080` | Not listening. Preflight cloned `/tmp/AI-PLAYBOOK` to `7708140`. |
 | Other Pod | “Qwen model testing system” **H100 NVL** showed **$0.00/hr** earlier; do not assume it is still needed or safe to delete | Leave alone unless user says otherwise |
 
 ### Exact volume paths that must remain
@@ -71,8 +71,8 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 - **GitHub** feature branches include the Qwen routing work. `main` is fast-forwarded to the same tip and pushed. It is not force-pushed.
 - `e1e360f` is the parent of **`c2323238041cea8317d2322e6d16554d0bc967bc`** (Qwen routing). That push is a fast-forward. The `ninja` PATH change itself is **`083fa58`**, already inside `e1e360f`.
 - Local checkout is `feature/qwen-a100-start-hardening`. Keep `feature/qwen3.5-27b-integration` on the same commit.
-- Live Pod source was `/tmp/AI-PLAYBOOK` at `98511df` on an earlier Pod. On 2026-10-15 that checkout is **absent** on `1g41ejmd99iyun`. Nothing is listening on `:8002`, `:8010`, or `:8080`. Gemma on `:8000` is down. `MICROSOFT_CLIENT_ID` is unset. Weights are still present. The Pod was not stopped and Qwen was not started.
-- Volume `VERSION.txt` and snapshot `…-01e7692.tar.gz` match SHA-256 `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370` (checked 2026-10-14).
+- Live Pod source on `tn28umxi9a5lqx` is `/tmp/AI-PLAYBOOK` at `7708140` after a read-only preflight clone. Nothing is listening on `:8002`, `:8010`, or `:8080`. Gemma on `:8000` is down. `MICROSOFT_CLIENT_ID` is unset. Weights are still present. Qwen was not started because preflight failed on driver 570.
+- Volume snapshot `…-01e7692.tar.gz` SHA-256 `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370` re-checked **OK** on 2026-10-15. Runtime `SHA256SUMS` **OK**. Volume `START.sh` matches git (`6059e4c2…`).
 - Do not commit untracked `ops/_*.sh` / `ops/_*.py` probe helpers or `__pycache__`.
 
 ---
@@ -161,6 +161,13 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — health check: driver 570 blocks start; recovery assets OK
+
+- **VERIFIED:** Pod `tn28umxi9a5lqx` (“relative_emerald_ant”), SSH `root@185.216.23.194 -p 45209`. Volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace`. Qwen 11 shards present. Runtime archive checksum and `zstd -t` **OK**. Snapshot `01e7692` SHA **OK**. Volume `START.sh` matches git. GPU 0 / 81920 MiB. Driver **570.172.08**. Ports 8002/8010/8080/8000 down. Balance warning about $4.89 at $1.79/hour.
+- **PREFLIGHT:** `START.sh --preflight` exited 1 with only `nvidia-driver>=580` failing (`found '570'`). All other checks passed. `--start` was **not** run. No weights, archives, or snapshots were deleted.
+- **Diagnosis:** this host cannot run the archived CUDA-13 Qwen runtime. Safe fix is a new Pod on the same volume with RunPod CUDA 13 / driver >=580 filter. Older volume logs show successful Qwen loads on other hosts; they do not clear this block.
+- Local suites after fast-forward to `7708140`: integrations / agents / web / ops.test_console_deploy — **159 tests OK**. Evidence: `docs/results/runpod-driver570-health-2026-10-15.md`.
 
 ### 2026-10-15 — documented SSH port refused
 

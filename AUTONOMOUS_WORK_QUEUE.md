@@ -5,7 +5,7 @@
 **Branch:** `feature/qwen3.5-27b-integration`
 **Last reported feature commit:** `main` and both feature branches match. Qwen routing is `c232323`. Completion audit is `docs/results/completion-audit-2026-10-14.md`.
 **Tracking issue:** https://github.com/henokmeron/AI-PLAYBOOK.md/issues/1
-**Status:** Qwen is the RunPod-first production default, but on 2026-10-15 Pod `1g41ejmd99iyun` had the volume mounted and the weights present while `:8002`/`:8010`/`:8080` were down. Do not assume the old SSH port `11165`. See `docs/AGENT_HANDOFF.md`.
+**Status:** Pod `tn28umxi9a5lqx` has the volume and weights, but driver **570** fails preflight (`nvidia-driver>=580`). SSH is `185.216.23.194:45209`. Do not start Qwen on this host. See `docs/results/runpod-driver570-health-2026-10-15.md`.
 **Owner approval boundary:** Do not create new paid Pods, merge to `main`, delete volume assets, or restore Gemma onto the GPU without explicit approval. Prefer stopping idle Pods to limit GPU cost while leaving the volume intact.
 
 ## Read first
@@ -55,7 +55,7 @@ Keep Qwen3.5-27B as the RunPod-first production default, preserve volume recover
 - 2026-10-13 (honest integration status): **Partially yes — not fully the platform** (historical). Superseded by 2026-10-14 status.
 - 2026-10-13 (tonight completion / post-acceptance): Dual-model registry; Qwen runtime archived to `/workspace/runtime-setup/qwen-vllm/`.
 - 2026-10-14: **Qwen is the production default.** A100 SXM cold start + main `:8002`/`:8010`/`:8080` E2E (chat, text/PDF/XLSX RAG, console UI) **VERIFIED**. Snapshot `0b49946` checksum OK. Evidence: `ops/results/qwen-integration-status-2026-10-14.md`, `docs/AGENT_HANDOFF.md`.
-- **Next action requiring owner:** on 2026-10-15, `216.81.248.126:19091` refused the connection and this machine has no `id_ed25519`. Pod health was not read and `START.sh` was not run. Read the new SSH host and port from the RunPod page and connect from the Windows PC with `C:\Users\henok\.ssh\id_ed25519`. Do not reuse `19091`.
+- **Next action requiring owner:** Pod `tn28umxi9a5lqx` is reachable at `185.216.23.194:45209`, but driver 570 fails preflight. Stop this idle Pod or redeploy the **same** Global Volume on a host with NVIDIA driver ≥580 (RunPod CUDA 13 filter), then run `START.sh --preflight` and `START.sh`. Do not start Qwen on driver 570.
 
 ## Required handover format
 Report briefly:
