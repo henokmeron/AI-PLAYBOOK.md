@@ -21,6 +21,7 @@ import uuid
 from typing import Any, Callable
 
 from .model import ModelClient, ModelError
+from .it_support import INCIDENT_OUTPUT_SCHEMA, looks_like_it_support, playbook_for
 from .protocol import ProtocolError, build_system_prompt, parse_action
 from .redaction import redact, redact_text
 from .schema import ValidationError, check_schema, validate
@@ -102,6 +103,8 @@ class AgentRunner:
     ) -> AgentTask:
         if not isinstance(goal, str) or not goal.strip():
             raise ValueError("goal must be a non-empty string")
+        if output_schema is None and looks_like_it_support(goal):
+            output_schema = INCIDENT_OUTPUT_SCHEMA
         if output_schema is not None:
             check_schema(output_schema)
         if allowed_tools is not None:
@@ -114,7 +117,11 @@ class AgentRunner:
             allowed_tools=allowed_tools,
         )
         task.record.objective = task.goal
-        system = build_system_prompt(self.registry.catalog(allowed_tools), output_schema)
+        system = build_system_prompt(
+            self.registry.catalog(allowed_tools),
+            output_schema,
+            extra_rules=playbook_for(task.goal),
+        )
         task.messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": f"TASK\n{task.goal}"},
@@ -134,6 +141,8 @@ class AgentRunner:
                 if cancel is not None and cancel.cancelled:
                     self._finish(task, TaskState.CANCELLED, "cancelled by caller")
                     break
+                if task.execution == ExecutionStatus.QUEUED:
+                    self._status(task, ExecutionStatus.RECEIVED)
                 if task.state == TaskState.OBSERVATION:
                     task.transition(TaskState.PLANNING)
                     self._status(task, ExecutionStatus.INVESTIGATING)

@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (Agent async progress + task history at `0165267`; CUDA-13 Pod `vx4oe3oyfsqnz8` **STOPPED** — Global Volume kept).
+Last updated: **2026-10-15** (Agent queue + IT playbook shipped locally; Pod `vx4oe3oyfsqnz8` **STOPPED** — same-machine GPU unavailable; Global Volume kept).
 
 ## Only this repository
 
@@ -159,6 +159,12 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — agent queue + IT playbook; Start blocked (GPU gone)
+
+- **VERIFIED (local):** Serial async queue (`queued` → run), cancel-while-queued, IT support playbook + incident output schema, richer Agent UI (results/verification/errors), history default `/workspace/agent-task-history` when volume writable. Tests: agents suite **95 OK**; `web.test_server` **23 OK**.
+- **Live deploy BLOCKED:** RunPod Start on `vx4oe3oyfsqnz8` repeatedly shows “Your Pod's GPUs are no longer available.” Did **not** click Automatically migrate (that spins up a **new** Pod). Did **not** Terminate. Global Volume still attached. Balance ~$4.89.
+- **Next live step (needs owner OK):** approve RunPod “Automatically migrate your Pod data” for this Pod (same volume, new machine), **or** wait until this machine’s A100 is free and Start again. Then `START.sh`, deploy tip, run `python3 -m agents.live_async_smoke`.
 
 ### 2026-10-15 — agent async progress + auditable history; Pod stopped
 

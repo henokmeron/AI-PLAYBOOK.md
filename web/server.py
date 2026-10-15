@@ -412,10 +412,13 @@ class WebServer(ThreadingHTTPServer):
             Path(os.environ.get("RAG_DOCS_DIR", "/workspace/rag-demo-docs")),
             Path(os.environ.get("RAG_MANAGED_DOCS_DIR", "/workspace/rag-managed-docs")),
         )
-        history_dir = os.environ.get(
-            "AGENT_HISTORY_DIR",
-            "/tmp/agent-task-history",
-        )
+        history_dir = os.environ.get("AGENT_HISTORY_DIR")
+        if not history_dir:
+            volume_history = Path("/workspace/agent-task-history")
+            if Path("/workspace").is_dir() and os.access("/workspace", os.W_OK):
+                history_dir = str(volume_history)
+            else:
+                history_dir = "/tmp/agent-task-history"
         self.desk = AgentDesk(catalog, documents=documents, history_dir=history_dir)
         super().__init__((config.host, config.port), Handler)
 

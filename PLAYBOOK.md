@@ -75,8 +75,8 @@ Do not buy large cloud resources until the technical design requires them.
 
 ### 2026-10-15 — Agent execution loop (progress + history)
 
-- Console Agent desk supports async runs (`wait: false`), live status polling, cooperative cancel, and redacted task history under `AGENT_HISTORY_DIR`.
-- Git tip **`0165267`**. CUDA-13 Pod `vx4oe3oyfsqnz8` **STOPPED** (volume kept). Details: `docs/agents/README.md`, `docs/results/agent-async-history-2026-10-15.md`.
+- Console Agent desk supports async runs (`wait: false`), live status polling, cooperative cancel, serial `queued` tasks, IT-support incident reports, and redacted task history (defaults to `/workspace/agent-task-history` on the volume).
+- CUDA-13 Pod `vx4oe3oyfsqnz8` **STOPPED**; Start blocked until GPU returns or owner approves RunPod migrate. Details: `docs/agents/README.md`, `docs/AGENT_HANDOFF.md`.
 
 ### 2026-10-14 — RunPod-first first release (Qwen primary)
 

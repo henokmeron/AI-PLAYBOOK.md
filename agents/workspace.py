@@ -126,6 +126,7 @@ def public_view(task: AgentTask, trace: ExecutionTrace, *, running: bool = False
         "running": bool(running),
         "cancellable": bool(
             running
+            or task.execution == ExecutionStatus.QUEUED
             or task.state in _PAUSED
             or (not task.is_terminal and task.execution not in EXECUTION_TERMINAL)
         ),
@@ -150,6 +151,8 @@ class AgentDesk:
         if history_dir is None:
             history_dir = os.environ.get("AGENT_HISTORY_DIR", "")
         self.history = TaskHistoryStore(history_dir) if history_dir else None
+        self._queue: list[str] = []
+        self._active_id: str | None = None
 
     def connectors(self) -> list[dict[str, Any]]:
         rows = self.catalog.describe(self.ctx.tenant_id)
@@ -221,6 +224,71 @@ class AgentDesk:
             raise KeyError(task_id)
         return session
 
+    def _busy_unlocked(self) -> bool:
+        if self._active_id is None:
+            return False
+        session = self._sessions.get(self._active_id)
+        if session is None:
+            self._active_id = None
+            return False
+        thread = session.get("thread")
+        # Claimed for launch but thread not attached yet still counts as busy.
+        if thread is None:
+            return True
+        return thread.is_alive()
+
+    def _mark_queued(self, task: AgentTask) -> None:
+        task.execution = ExecutionStatus.QUEUED
+        task.status_log = [ExecutionStatus.QUEUED.value]
+
+    def _pop_next_queued_unlocked(self) -> str | None:
+        while self._queue:
+            candidate = self._queue.pop(0)
+            queued = self._sessions.get(candidate)
+            if queued is None:
+                continue
+            if queued["task"].is_terminal or queued["cancel"].cancelled:
+                continue
+            return candidate
+        return None
+
+    def _start_thread(self, task_id: str) -> None:
+        session = self._session(task_id)
+        runner: AgentRunner = session["runner"]
+        task: AgentTask = session["task"]
+        trace: ExecutionTrace = session["trace"]
+        cancel: CancellationToken = session["cancel"]
+
+        def worker() -> None:
+            try:
+                runner.run(task, cancel)
+            finally:
+                with self._lock:
+                    current = self._sessions.get(task_id)
+                    if current is not None:
+                        current["thread"] = None
+                    if self._active_id == task_id:
+                        self._active_id = None
+                self._view(task, trace, running=False)
+                self._pump_queue()
+
+        thread = threading.Thread(target=worker, name=f"agent-{task_id[:8]}", daemon=True)
+        with self._lock:
+            session["thread"] = thread
+            self._active_id = task_id
+        self._view(task, trace, running=True)
+        thread.start()
+
+    def _pump_queue(self) -> None:
+        with self._lock:
+            if self._busy_unlocked():
+                return
+            next_id = self._pop_next_queued_unlocked()
+            if next_id is None:
+                return
+            self._active_id = next_id
+        self._start_thread(next_id)
+
     def start(
         self,
         goal: str,
@@ -261,20 +329,17 @@ class AgentDesk:
             runner.run(task, cancel)
             return self._view(task, trace, running=False)
 
-        def worker() -> None:
-            try:
-                runner.run(task, cancel)
-            finally:
-                with self._lock:
-                    current = self._sessions.get(task.task_id)
-                    if current is not None:
-                        current["thread"] = None
-                self._view(task, trace, running=False)
-
-        thread = threading.Thread(target=worker, name=f"agent-{task.task_id[:8]}", daemon=True)
-        session["thread"] = thread
-        self._view(task, trace, running=True)
-        thread.start()
+        with self._lock:
+            if self._busy_unlocked():
+                self._mark_queued(task)
+                self._queue.append(task.task_id)
+                queued = True
+            else:
+                self._active_id = task.task_id
+                queued = False
+        if queued:
+            return self._view(task, trace, running=False)
+        self._start_thread(task.task_id)
         return public_view(task, trace, running=True)
 
     def get(self, task_id: str) -> dict[str, Any]:
@@ -345,6 +410,9 @@ class AgentDesk:
             session["runner"], session["task"], session["trace"], session["cancel"],
         )
         cancel.cancel()
+        with self._lock:
+            if task_id in self._queue:
+                self._queue = [item for item in self._queue if item != task_id]
         thread = session.get("thread")
         if thread is not None and thread.is_alive():
             # Cooperative: the worker checks the token between steps.

@@ -667,6 +667,7 @@
   var agentCallId = "";
   var agentPollTimer = null;
   var executionLabels = {
+    queued: "Queued",
     received: "Received",
     investigating: "Investigating",
     awaiting_information: "Awaiting information",
@@ -769,11 +770,25 @@
       agentRecord.appendChild(el("p", "meta", "Plan: " + step));
     });
     (record.tool_calls || []).forEach(function (call) {
-      agentRecord.appendChild(el("p", "meta", "Tool: " + (call.tool || "unknown")));
+      agentRecord.appendChild(el("p", "meta", "Tool call: " + (call.tool || "unknown")));
+    });
+    (record.results || []).forEach(function (result) {
+      var ok = result.ok === false ? "failed" : "ok";
+      var preview = result.preview ? " — " + result.preview : "";
+      agentRecord.appendChild(el("p", "meta", "Result (" + ok + "): " + (result.tool || "tool") + preview));
+    });
+    (record.verification || []).forEach(function (check) {
+      var ok = check.ok === false ? "failed" : "ok";
+      agentRecord.appendChild(el("p", "meta", "Verified " + (check.check || "step") + ": " + ok + (check.tool ? " (" + check.tool + ")" : "")));
+    });
+    (record.errors || []).forEach(function (err) {
+      agentRecord.appendChild(el("p", "meta", "Error: " + (err.kind || "issue") + (err.detail ? " — " + err.detail : "")));
     });
     if (record.outcome) agentRecord.appendChild(el("p", "meta", "Outcome: " + record.outcome));
     var headingText = view.answer || view.failure || label;
+    if (execution === "queued") headingText = "Waiting in the queue for an earlier task to finish.";
     if (execution === "completed") headingText = view.answer || "Completed.";
+    if (execution === "failed") headingText = view.failure || "Failed.";
     if (execution === "escalated") headingText = view.answer || "Escalated.";
     agentLog.appendChild(el("p", null, headingText));
     (view.activity || []).forEach(function (item) {
@@ -795,7 +810,7 @@
     var pending = view.pending_approval;
     agentApproval.hidden = !pending;
     agentInfo.hidden = execution !== "awaiting_information";
-    agentCancel.hidden = !(view.cancellable || view.running || execution === "awaiting_approval" || execution === "awaiting_information");
+    agentCancel.hidden = !(view.cancellable || view.running || execution === "queued" || execution === "awaiting_approval" || execution === "awaiting_information");
     if (pending) {
       agentTaskId = view.task_id;
       agentCallId = pending.call_id || "";
