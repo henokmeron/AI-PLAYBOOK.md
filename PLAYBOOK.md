@@ -76,8 +76,8 @@ Do not buy large cloud resources until the technical design requires them.
 ### 2026-10-15 — AI IT Helpdesk
 
 - Agent page is the IT Helpdesk: classify → docs/health/diagnostics → approval-gated local remediation → verify → incident report.
-- Tools: `agents/builtin/helpdesk.py`. Docs: `docs/agents/helpdesk.md`. Mock E2E **VERIFIED**; live Qwen helpdesk **NOT TESTED** until console redeploy.
-- Active Pod after accidental loss of `1cj381fjuujeq7`: `4lvr54b0wmkz6c` (A100 SXM, same Global Volume). Prefer Stop when idle.
+- Tools: `agents/builtin/helpdesk.py`. Docs: `docs/agents/helpdesk.md`. Mock E2E **VERIFIED**. Live Qwen on Pod `4lvr54b0wmkz6c` tip **`c069674`**: **VERIFIED** (`docs/results/helpdesk-live-qwen-2026-10-15.md`) — smoke + UI approval of `clear_temp_cache` only.
+- Active Pod: `4lvr54b0wmkz6c` (A100 SXM, same Global Volume). Prefer Stop when idle.
 
 ### 2026-10-15 — Agent execution loop (progress + history)
 

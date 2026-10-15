@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (IT Helpdesk tools + UI shipped in source; Pod redeployed as `4lvr54b0wmkz6c` after accidental terminate of `1cj381fjuujeq7`).
+Last updated: **2026-10-15** (Live Qwen IT Helpdesk **VERIFIED** on Pod `4lvr54b0wmkz6c` at tip **`c069674`**; see `docs/results/helpdesk-live-qwen-2026-10-15.md`).
 
 ## Only this repository
 
@@ -50,7 +50,7 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 | GPU / driver | 81,920 MiB, ~**71,091 MiB used**, driver **580.126.16** | **VERIFIED.** |
 | Container | PyTorch 2.8.0; runtime in `/tmp/vllm-qwen-env` | Restored from volume archive. |
 | Global Volume | `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` | **VERIFIED.** |
-| Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | **VERIFIED** HTTP 200. Tip **`a680580`**. |
+| Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | **VERIFIED** HTTP 200. Console tip **`c069674`**. Live IT Helpdesk **VERIFIED**. |
 | Other Pod | Older idle/terminated Pods | Leave alone unless user says otherwise |
 
 ### Exact volume paths that must remain
@@ -101,9 +101,11 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 ### Agents / security / integrations
 
 - `agents/`, `integrations/`, security review, fine-tuning plan: committed (`de40330`, smoke `473d119`).
-- Live agent smoke vs Qwen on Pod `00n856z3eue5v9`, deployed code `98511df`: **calculator VERIFIED** on 2026-10-14. `agents.live_smoke` and `POST /api/agent` both returned `696.486` from the calculator tool. Document Q&A on `POST /api/rag` answered the receipt question from the demo corpus and abstained on CEO salary. That live check was not repeated on 2026-10-15 because the new code is not deployed.
-- In source, the Agent desk now has `search_documents`. It uses the existing retrieval pipeline, cites the file, abstains when coverage is too low, and flags instruction-like document text. That path is **unit-tested with a fake model**, not live against Qwen. Standalone Document Q&A, Chat, and System Status remain. File attachments on the Agent page are unsupported and are not indexed.
-- Approval pause is unit-tested. No live external approval was clicked, and no email was sent.
+- Live agent smoke vs Qwen on Pod `00n856z3eue5v9`, deployed code `98511df`: **calculator VERIFIED** on 2026-10-14. `agents.live_smoke` and `POST /api/agent` both returned `696.486` from the calculator tool. Document Q&A on `POST /api/rag` answered the receipt question from the demo corpus and abstained on CEO salary.
+- **2026-10-15 live IT Helpdesk on Pod `4lvr54b0wmkz6c` tip `c069674`: VERIFIED** against real Qwen (not mocked). Evidence: `docs/results/helpdesk-live-qwen-2026-10-15.md`. Async calculator smoke FAILS=0; helpdesk smoke FAILS=0; approval path cleared local temp cache only; web UI submit → Approve → incident report `resolved` (task `9dc32d7f8a774dfeb43573eeab8dc41a`).
+- Protocol fix: accept Qwen’s `{"action":"<tool_name>",...}` shortcut. IT token budget raised to 48k after a live run hit the old 16k ceiling post-approval.
+- In source, the Agent desk has `search_documents` (unit-tested with a fake model; live Document Q&A remains separate). File attachments on the Agent page are unsupported and are not indexed.
+- Helpdesk approval pause: **live VERIFIED** for `clear_temp_cache` only. No email was sent. No customer systems touched.
 - Microsoft 365 OAuth is implemented in source for read-only mail. **No Entra application was created. No application id is configured. No real account was authorised. No real Graph request or mailbox search succeeded.** The live console is still `98511df` and was not restarted. See `docs/integrations/microsoft-365-signin.md`.
 - Nginx on some Pods listens on `0.0.0.0:8081` → console without login. User **deferred** fixing auth/nginx until a later “login” phase. Treat Pod docs as non-sensitive until then (`docs/security/baseline-review.md`).
 
@@ -160,6 +162,14 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — FINAL live IT Helpdesk deploy (Qwen VERIFIED)
+
+- Restored existing Pod `4lvr54b0wmkz6c` (SSH `154.54.102.40:13212`). Did **not** create a second Pod or redownload weights. Qwen/gateway already healthy; console-only deploy to **`c069674`**.
+- First live helpdesk attempt failed: protocol violation (tool name as `action`). Fixed + pushed `7b61967`. Second failure after approval: token budget exhausted. Fixed + pushed `c069674`.
+- **VERIFIED live:** `agents.live_async_smoke` FAILS=0; helpdesk smoke FAILS=0; approval smoke FAILS=0; browser UI ticket with Approve → completed/resolved. Details in `docs/results/helpdesk-live-qwen-2026-10-15.md`.
+- **NOT RUN / NOT CLAIMED:** Entra, Graph mail, enrolled remote control, force-push, volume delete.
+- After docs commit: **stop** the Pod if idle (prefer Stop, not Terminate).
 
 ### 2026-10-15 — AI IT Helpdesk implemented (source + mock tests)
 
