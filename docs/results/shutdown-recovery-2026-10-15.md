@@ -2,7 +2,7 @@
 
 The owner was about to stop RunPod `00n856z3eue5v9`. This note records what was saved and what was not. A new Global Volume snapshot was **not** created.
 
-**Current Pod, checked again on 2026-10-15:** SSH is `root@216.81.248.126 -p 19091`, not `154.54.102.31:11165`. The command later in this file that uses port `11165` is the historical shutdown attempt. Port `11165` refuses connections. Use the Windows command in `docs/AGENT_HANDOFF.md`.
+**Current Pod, 2026-10-15:** the owner is stopping `1g41ejmd99iyun` in the RunPod UI. Use Stop, not Terminate, and keep volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373`. This agent did not confirm the stopped state. The last SSH mapping was `root@216.81.248.126 -p 19091`. That port dies with the Pod. The command later in this file that uses port `11165` is the older shutdown attempt. After the next start, read the new port and follow `docs/AGENT_HANDOFF.md`. Do not run `START.sh` until `/workspace` is confirmed as `fuse.geesefs`.
 
 ## Where this was run
 

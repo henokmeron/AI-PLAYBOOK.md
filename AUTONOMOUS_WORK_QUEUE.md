@@ -55,7 +55,7 @@ Keep Qwen3.5-27B as the RunPod-first production default, preserve volume recover
 - 2026-10-13 (honest integration status): **Partially yes — not fully the platform** (historical). Superseded by 2026-10-14 status.
 - 2026-10-13 (tonight completion / post-acceptance): Dual-model registry; Qwen runtime archived to `/workspace/runtime-setup/qwen-vllm/`.
 - 2026-10-14: **Qwen is the production default.** A100 SXM cold start + main `:8002`/`:8010`/`:8080` E2E (chat, text/PDF/XLSX RAG, console UI) **VERIFIED**. Snapshot `0b49946` checksum OK. Evidence: `ops/results/qwen-integration-status-2026-10-14.md`, `docs/AGENT_HANDOFF.md`.
-- **Next action requiring owner:** one SSH attempt from this Linux agent on 2026-10-15 exited 255. The identity file `/home/ubuntu/.ssh/id_ed25519` is missing, then the server returned `Permission denied (publickey,password)`. Pod health was not read and nothing was deployed. Run the PowerShell command in `docs/AGENT_HANDOFF.md` on the Windows PC with `C:\Users\henok\.ssh\id_ed25519`. Do not regenerate a key. Console deploy stays gated on `qwen:200` and `gateway:200`. Do not run `START.sh` from this result.
+- **Next action requiring owner:** stop Pod `1g41ejmd99iyun` in the RunPod UI with Stop, not Terminate, and keep volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373`. The owner said on 2026-10-15 they are doing that. This agent did not confirm the stopped state. After the next start, read the new SSH port, confirm `/workspace` is `fuse.geesefs`, and read `docs/AGENT_HANDOFF.md` before any service command. Do not run `START.sh` blindly. Do not reuse port `19091`.
 
 ## Required handover format
 Report briefly:

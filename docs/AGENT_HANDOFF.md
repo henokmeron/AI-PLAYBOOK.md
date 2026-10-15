@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (SSH to port 19091 failed: identity file missing, then `Permission denied (publickey,password)`, exit 255. Console deploy was not run.)
+Last updated: **2026-10-15** (Owner is stopping Pod `1g41ejmd99iyun` in the RunPod UI. This agent did not stop it and did not confirm the stopped state.)
 
 ## Only this repository
 
@@ -44,8 +44,8 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 | Item | Value | Status |
 | --- | --- | --- |
-| Active test Pod | RunPod `1g41ejmd99iyun` (“brand new pod”), **A100-SXM4-80GB**, **$1.79/hr** | Running and idle. The older Pod `00n856z3eue5v9` is not in the Pod list. |
-| SSH (TCP) | `root@216.81.248.126 -p 19091`, key `%USERPROFILE%\.ssh\id_ed25519` | VERIFIED 2026-10-15. The old `154.54.102.31:11165` actively refused. |
+| Active test Pod | RunPod `1g41ejmd99iyun` (“brand new pod”), **A100-SXM4-80GB**, **$1.79/hr** | Owner said on 2026-10-15 they are stopping it. Use Stop, not Terminate. Keep volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373`. The stop was not confirmed from this agent. |
+| SSH (TCP) | Last mapped port `root@216.81.248.126 -p 19091`, key `%USERPROFILE%\.ssh\id_ed25519` | That mapping dies when the Pod stops. Do not reuse `19091` or `11165` after the next start. Read the new port from the RunPod page. |
 | GPU / driver | 81,920 MiB, **0 MiB used**, driver 580.159.04 | VERIFIED 2026-10-15. Qwen is not loaded. |
 | Container | Host `uptime` printed about 9 weeks; treat that as the machine, not proof this Pod has been serving | Platform ports are down |
 | Global Volume | Same volume id `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (fuse.geesefs) | VERIFIED. The RunPod UI showed 0 bytes; SSH showed the files. |
@@ -161,6 +161,14 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — owner is stopping the Pod
+
+- The owner said they are turning off RunPod Pod `1g41ejmd99iyun` now. This agent did not call the RunPod API, did not click Stop, and did not see a stopped status. No new Pod was created.
+- **Keep** Global Volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373`. It holds the Qwen weights, `/workspace/runtime-setup`, `/workspace/ai-platform-backups`, `/workspace/ai-platform-release`, and `/workspace/rag-managed-docs`. Stopping the Pod does not delete that volume. Terminating the Pod or deleting the volume would. Network volume storage can keep billing while the Pod is stopped.
+- Qwen `:8002`, the gateway `:8010`, and the console `:8080` stop with the Pod. `/tmp/AI-PLAYBOOK` is on the Pod disk and does not survive. The last login that could see the volume found those ports already down and the checkout absent. This agent could not re-check them: SSH on port `19091` exited 255.
+- **When the owner returns:** start the same Pod, not a new one, with the same volume. The SSH address will change. On the Windows PC, use `C:\Users\henok\.ssh\id_ed25519` and the new port. Confirm `findmnt` shows `fuse.geesefs` for `/workspace` before any service command. Do not run `START.sh` until that check and `docs/AGENT_HANDOFF.md` have been read. `START.sh` cold-loads Qwen.
+- Microsoft sign-in was not started. No application id was created.
 
 ### 2026-10-15 — SSH health check failed before login
 
