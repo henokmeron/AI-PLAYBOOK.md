@@ -118,15 +118,17 @@
         <section class="composer" aria-labelledby="connector-title">
           <h2 id="connector-title">Connected accounts</h2>
           <ul id="connector-list" class="sources"></ul>
+          <p id="microsoft-status" class="meta" role="status">Microsoft status is loading.</p>
           <p id="microsoft-setup" class="meta"></p>
-          <div id="microsoft-signin" class="sign-in-options">
-            <a class="sign-in" href="/api/microsoft/start?account=any">Sign in with a work, school, or personal account</a>
-            <a class="sign-in secondary" href="/api/microsoft/start?account=work">Sign in with a work or school account</a>
-            <a class="sign-in secondary" href="/api/microsoft/start?account=personal">Sign in with a personal Microsoft account</a>
+          <p id="microsoft-permissions" class="meta">Sign-in identifies the account and requests read-only mailbox access. It does not request permission to send mail. A work or school account belongs to an organisation. A personal account is one you created, such as Outlook, Hotmail, or Live.</p>
+          <div id="microsoft-signin" class="sign-in-options" role="group" aria-labelledby="connector-title">
+            <button type="button" class="sign-in" disabled>Sign in with a work, school, or personal account</button>
+            <button type="button" class="sign-in secondary" disabled>Sign in with a work or school account</button>
+            <button type="button" class="sign-in secondary" disabled>Sign in with a personal Microsoft account</button>
           </div>
           <p id="microsoft-mail" class="meta"></p>
           <div class="form-row">
-            <button type="button" id="microsoft-disconnect" class="secondary" hidden>Disconnect</button>
+            <button type="button" id="microsoft-disconnect" class="secondary" hidden>Disconnect Microsoft</button>
           </div>
         </section>
         <p id="agent-execution" class="meta"></p>

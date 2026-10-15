@@ -175,7 +175,22 @@ a.sign-in {
   color: var(--accent-ink);
   text-decoration: none;
 }
-a.sign-in.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+a.sign-in.secondary, button.sign-in.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+button.sign-in {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: fit-content;
+  max-width: 100%;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: inherit;
+  text-align: left;
+}
+button.sign-in:disabled, a.sign-in[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; }
 
 button {
   border: 0;
@@ -238,6 +253,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   .nav-status { margin-top: 0; }
   main { padding: 20px 14px 32px; }
   .split, .status-list { grid-template-columns: 1fr; }
+  a.sign-in, button.sign-in { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {

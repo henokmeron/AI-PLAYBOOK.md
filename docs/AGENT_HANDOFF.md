@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (Microsoft sign-in options are in source only; no Entra app was created and the Pod was not restarted).
+Last updated: **2026-10-15** (callback page and sign-in status are in source; the Pod was checked from outside and was not changed).
 
 ## Only this repository
 
@@ -161,6 +161,14 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — callback page, token revocation, console not replaced
+
+- GitHub `HEAD`, `main`, and `cursor/microsoft-signin-options-2e6d` were `7ebad238e2d2f30de329e9b27043973638a9e989` at the start of this session. The working tree had only untracked `rag/__pycache__`, which was left untracked.
+- The cloud agent is not the Pod. Qwen `:8002`, the gateway `:8010`, and the console `:8080` are not running here. TCP `154.54.102.31:11165` accepted a connection. There is no SSH private key in this environment, so the live processes, GPU, and `MICROSOFT_CLIENT_ID` were **not** re-checked on the Pod. The console was **not** restarted. No new Pod was started.
+- The callback `http://127.0.0.1:18080/api/microsoft/callback` was showing Chrome's blank JSON viewer. The handler now returns an HTML page for success, cancellation, and failure. It does not send an empty redirect and does not put a fragment in a `Location` header. A redirect alone does not mark the account connected. The Agent page shows the account only when the server has confirmed it.
+- A revoked refresh (`invalid_grant`) deletes the saved token. A network failure keeps it. Mail text that says to send mail does not grant `Mail.Send`. Tests are mocked. No real Graph mailbox search was run.
+- No Entra application id was created or invented.
 
 ### 2026-10-15 — Microsoft sign-in choices, source only
 

@@ -116,7 +116,9 @@
         else button.removeAttribute("aria-current");
       }
     });
-    if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+    if (location.hash !== "#" + name) {
+      history.replaceState(null, "", location.pathname + location.search + "#" + name);
+    }
     document.title = name === "documents" ? "Document Q&A" : name === "agent" ? "Agent" : name === "status" ? "System Status" : "Chat";
     if (name === "agent") loadConnectors();
     if (name === "status") renderStatus();
@@ -739,34 +741,57 @@
   }
 
   function renderMicrosoft(signIn) {
+    var status = document.getElementById("microsoft-status");
     var setup = document.getElementById("microsoft-setup");
+    var permissions = document.getElementById("microsoft-permissions");
     var mail = document.getElementById("microsoft-mail");
     var options = document.getElementById("microsoft-signin");
     var disconnect = document.getElementById("microsoft-disconnect");
     var notice = microsoftNotice();
-    setup.textContent = notice || signIn.setup || "";
+    var state = signIn.status || (signIn.connected ? "connected" : (signIn.configured ? "disconnected" : "unconfigured"));
+    var labels = {
+      unconfigured: "Microsoft is not configured.",
+      disconnected: "Microsoft is disconnected.",
+      connected: "Microsoft is connected.",
+      error: "Microsoft sign-in needs attention."
+    };
+    if (notice === "connected" && state !== "connected") {
+      status.textContent = "Microsoft is disconnected.";
+    } else {
+      status.textContent = labels[state] || "Microsoft status is unknown.";
+    }
+    setup.textContent = signIn.setup || "";
+    if (signIn.permissions) permissions.textContent = signIn.permissions;
     options.textContent = "";
-    if (!signIn.connected) {
+    options.hidden = state === "connected";
+    if (state !== "connected") {
       (signIn.accounts || []).forEach(function (account) {
-        var link = document.createElement("a");
-        link.className = account.id === "any" ? "sign-in" : "sign-in secondary";
-        link.href = "/api/microsoft/start?account=" + encodeURIComponent(account.id);
-        link.textContent = account.label;
-        if (!signIn.configured) {
-          link.addEventListener("click", function (event) {
-            event.preventDefault();
-            setup.textContent = signIn.setup || "Microsoft sign-in is not configured.";
-          });
+        var control = signIn.configured ? document.createElement("a") : document.createElement("button");
+        control.className = account.id === "any" ? "sign-in" : "sign-in secondary";
+        control.textContent = account.label;
+        if (signIn.configured) {
+          control.href = "/api/microsoft/start?account=" + encodeURIComponent(account.id);
+        } else {
+          control.type = "button";
+          control.disabled = true;
         }
-        options.appendChild(link);
+        options.appendChild(control);
+        if (account.detail) options.appendChild(el("p", "meta", account.detail));
       });
     }
-    options.hidden = !!signIn.connected;
-    disconnect.hidden = !signIn.connected;
-    if (signIn.connected) {
+    disconnect.hidden = state !== "connected";
+    disconnect.disabled = false;
+    disconnect.textContent = "Disconnect Microsoft";
+    if (state === "connected" && signIn.account) {
       mail.textContent = signIn.mail_read
-        ? "Signed in as " + (signIn.account || "the connected account") + ". Mail search is read-only."
-        : "Signed in as " + (signIn.account || "the connected account") + ". Mail.Read was not granted, so mail search stays hidden.";
+        ? "Verified account " + signIn.account + ". Mail search is read-only."
+        : "Verified account " + signIn.account + ". Mail.Read was not granted, so mail search stays unavailable.";
+    } else if (notice === "connected") {
+      mail.textContent = "The browser returned from Microsoft, but this server has not confirmed an account.";
+    } else if (notice === "cancelled") {
+      mail.textContent = "Microsoft sign-in was cancelled. No mailbox was read.";
+    } else if (notice === "failed") {
+      mail.textContent = "Microsoft sign-in did not finish. No mailbox was read.";
     } else {
       mail.textContent = "";
     }
@@ -775,13 +800,11 @@
   function microsoftNotice() {
     var params = new URLSearchParams(location.search);
     var result = params.get("microsoft");
-    if (result !== "connected" && result !== "denied" && result !== "unconfigured") return "";
+    if (result !== "connected" && result !== "cancelled" && result !== "failed") return "";
     params.delete("microsoft");
     var query = params.toString();
     history.replaceState(null, "", location.pathname + (query ? "?" + query : "") + (location.hash || "#agent"));
-    if (result === "connected") return "Microsoft sign-in finished. The account stays on this server.";
-    if (result === "unconfigured") return "Microsoft sign-in needs an application id before it can start.";
-    return "Microsoft did not complete sign-in. No mailbox was read.";
+    return result;
   }
 
   function loadConnectors() {
@@ -840,9 +863,14 @@
   }
 
   document.getElementById("microsoft-disconnect").addEventListener("click", function () {
+    var button = document.getElementById("microsoft-disconnect");
+    button.disabled = true;
+    button.textContent = "Disconnecting…";
     request("/api/microsoft/disconnect", { method: "POST", body: {} }).then(function () {
       loadConnectors();
     }).catch(function (error) {
+      button.disabled = false;
+      button.textContent = "Disconnect Microsoft";
       showError(agentError, errorMessage(error));
     });
   });
@@ -878,7 +906,10 @@
 
   renderChat();
   renderRag();
-  showView(location.hash.replace("#", "") || "chat");
+  var microsoftResult = new URLSearchParams(location.search).get("microsoft");
+  var startView = location.hash.replace("#", "");
+  if (microsoftResult) startView = "agent";
+  showView(startView || "chat");
   loadDocuments().catch(function () {});
   refreshStatus();
   window.setInterval(refreshStatus, 15000);

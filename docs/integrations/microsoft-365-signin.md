@@ -17,7 +17,7 @@ to GitHub does not deploy it.
 2. The console redirects the browser to `https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize` with `prompt=select_account`.
 3. The request is an authorization-code flow with PKCE (`S256`). There is no client secret and no client assertion. The code verifier stays on the server for ten minutes and is single-use.
 4. The redirect URI must be exactly `http://127.0.0.1:18080/api/microsoft/callback` (or `http://localhost` with a port and that same path). A public redirect is rejected.
-5. The callback checks `state`. The authorization code is not written to the access log. Microsoft returns the browser to the tunneled console. The console exchanges the code, then calls `GET https://graph.microsoft.com/v1.0/me`.
+5. The callback checks `state` and exchanges the code only when both the code and the state are present. A missing or reused state, a cancelled consent (`access_denied`), or any other Microsoft error returns an HTML page. That page does not repeat Microsoft's error text. The browser is sent to the Agent page. An empty redirect is not used, because Chrome shows an empty `/api/` response as a blank JSON viewer. The authorization code is not written to the access log. After a valid code, the console calls `GET https://graph.microsoft.com/v1.0/me` and only then records the account.
 6. The access token and refresh token stay on the server. The default file is `/tmp/microsoft-365-token.json`, created with mode `0600`. On Linux a group- or world-readable file is not loaded. The path cannot be inside this repository or under `/workspace`, so a volume snapshot does not keep the mailbox token. The browser receives the account address and connection status only.
 7. The connection record grants `mail:read` only when the token's scope list contains `Mail.Read`. Search and read then go through `Catalog.execute` as `m365_search_mail` and `m365_read_mail`. An empty search says that nothing matched. A Graph rejection is reported without the response body.
 8. Message ids are URL-encoded, including `/`, which real Graph ids contain. Send, draft, Teams, files, and calendar operations do not call Graph, even when `authorised=True` or when someone edits the connection record.
@@ -75,14 +75,11 @@ not indexed.
 This retrieval runs in the console process. It is not on the running console
 until that process is replaced.
 
-## Approval required before a restart
+## Console replacement
 
-Do not do this until the owner agrees. It was not done in this session.
+The owner approved a console-only replacement on 2026-10-15. It was **not done**. This environment can open TCP `154.54.102.31:11165`, but it has no SSH private key, so it cannot log in, inspect the process, or replace it.
 
-`bash /workspace/ai-platform-release/START.sh --start` is the wrong command
-while the stack is healthy. That launcher reuses a healthy Qwen, gateway, and
-console, so the new code would not load, and a cold Qwen start is the
-expensive path (last cold load was about 1080 seconds at $1.79/hour).
+`bash /workspace/ai-platform-release/START.sh` is the wrong command while the stack is healthy. That launcher reuses a healthy Qwen, gateway, and console, so the new code would not load. A cold Qwen start is the expensive path (last cold load was about 1080 seconds at $1.79/hour).
 
 What may stop: **only the console process** on `127.0.0.1:8080`. Do not stop
 Qwen on `127.0.0.1:8002`. Do not stop the gateway on `127.0.0.1:8010`. Do not

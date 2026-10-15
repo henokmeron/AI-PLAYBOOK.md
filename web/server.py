@@ -336,6 +336,37 @@ def resolve_static(static_dir: Path, url_path: str) -> Path | None:
     return None
 
 
+_CALLBACK_PAGES = {
+    "connected": (
+        "Microsoft sign-in finished",
+        "This server confirmed the account with Microsoft. The Agent page shows a connected account only after that confirmation. Mail access is read-only.",
+    ),
+    "cancelled": (
+        "Microsoft sign-in was cancelled",
+        "No account was connected and no mailbox was read.",
+    ),
+    "failed": (
+        "Microsoft sign-in did not finish",
+        "The sign-in could not be confirmed. No mailbox was read.",
+    ),
+}
+
+
+def callback_document(result: str) -> bytes:
+    """Browser page for the OAuth redirect. The result is one of three fixed words."""
+    title, detail = _CALLBACK_PAGES[result]
+    target = "/?microsoft=" + result + "#agent"
+    page = (
+        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        f"<title>{title}</title>"
+        f"<meta http-equiv=\"refresh\" content=\"0;url={target}\">"
+        "</head><body><h1>" + title + "</h1><p>" + detail + "</p>"
+        f"<p><a href=\"{target}\">Continue to the Agent page</a></p></body></html>"
+    )
+    return page.encode("utf-8")
+
+
 def redact_request_log(text: str) -> str:
     """Drop query strings that can carry an OAuth code, state, or token."""
     lowered = text.casefold()
@@ -535,20 +566,30 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_redirect(target)
 
+    def send_callback_page(self, result: str) -> None:
+        self.send_bytes(200, callback_document(result), "text/html; charset=utf-8")
+
     def handle_microsoft_callback(self, parsed) -> None:
         query = parse_qs(parsed.query)
-        if query.get("error"):
-            self.send_redirect("/?microsoft=denied#agent")
+        error = (query.get("error") or [""])[0]
+        if error == "access_denied":
+            self.send_callback_page("cancelled")
+            return
+        if error:
+            self.send_callback_page("failed")
             return
         code = (query.get("code") or [""])[0]
         state = (query.get("state") or [""])[0]
+        if not code or not state:
+            self.send_callback_page("failed")
+            return
         try:
             self.server.oauth.complete(code, state)  # type: ignore[attr-defined]
             self.server.microsoft.apply(self.server.desk.catalog, CONSOLE_TENANT)  # type: ignore[attr-defined]
         except AuthenticationError:
-            self.send_redirect("/?microsoft=denied#agent")
+            self.send_callback_page("failed")
             return
-        self.send_redirect("/?microsoft=connected#agent")
+        self.send_callback_page("connected")
 
     def handle_microsoft_disconnect(self) -> None:
         self.server.oauth.disconnect()  # type: ignore[attr-defined]

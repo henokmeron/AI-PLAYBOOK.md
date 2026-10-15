@@ -40,9 +40,28 @@ SCOPES = ("openid", "profile", "email", "offline_access", "User.Read", "Mail.Rea
 GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
 # The browser may choose one of these. It cannot supply an arbitrary directory.
 SIGN_IN_ACCOUNTS = (
-    ("any", "common", "Sign in with a work, school, or personal account"),
-    ("work", "organizations", "Sign in with a work or school account"),
-    ("personal", "consumers", "Sign in with a personal Microsoft account"),
+    (
+        "any",
+        "common",
+        "Sign in with a work, school, or personal account",
+        "Use this if the account might belong to an organisation or be a personal Microsoft account.",
+    ),
+    (
+        "work",
+        "organizations",
+        "Sign in with a work or school account",
+        "Only accounts in an organisational directory. A personal Microsoft account is not offered.",
+    ),
+    (
+        "personal",
+        "consumers",
+        "Sign in with a personal Microsoft account",
+        "Only a personal account, such as Outlook, Hotmail, or Live.",
+    ),
+)
+PERMISSIONS_NOTE = (
+    "Sign-in identifies the account and requests read-only mailbox access. "
+    "It does not request permission to send mail."
 )
 _TENANT_RE = re.compile(
     r"(?:common|organizations|consumers|"
@@ -184,8 +203,16 @@ class MicrosoftOAuth:
         elif self.tenant == "consumers":
             rows = (SIGN_IN_ACCOUNTS[2],)
         else:
-            rows = (("directory", self.tenant, "Sign in with your organisation"),)
-        return [{"id": key, "label": label, "tenant": tenant} for key, tenant, label in rows]
+            rows = ((
+                "directory",
+                self.tenant,
+                "Sign in with your organisation",
+                "This console accepts only the directory it was configured for.",
+            ),)
+        return [
+            {"id": key, "label": label, "detail": detail, "tenant": tenant}
+            for key, tenant, label, detail in rows
+        ]
 
     def tenant_for_account(self, account: str | None) -> str:
         choice = (account or "").strip().lower()
@@ -199,18 +226,26 @@ class MicrosoftOAuth:
         return choices[choice]
 
     def public_status(self) -> dict[str, Any]:
-        account = self.bundle.account if self.bundle else None
+        account = self.bundle.account if self.bundle is not None else None
+        if not self.configured():
+            status = "unconfigured"
+        elif self.bundle is not None:
+            status = "connected"
+        else:
+            status = "disconnected"
         return {
             "configured": self.configured(),
             "connected": self.bundle is not None,
+            "status": status,
             "account": account,
             "mail_read": self.has_mail_read(),
             "accounts": self.account_choices(),
+            "permissions": PERMISSIONS_NOTE,
             "redirect_uri": self.redirect_uri if self.configured() else None,
             "provider_scopes": list(SCOPES) if self.configured() else [],
             "setup": "" if self.configured() else (
-                "Sign-in needs an Entra application id in MICROSOFT_CLIENT_ID. "
-                "No Microsoft account is connected."
+                "Sign-in needs the Entra application id in MICROSOFT_CLIENT_ID. "
+                "The buttons stay unavailable until that id is set. No account is connected."
             ),
         }
 
@@ -364,6 +399,19 @@ class MicrosoftOAuth:
             {"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
             body,
         )
+        error = payload.get("error") if isinstance(payload, dict) else ""
+        if not isinstance(error, str):
+            error = ""
+        if (
+            fields.get("grant_type") == "refresh_token"
+            and error in {"invalid_grant", "interaction_required", "invalid_client"}
+        ):
+            self.disconnect()
+            raise AuthenticationError(
+                "Microsoft revoked the saved sign-in. Connect the account again. No mailbox data was returned."
+            )
+        if status >= 500 or status == 429:
+            raise TransientError("Microsoft did not respond. The saved sign-in was kept.")
         if status != 200 or not isinstance(payload, dict) or not payload.get("access_token"):
             raise AuthenticationError("Microsoft did not issue an access token.")
         return payload
@@ -431,7 +479,7 @@ def _https_transport(
         raw = exc.read(1_000_000)
         status = int(exc.code)
     except OSError as exc:
-        raise AuthenticationError("Microsoft could not be reached.") from exc
+        raise TransientError("Microsoft could not be reached. The saved sign-in was kept.") from exc
     try:
         payload = json.loads(raw.decode("utf-8"))
     except json.JSONDecodeError:

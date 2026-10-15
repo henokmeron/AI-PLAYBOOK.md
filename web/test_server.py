@@ -686,6 +686,8 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(page_status, 200)
         self.assertIn(b"Sign in with a work or school account", page)
         self.assertIn(b"Sign in with a personal Microsoft account", page)
+        self.assertIn(b"disabled", page)
+        self.assertIn(b"read-only mailbox access", page)
         self.assertNotIn(b"Mail.Send", page)
         start_status, start_body = self.request(base, "GET", "/api/microsoft/start")
         self.assertEqual(start_status, 409)
@@ -755,6 +757,31 @@ class ConsoleTests(unittest.TestCase):
         self.assertNotIn("client_secret", work_location)
         self.assertEqual(bad_status, 400)
         self.assertNotIn(b"11111111", bad_body)
+
+    def test_callback_is_an_html_page_and_hides_provider_errors(self) -> None:
+        base = self.web(None)
+        with OPENER.open(base + "/api/microsoft/callback", timeout=5) as response:
+            status = int(response.getcode())
+            content_type = response.headers.get("Content-Type") or ""
+            body = response.read()
+        self.assertEqual(status, 200)
+        self.assertIn("text/html", content_type)
+        self.assertIn(b"Microsoft sign-in did not finish", body)
+        self.assertIn(b"Continue to the Agent page", body)
+        self.assertNotIn(b"access_token", body)
+        cancelled, cancelled_body = self.request(
+            base, "GET", "/api/microsoft/callback?error=access_denied&error_description=%3Cscript%3Ealert(1)%3C/script%3E",
+        )
+        self.assertEqual(cancelled, 200)
+        self.assertIn(b"Microsoft sign-in was cancelled", cancelled_body)
+        self.assertNotIn(b"<script>", cancelled_body)
+        self.assertNotIn(b"alert(1)", cancelled_body)
+        failed, failed_body = self.request(
+            base, "GET", "/api/microsoft/callback?error=server_error&error_description=token-secret",
+        )
+        self.assertEqual(failed, 200)
+        self.assertIn(b"could not be confirmed", failed_body)
+        self.assertNotIn(b"token-secret", failed_body)
 
 
 if __name__ == "__main__":
