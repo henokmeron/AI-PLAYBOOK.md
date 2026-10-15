@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (Agent queue + IT playbook shipped locally; Pod `vx4oe3oyfsqnz8` **STOPPED** — same-machine GPU unavailable; Global Volume kept).
+Last updated: **2026-10-15** (Live resume on new Pod `1cj381fjuujeq7` at tip **`a680580`**; E2E + Agent async **VERIFIED**; stop when idle).
 
 ## Only this repository
 
@@ -44,13 +44,14 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 | Item | Value | Status |
 | --- | --- | --- |
-| Active test Pod | RunPod `vx4oe3oyfsqnz8` (“romantic_gray_canidae”), **A100-SXM4-80GB**, **$1.79/hr** when running, CUDA **13.x** | **STOPPED** (compute **$0.00/hr**). Replaced `tn28umxi9a5lqx` (driver 570). Do not start a second paid Pod. Do **not** Terminate. |
-| SSH (TCP) | Was `root@154.54.102.49 -p 18454`, key `%USERPROFILE%\.ssh\id_ed25519` | **VERIFIED** while running 2026-10-15. Host/port may change on next Start — re-read Connect. |
-| GPU / driver | 81,920 MiB, driver **580.126.16** (when last running) | **VERIFIED** on prior live session. Meets archived runtime requirement (driver ≥580). |
-| Container | Fresh PyTorch 2.8.0 template; runtime restored to `/tmp/vllm-qwen-env` when started | Ephemeral `/tmp` cleared on stop — restore from volume archive on Start. |
-| Global Volume | Volume id `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` | **PRESERVED** across stop. Results notes copied to `/workspace/platform-diagnostics/`. |
-| Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | Down while stopped. After Start + `START.sh`, re-verify HTTP 200. |
-| Other Pod | Older terminated/idle Pods are not the live stack | Leave alone unless user says otherwise |
+| Active test Pod | RunPod `1cj381fjuujeq7` (“coloured_scarlet_prawn”), **A100-SXM4-80GB**, **$1.79/hr**, CUDA **13.0/13.2** | **Running** after migrate API failed. Same Global Volume. Do not start another paid Pod. Prefer **Stop** when idle. Do **not** Terminate without approval. |
+| Prior Pod | `vx4oe3oyfsqnz8` (“romantic_gray_canidae”) | **STOPPED** ($0.00/hr). Migrate failed (`Failed to get mount info`). Leave stopped unless owner wants it terminated. |
+| SSH (TCP) | `root@154.54.102.45 -p 13502`, key `%USERPROFILE%\.ssh\id_ed25519` | **VERIFIED** 2026-10-15. Also: `ssh 1cj381fjuujeq7-64412092@ssh.runpod.io -i ~/.ssh/id_ed25519` |
+| GPU / driver | 81,920 MiB, ~**71,091 MiB used**, driver **580.126.16** | **VERIFIED.** |
+| Container | PyTorch 2.8.0; runtime in `/tmp/vllm-qwen-env` | Restored from volume archive. |
+| Global Volume | `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` | **VERIFIED.** |
+| Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | **VERIFIED** HTTP 200. Tip **`a680580`**. |
+| Other Pod | Older idle/terminated Pods | Leave alone unless user says otherwise |
 
 ### Exact volume paths that must remain
 
@@ -160,11 +161,17 @@ E2E helper (uses key file; does not print it):
 
 ## Session log (newest first)
 
+### 2026-10-15 — migrate failed; new A100 Pod live with `a680580`
+
+- Owner approved migrate. API error: **Failed to get mount info for source pod**. Deployed `1cj381fjuujeq7` A100 SXM CUDA 13 + same volume instead. Old `vx4oe3oyfsqnz8` left stopped.
+- **VERIFIED:** driver 580.126.16; `START.sh` → `FIRST_RELEASE_READY` (~730 s); `/tmp/AI-PLAYBOOK` = **`a680580`**; `:8002`/`:8010`/`:8080` HTTP 200; `_pod_e2e_verify.py` **FAILS: NONE**; Agent async calculator **50**; Agent cancel **cancelled**; console status **ready**.
+- SSH: `root@154.54.102.45 -p 13502`. Evidence: `docs/results/runpod-migrate-deploy-2026-10-15.md`.
+- **Cost:** Stop `1cj381fjuujeq7` when idle; keep volume; do not Terminate without approval.
+
 ### 2026-10-15 — agent queue + IT playbook; Start blocked (GPU gone)
 
-- **VERIFIED (local):** Serial async queue (`queued` → run), cancel-while-queued, IT support playbook + incident output schema, richer Agent UI (results/verification/errors), history default `/workspace/agent-task-history` when volume writable. Tests: agents suite **95 OK**; `web.test_server` **23 OK**.
-- **Live deploy BLOCKED:** RunPod Start on `vx4oe3oyfsqnz8` repeatedly shows “Your Pod's GPUs are no longer available.” Did **not** click Automatically migrate (that spins up a **new** Pod). Did **not** Terminate. Global Volume still attached. Balance ~$4.89.
-- **Next live step (needs owner OK):** approve RunPod “Automatically migrate your Pod data” for this Pod (same volume, new machine), **or** wait until this machine’s A100 is free and Start again. Then `START.sh`, deploy tip, run `python3 -m agents.live_async_smoke`.
+- **VERIFIED (local):** Serial async queue (`queued` → run), cancel-while-queued, IT support playbook + incident output schema, richer Agent UI, history default `/workspace/agent-task-history` when volume writable. Tests: agents suite **95 OK**; `web.test_server` **23 OK**.
+- **Live Start** on `vx4oe3oyfsqnz8` blocked (GPU unavailable). Later resolved by new Pod deploy (see entry above).
 
 ### 2026-10-15 — agent async progress + auditable history; Pod stopped
 
