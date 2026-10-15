@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (Live Qwen IT Helpdesk **VERIFIED** on Pod `4lvr54b0wmkz6c` at tip **`c069674`**; see `docs/results/helpdesk-live-qwen-2026-10-15.md`).
+Last updated: **2026-10-16** (AI Security & Operations Centre v1 added in source — `ops_centre/`, console **Operations** page. **Pod not started.** Gap/architecture: `docs/ops_centre/GAP_AND_ARCHITECTURE.md`).
 
 ## Only this repository
 
@@ -163,6 +163,14 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-16 — AI Security & Operations Centre (local source)
+
+- **Gap assessment + architecture:** `docs/ops_centre/GAP_AND_ARCHITECTURE.md`.
+- **Implemented:** `ops_centre/` event store (hash-chained), health aggregator (works if Qwen down), detections, alerts, incidents, `/api/ops/*`, console **Operations** view, AI Ops allowlisted tools on `AgentDesk`.
+- **Tests:** `ops_centre.tests.test_ops_centre` OK; `web.test_server` OK.
+- **NOT RUN:** RunPod Start, model load, live SOC vs Qwen. Do not claim live SOC verification until a deliberate Pod session.
+- **Still true:** Console has no login (baseline H-3); keep loopback. Hash chain is not forensic WORM.
 
 ### 2026-10-15 — FINAL live IT Helpdesk deploy (Qwen VERIFIED)
 

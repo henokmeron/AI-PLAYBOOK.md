@@ -20,6 +20,7 @@
         <button type="button" data-view="chat" id="nav-chat">Chat</button>
         <button type="button" data-view="documents" id="nav-documents">Document Q&amp;A</button>
         <button type="button" data-view="agent" id="nav-agent">IT Helpdesk</button>
+        <button type="button" data-view="ops" id="nav-ops">Operations</button>
         <button type="button" data-view="status" id="nav-status-tab">System Status</button>
       </nav>
       <p class="nav-status" id="nav-status" role="status">Checking gateway…</p>
@@ -188,6 +189,56 @@
         <div class="form-row">
           <button type="button" id="agent-cancel" class="secondary" hidden>Cancel task</button>
         </div>
+      </section>
+
+      <section id="ops-view" aria-labelledby="ops-title" hidden>
+        <header class="view-head">
+          <h1 id="ops-title">Security &amp; Operations Centre</h1>
+          <p>
+            Platform health, activity timeline, alerts and security incidents.
+            Status is never shown as healthy unless a fresh probe succeeded.
+            External paging is not configured unless you add a notifier deliberately.
+          </p>
+        </header>
+        <div id="ops-error" class="banner banner-error" role="alert" hidden></div>
+        <div class="form-row">
+          <button type="button" id="ops-refresh">Refresh probes &amp; detections</button>
+        </div>
+        <section class="result" aria-labelledby="ops-overview-title">
+          <h2 id="ops-overview-title">Executive overview</h2>
+          <p id="ops-overall" class="meta">Not checked yet.</p>
+          <ul id="ops-overview-list" class="sources"></ul>
+        </section>
+        <section class="result" aria-labelledby="ops-health-title">
+          <h2 id="ops-health-title">Services</h2>
+          <ul id="ops-health-list" class="sources"></ul>
+        </section>
+        <section class="result" aria-labelledby="ops-alerts-title">
+          <h2 id="ops-alerts-title">Alerts</h2>
+          <ul id="ops-alerts-list" class="sources"></ul>
+          <p id="ops-alerts-empty" class="meta">No open alerts.</p>
+        </section>
+        <section class="result" aria-labelledby="ops-incidents-title">
+          <h2 id="ops-incidents-title">Incidents</h2>
+          <ul id="ops-incidents-list" class="sources"></ul>
+          <p id="ops-incidents-empty" class="meta">No open incidents.</p>
+        </section>
+        <section class="result" aria-labelledby="ops-timeline-title">
+          <h2 id="ops-timeline-title">Activity timeline</h2>
+          <form id="ops-filter-form" class="composer">
+            <label for="ops-filter-q">Search</label>
+            <input id="ops-filter-q" type="search" maxlength="120" placeholder="component, type, or text">
+            <div class="form-row">
+              <button type="submit">Filter timeline</button>
+            </div>
+          </form>
+          <ul id="ops-timeline" class="sources"></ul>
+        </section>
+        <section class="result" aria-labelledby="ops-coverage-title">
+          <h2 id="ops-coverage-title">Detection coverage &amp; limits</h2>
+          <pre id="ops-coverage" class="meta"></pre>
+          <p id="ops-integrity" class="meta"></p>
+        </section>
       </section>
 
       <section id="status-view" aria-labelledby="status-title" hidden>

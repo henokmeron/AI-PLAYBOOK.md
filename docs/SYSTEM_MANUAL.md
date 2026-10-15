@@ -6,8 +6,8 @@
 
 | | |
 | --- | --- |
-| **Last updated** | 2026-10-15 |
-| **Git tip (code)** | `3447b79` / same on `main` and feature branches |
+| **Last updated** | 2026-10-16 |
+| **Git tip (code)** | see `git log -1` (Operations Centre added 2026-10-16) |
 | **Live Pod** | `4lvr54b0wmkz6c` — **Stopped** (Start when you need it) |
 | **Global Volume** | `5aac0c77-6fcc-4be9-a112-dfe3890e1373` mounted at `/workspace` |
 | **GitHub** | `https://github.com/henokmeron/AI-PLAYBOOK.md.git` |
@@ -230,6 +230,7 @@ SSH IP/port **change** when RunPod places the Pod on a new machine. Read them fr
 | Document Q&A | Document Q&A | RAG code + managed docs on volume + Qwen | VERIFIED on this stack earlier |
 | IT Helpdesk | IT Helpdesk | Agent loop + helpdesk tools + Qwen | **VERIFIED live** (clear local temp cache only) |
 | System Status | System Status | Console → gateway health | Works when Pod is up |
+| **Security & Operations Centre** | **Operations** | `ops_centre/` events, health, alerts, incidents | **Implemented in source** (local); live Pod not required to develop/test |
 | Microsoft mail | Connected accounts | Entra app id + OAuth | **Not configured** |
 | Enrolled PC remote control | Enrolled computers | Endpoint agent | **Not live** / no remote shell |
 
@@ -365,6 +366,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 
 | Date | Change |
 | --- | --- |
+| 2026-10-16 | AI Security & Operations Centre v1 in source (`ops_centre/`, console **Operations** page). Gap doc: `docs/ops_centre/GAP_AND_ARCHITECTURE.md`. No Pod started for this work. |
 | 2026-10-15 | First version of this manual after live IT Helpdesk verification; Pod stopped; tip `3447b79`. |
 
 ---

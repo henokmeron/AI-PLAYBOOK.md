@@ -315,6 +315,8 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("Document Q&amp;A", text)
         self.assertIn("System Status", text)
         self.assertIn(">IT Helpdesk<", text)
+        self.assertIn(">Operations<", text)
+        self.assertIn('id="ops-view"', text)
         self.assertIn('id="agent-task"', text)
         self.assertIn('id="agent-incident"', text)
         self.assertIn("File attachments on this page are not supported", text)

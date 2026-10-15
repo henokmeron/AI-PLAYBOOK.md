@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var views = ["chat", "documents", "agent", "status"];
+  var views = ["chat", "documents", "agent", "ops", "status"];
   var messages = [];
   var ragTurns = [];
   var busy = false;
@@ -119,11 +119,17 @@
     if (location.hash !== "#" + name) {
       history.replaceState(null, "", location.pathname + location.search + "#" + name);
     }
-    document.title = name === "documents" ? "Document Q&A" : name === "agent" ? "IT Helpdesk" : name === "status" ? "System Status" : "Chat";
+    document.title =
+      name === "documents" ? "Document Q&A"
+        : name === "agent" ? "IT Helpdesk"
+        : name === "ops" ? "Operations Centre"
+        : name === "status" ? "System Status"
+        : "Chat";
     if (name === "agent") {
       loadConnectors();
       loadAgentHistory();
     }
+    if (name === "ops") loadOpsCentre();
     if (name === "status") renderStatus();
   }
 
@@ -1098,6 +1104,156 @@
   });
 
   document.getElementById("status-refresh").addEventListener("click", refreshStatus);
+
+  var opsError = document.getElementById("ops-error");
+  var opsOverall = document.getElementById("ops-overall");
+  var opsOverviewList = document.getElementById("ops-overview-list");
+  var opsHealthList = document.getElementById("ops-health-list");
+  var opsAlertsList = document.getElementById("ops-alerts-list");
+  var opsAlertsEmpty = document.getElementById("ops-alerts-empty");
+  var opsIncidentsList = document.getElementById("ops-incidents-list");
+  var opsIncidentsEmpty = document.getElementById("ops-incidents-empty");
+  var opsTimeline = document.getElementById("ops-timeline");
+  var opsCoverage = document.getElementById("ops-coverage");
+  var opsIntegrity = document.getElementById("ops-integrity");
+
+  function showOpsError(message) {
+    if (!opsError) return;
+    if (!message) {
+      opsError.hidden = true;
+      opsError.textContent = "";
+      return;
+    }
+    opsError.hidden = false;
+    opsError.textContent = message;
+  }
+
+  function li(text) {
+    var item = document.createElement("li");
+    item.textContent = text;
+    return item;
+  }
+
+  function loadOpsCentre(filterQ) {
+    showOpsError("");
+    var overviewReq = request("/api/ops/overview");
+    var eventsPath = "/api/ops/events?limit=40";
+    if (filterQ) eventsPath += "&q=" + encodeURIComponent(filterQ);
+    var eventsReq = request(eventsPath);
+    var coverageReq = request("/api/ops/coverage");
+    var integrityReq = request("/api/ops/integrity");
+    Promise.all([overviewReq, eventsReq, coverageReq, integrityReq]).then(function (parts) {
+      var overview = parts[0];
+      var events = parts[1];
+      var coverage = parts[2];
+      var integrity = parts[3];
+      opsOverall.textContent =
+        "Overall: " + (overview.overall || "unknown")
+        + " · verified " + (overview.verified_at || "never")
+        + " · " + (overview.verification || "unknown")
+        + ". " + (overview.coverage_note || "");
+      opsOverviewList.innerHTML = "";
+      var counts = overview.alert_counts || {};
+      opsOverviewList.appendChild(li(
+        "Open alerts: " + (counts.total_open || 0)
+        + " (critical " + (counts.critical || 0)
+        + ", high " + (counts.high || 0) + ")"
+      ));
+      opsOverviewList.appendChild(li("Open incidents: " + ((overview.open_incidents || []).length)));
+      opsOverviewList.appendChild(li("Pending approvals seen in history: " + (overview.pending_approvals || 0)));
+      opsOverviewList.appendChild(li("Recent failed agent tasks (collected): " + (overview.recent_failed_tasks || 0)));
+      opsOverviewList.appendChild(li("Event integrity: " + (((overview.integrity || {}).ok) ? "chain OK" : "BROKEN")));
+
+      opsHealthList.innerHTML = "";
+      ((overview.health && overview.health.services) || []).forEach(function (svc) {
+        opsHealthList.appendChild(li(
+          svc.name + " — " + svc.state
+          + " [" + svc.verification + "/" + svc.check_kind + "]"
+          + (svc.latency_ms != null ? " " + svc.latency_ms + "ms" : "")
+          + " — " + (svc.detail || "")
+        ));
+      });
+
+      opsAlertsList.innerHTML = "";
+      var alerts = overview.open_alerts || [];
+      opsAlertsEmpty.hidden = alerts.length > 0;
+      alerts.forEach(function (alert) {
+        var item = document.createElement("li");
+        var label = document.createElement("span");
+        label.textContent = (alert.severity || "?") + " · " + (alert.status || "?") + " — " + (alert.title || "");
+        item.appendChild(label);
+        var ack = document.createElement("button");
+        ack.type = "button";
+        ack.textContent = "Acknowledge";
+        ack.className = "secondary";
+        ack.style.marginLeft = "0.5rem";
+        ack.addEventListener("click", function () {
+          request("/api/ops/alerts/transition", {
+            method: "POST",
+            body: { alert_id: alert.alert_id, status: "acknowledged", actor: "console-operator" }
+          }).then(function () { loadOpsCentre(filterQ); }).catch(function (err) {
+            showOpsError(errorMessage(err));
+          });
+        });
+        var openInc = document.createElement("button");
+        openInc.type = "button";
+        openInc.textContent = "Open incident";
+        openInc.style.marginLeft = "0.35rem";
+        openInc.addEventListener("click", function () {
+          request("/api/ops/incidents", {
+            method: "POST",
+            body: { alert_id: alert.alert_id, actor: "console-operator" }
+          }).then(function () { loadOpsCentre(filterQ); }).catch(function (err) {
+            showOpsError(errorMessage(err));
+          });
+        });
+        item.appendChild(ack);
+        item.appendChild(openInc);
+        opsAlertsList.appendChild(item);
+      });
+
+      opsIncidentsList.innerHTML = "";
+      var incidents = overview.open_incidents || [];
+      opsIncidentsEmpty.hidden = incidents.length > 0;
+      incidents.forEach(function (inc) {
+        opsIncidentsList.appendChild(li(
+          (inc.severity || "?") + " · " + (inc.status || "?") + " — " + (inc.title || "")
+          + " (" + (inc.incident_id || "").slice(0, 8) + "…)"
+        ));
+      });
+
+      opsTimeline.innerHTML = "";
+      (events.events || []).forEach(function (ev) {
+        opsTimeline.appendChild(li(
+          (ev.at || "") + " · " + (ev.severity || "info")
+          + " · " + (ev.component || "") + "/" + (ev.event_type || "")
+          + " · " + (ev.outcome || "") + " — " + (ev.summary || "")
+          + " [" + (ev.verification || "") + "]"
+        ));
+      });
+
+      opsCoverage.textContent = coverage.coverage || "";
+      var chain = (integrity.event_store || {});
+      opsIntegrity.textContent =
+        "Integrity: " + (chain.ok ? "OK" : "FAILED")
+        + " (" + (chain.events != null ? chain.events + " events" : chain.detail || "") + "). "
+        + (integrity.limitation || "");
+    }).catch(function (error) {
+      showOpsError(errorMessage(error));
+    });
+  }
+
+  document.getElementById("ops-refresh").addEventListener("click", function () {
+    request("/api/ops/refresh", { method: "POST", body: {} }).then(function () {
+      loadOpsCentre();
+    }).catch(function (error) {
+      showOpsError(errorMessage(error));
+    });
+  });
+  document.getElementById("ops-filter-form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    loadOpsCentre(document.getElementById("ops-filter-q").value.trim());
+  });
 
   renderChat();
   renderRag();

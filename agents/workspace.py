@@ -79,11 +79,20 @@ def _tool(catalog: Catalog, ctx: TenantContext, connector_id: str, operation: st
     return tool
 
 
-def tools_for(catalog: Catalog, ctx: TenantContext, documents: Any = None) -> list[Tool]:
+def tools_for(
+    catalog: Catalog,
+    ctx: TenantContext,
+    documents: Any = None,
+    ops_centre: Any = None,
+) -> list[Tool]:
     tools = [calculator_tool()]
     tools.extend(helpdesk_tools())
     if documents is not None:
         tools.append(search_documents_tool(documents))
+    if ops_centre is not None:
+        from ops_centre.agent_tools import ops_centre_tools
+
+        tools.extend(ops_centre_tools(ops_centre))
     for spec, operation in catalog.visible_operations(ctx):
         tools.append(_tool(
             catalog, ctx, spec.connector_id, operation.name, operation.tool_name,
@@ -153,10 +162,12 @@ class AgentDesk:
         ctx: TenantContext | None = None,
         documents: Any = None,
         history_dir: Path | str | None = None,
+        ops_centre: Any = None,
     ) -> None:
         self.catalog = catalog if catalog is not None else platform_catalog()[0]
         self.ctx = ctx or TenantContext.create(_CONSOLE_TENANT, _CONSOLE_PRINCIPAL, [])
         self.documents = documents
+        self.ops_centre = ops_centre
         self._lock = threading.Lock()
         self._sessions: dict[str, dict[str, Any]] = {}
         if history_dir is None:
@@ -355,7 +366,9 @@ class AgentDesk:
                 running = bool(session and session.get("thread") and session["thread"].is_alive())
             self._view(task, trace, running=running)
 
-        registry = ToolRegistry(tools_for(self.catalog, self.ctx, self.documents))
+        registry = ToolRegistry(
+            tools_for(self.catalog, self.ctx, self.documents, ops_centre=self.ops_centre)
+        )
         runner = AgentRunner(
             model, registry, trace=trace, model_timeout=wall_seconds, on_progress=on_progress,
         )
