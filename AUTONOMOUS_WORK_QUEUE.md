@@ -55,7 +55,7 @@ Keep Qwen3.5-27B as the RunPod-first production default, preserve volume recover
 - 2026-10-13 (honest integration status): **Partially yes — not fully the platform** (historical). Superseded by 2026-10-14 status.
 - 2026-10-13 (tonight completion / post-acceptance): Dual-model registry; Qwen runtime archived to `/workspace/runtime-setup/qwen-vllm/`.
 - 2026-10-14: **Qwen is the production default.** A100 SXM cold start + main `:8002`/`:8010`/`:8080` E2E (chat, text/PDF/XLSX RAG, console UI) **VERIFIED**. Snapshot `0b49946` checksum OK. Evidence: `ops/results/qwen-integration-status-2026-10-14.md`, `docs/AGENT_HANDOFF.md`.
-- **Next action requiring owner:** the idle A100 is billing at $1.79/hour with a balance near $4.89. Stopping it, or approving `START.sh` on the already-running Pod, is the owner's call. Microsoft sign-in still needs a work or school account that can open Entra app registrations. The personal account returned AADSTS16000. Do not paste a client id into chat.
+- **Next action requiring owner:** the idle A100 is billing at $1.79/hour with a balance near $4.89. On 2026-10-15 a cloud agent confirmed TCP `216.81.248.126:19091` is open and `154.54.102.31:11165` refuses, but this machine has no SSH private key, so nothing was deployed and `START.sh` was not run. Stopping the Pod, or approving a cold Qwen start, remains the owner's call. Microsoft sign-in still needs a work or school account that can open Entra app registrations. The personal account returned AADSTS16000. Do not paste a client id into chat. The revoked-refresh unit test no longer hard-codes `dir="/tmp"`.
 
 ## Required handover format
 Report briefly:

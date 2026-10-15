@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (new Pod checked over SSH; Qwen is not loaded; source was not deployed).
+Last updated: **2026-10-15** (Pod SSH port 19091 still accepts TCP; this machine cannot log in; source was not deployed).
 
 ## Only this repository
 
@@ -161,6 +161,14 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — GitHub tip rechecked; sign-in test no longer hard-codes `/tmp`
+
+- **VERIFIED:** `git fetch` showed `main`, `feature/qwen-a100-start-hardening`, `feature/qwen3.5-27b-integration`, and `cursor/microsoft-signin-options-2e6d` all at `7056a63913e1932bff640d0c1cd264104e03ba73`. Issue #1 is still the 2026-10-13 handover and is not the live queue.
+- **VERIFIED:** TCP `216.81.248.126:19091` accepted a connection. TCP `154.54.102.31:11165` refused. `~/.ssh` contains `known_hosts` only. The earlier SSH attempt from this VM, `BatchMode=yes` on port 19091, returned `Permission denied (publickey,password)`, exit 255. That login was not repeated. No private key was generated and no RunPod API credential was present.
+- **NOT RUN:** `START.sh`, `ops/release/deploy-console-only.sh`, a Qwen load, and a Graph call. `/opt/ai-playbook-venv` and `/opt/rag-deps` were already present and were not reinstalled. `MICROSOFT_CLIENT_ID` and `MICROSOFT_TENANT` are unset. No Entra application was created and no client id was written into the repo.
+- The revoked-refresh test used `tempfile.TemporaryDirectory(dir="/tmp")`, which fails on Windows because that directory is not there. It now uses the system temporary directory. On this Linux VM that directory resolved under `/tmp` and stayed outside the repo and `/workspace`.
+- Tests, with `/opt/ai-playbook-venv/bin/python -m unittest web.test_server integrations.tests.test_microsoft_oauth`: 35 tests, OK, exit 0. Mocked only. No live Graph call and no model load.
 
 ### 2026-10-15 — idle Pod checked; read-only device check-in added in source
 
