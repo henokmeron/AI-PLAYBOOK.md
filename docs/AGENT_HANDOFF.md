@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (Cloud Agent searched for the RunPod key and does not have it. Resume from the Windows PC. Nothing on the Pod was changed.)
+Last updated: **2026-10-15** (Resume was attempted on the Cloud Agent. The Windows SSH key is absent here, so the health check and console deploy were not run.)
 
 ## Only this repository
 
@@ -161,6 +161,13 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — resume stopped before SSH because the key file is absent
+
+- **VERIFIED:** this process is Linux host `cursor`, user `ubuntu`, checkout `/workspace` at `9ca1aa33c5e3b6f92d8d9516914c8a25494f05e2`. Remote is `henokmeron/ai-playbook.md`. `main` and both Qwen feature branches match that commit. `/workspace` is `ext4` on `/dev/vdc`, not `fuse.geesefs`.
+- **BLOCKED:** `Test-Path "$env:USERPROFILE\.ssh\id_ed25519"` cannot be run here. `USERPROFILE` is unset, PowerShell is absent, and `C:\Users\henok` is not mounted. `$HOME/.ssh/id_ed25519` is absent. `~/.ssh` contains `known_hosts` only. No self-hosted worker is connected. The private key was not printed.
+- **NOT RUN:** SSH to `root@216.81.248.126 -p 19091`, the console-only deploy, `START.sh`, a Pod restart, and Entra registration. Qwen `:8002`, gateway `:8010`, console `:8080`, and `/tmp/AI-PLAYBOOK` were not re-checked because the health check requires that key. No application id was invented.
+- The single next action is still the PowerShell check in the session entry below, run in Cursor on the Windows PC at `C:\Users\henok\src\AI-PLAYBOOK.md`.
 
 ### 2026-10-15 — existing RunPod key is not on this Cloud Agent
 
