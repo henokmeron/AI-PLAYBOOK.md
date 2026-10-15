@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (Agent async progress + task history shipped locally; CUDA-13 Pod still **VERIFIED** on driver **580** — stop when idle).
+Last updated: **2026-10-15** (Agent async progress + task history at `0165267`; CUDA-13 Pod `vx4oe3oyfsqnz8` **STOPPED** — Global Volume kept).
 
 ## Only this repository
 
@@ -44,14 +44,12 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 | Item | Value | Status |
 | --- | --- | --- |
-| Active test Pod | RunPod `vx4oe3oyfsqnz8` (“romantic_gray_canidae”), **A100-SXM4-80GB**, **$1.79/hr**, CUDA **13.0/13.2** | **Running.** Replaced `tn28umxi9a5lqx` (driver 570). Do not start a second paid Pod. |
-| SSH (TCP) | `root@154.54.102.49 -p 18454`, key `%USERPROFILE%\.ssh\id_ed25519` | **VERIFIED** 2026-10-15. Also: `ssh vx4oe3oyfsqnz8-6441200f@ssh.runpod.io -i ~/.ssh/id_ed25519` |
-| GPU / driver | 81,920 MiB, ~**71,091 MiB used**, driver **580.126.16** | **VERIFIED.** Meets archived runtime requirement (driver ≥580). |
-| Container | Fresh PyTorch 2.8.0 template; runtime restored to `/tmp/vllm-qwen-env` | OK |
-| Global Volume | Same volume id `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (fuse.geesefs) | **VERIFIED.** Weights + archives untouched across Pod replace. |
-| Qwen | `127.0.0.1:8002` | **VERIFIED** HTTP 200. Cold load ~810 s after restore. |
-| Gateway | `127.0.0.1:8010` | **VERIFIED** HTTP 200. Ephemeral key `/tmp/platform-gateway.key`. |
-| Console | `127.0.0.1:8080` | **VERIFIED** HTTP 200. Tunnel: `ssh -N -L 18080:127.0.0.1:8080 -p 18454 -i %USERPROFILE%\.ssh\id_ed25519 root@154.54.102.49` |
+| Active test Pod | RunPod `vx4oe3oyfsqnz8` (“romantic_gray_canidae”), **A100-SXM4-80GB**, **$1.79/hr** when running, CUDA **13.x** | **STOPPED** (compute **$0.00/hr**). Replaced `tn28umxi9a5lqx` (driver 570). Do not start a second paid Pod. Do **not** Terminate. |
+| SSH (TCP) | Was `root@154.54.102.49 -p 18454`, key `%USERPROFILE%\.ssh\id_ed25519` | **VERIFIED** while running 2026-10-15. Host/port may change on next Start — re-read Connect. |
+| GPU / driver | 81,920 MiB, driver **580.126.16** (when last running) | **VERIFIED** on prior live session. Meets archived runtime requirement (driver ≥580). |
+| Container | Fresh PyTorch 2.8.0 template; runtime restored to `/tmp/vllm-qwen-env` when started | Ephemeral `/tmp` cleared on stop — restore from volume archive on Start. |
+| Global Volume | Volume id `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` | **PRESERVED** across stop. Results notes copied to `/workspace/platform-diagnostics/`. |
+| Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | Down while stopped. After Start + `START.sh`, re-verify HTTP 200. |
 | Other Pod | Older terminated/idle Pods are not the live stack | Leave alone unless user says otherwise |
 
 ### Exact volume paths that must remain
@@ -162,12 +160,12 @@ E2E helper (uses key file; does not print it):
 
 ## Session log (newest first)
 
-### 2026-10-15 — agent async progress + auditable history (local)
+### 2026-10-15 — agent async progress + auditable history; Pod stopped
 
-- **VERIFIED (local):** `AgentDesk.start(wait=False)`, cooperative cancel, `TaskHistoryStore`, `GET /api/agent`, `GET /api/agent/history`, Agent UI poll + recent-task list. Tests: `agents.tests.test_history` 4 OK; agents suite 90 OK; `web.test_server` 23 OK.
-- **Live Pod cheap recheck:** `vx4oe3oyfsqnz8` still at `154.54.102.49:18454`, driver 580.126.16, `:8002`/`:8010`/`:8080` HTTP 200, model `qwen3.5-27b`. Expensive E2E/agent live smoke **not** re-run. Evidence: `docs/results/agent-async-history-2026-10-15.md`.
+- **VERIFIED (local):** `AgentDesk.start(wait=False)`, cooperative cancel, `TaskHistoryStore`, `GET /api/agent`, `GET /api/agent/history`, Agent UI poll + recent-task list. Tests: `agents.tests.test_history` 4 OK; agents suite 90 OK; `web.test_server` 23 OK. Tip **`0165267`** on `feature/qwen-a100-start-hardening`, `feature/qwen3.5-27b-integration`, and `main`.
+- **Live Pod cheap recheck (before stop):** `vx4oe3oyfsqnz8` at `154.54.102.49:18454`, driver 580.126.16, `:8002`/`:8010`/`:8080` HTTP 200, model `qwen3.5-27b`. Expensive E2E/agent live smoke **not** re-run. Evidence: `docs/results/agent-async-history-2026-10-15.md`.
 - **E2E script note:** `_pod_e2e_verify.py` covers real chat + RAG only; it does not cover Agent desk/history.
-- Cost: stop (do not terminate) the Pod when idle; keep Global Volume.
+- **Cost:** Pod **STOPPED** via RunPod UI (not terminated). Compute **$0.00/hr**. Global Volume kept. Results markdown scp’d to `/workspace/platform-diagnostics/`.
 
 ### 2026-10-15 — replace driver-570 Pod with CUDA-13 A100; platform VERIFIED
 

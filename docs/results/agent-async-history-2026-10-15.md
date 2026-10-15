@@ -38,7 +38,12 @@ python -m unittest web.test_server -v             # 23 OK
 
 `ops/_pod_e2e_verify.py` hits **real** loopback gateway/console: chat completion, model picker 409 for Gemma, RAG upload/ask/delete. It does **not** exercise the Agent desk, async progress, or task history. No mocks inside that script.
 
-## Non-goals held
+## Cost control (done)
 
+- Pod `vx4oe3oyfsqnz8` **STOPPED** via RunPod UI (button: Start for $1.79/hr now shown; compute **$0.00/hr**). **Not** terminated.
+- Global Volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373` preserved; this note + CUDA-13 replace note copied to `/workspace/platform-diagnostics/`.
 - No new paid resources, no Entra, no weight re-download, no volume delete.
-- Pod should be **stopped** (not terminated) when idle to limit $1.79/hr spend; Global Volume kept.
+
+## Next step
+
+Start the same Pod when live Agent UI redeploy is needed; pull `0165267` onto the console, then run a focused Agent async/history smoke (not a full E2E rebuild).

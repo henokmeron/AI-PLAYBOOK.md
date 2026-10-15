@@ -3,9 +3,9 @@
 **Purpose:** Shared handover for Cursor and other collaborators working on AI Platform Build.
 **Current workstream:** Qwen3.5-27B integration.
 **Branch:** `feature/qwen3.5-27b-integration`
-**Last reported feature commit:** `main` and both feature branches match. Qwen routing is `c232323`. Completion audit is `docs/results/completion-audit-2026-10-14.md`.
+**Last reported feature commit:** `0165267` on `main`, `feature/qwen-a100-start-hardening`, and `feature/qwen3.5-27b-integration`.
 **Tracking issue:** https://github.com/henokmeron/AI-PLAYBOOK.md/issues/1
-**Status:** CUDA-13 Pod `vx4oe3oyfsqnz8` served Qwen (driver **580**). Agent async progress + history is in git. Prefer **stopping** the Pod when idle ($1.79/hr). See `docs/results/runpod-cuda13-replace-2026-10-15.md` and `docs/results/agent-async-history-2026-10-15.md`.
+**Status:** CUDA-13 Pod `vx4oe3oyfsqnz8` **STOPPED** ($0.00/hr compute; Global Volume kept). Agent async progress + history is in git. See `docs/results/runpod-cuda13-replace-2026-10-15.md` and `docs/results/agent-async-history-2026-10-15.md`.
 **Owner approval boundary:** Do not create new paid Pods, delete volume assets, or restore Gemma onto the GPU without explicit approval. Prefer stopping idle Pods to limit GPU cost while leaving the volume intact.
 
 ## Read first
@@ -56,7 +56,7 @@ Keep Qwen3.5-27B as the RunPod-first production default, preserve volume recover
 - 2026-10-13 (tonight completion / post-acceptance): Dual-model registry; Qwen runtime archived to `/workspace/runtime-setup/qwen-vllm/`.
 - 2026-10-14: **Qwen is the production default.** A100 SXM cold start + main `:8002`/`:8010`/`:8080` E2E (chat, text/PDF/XLSX RAG, console UI) **VERIFIED**. Snapshot `0b49946` checksum OK. Evidence: `ops/results/qwen-integration-status-2026-10-14.md`, `docs/AGENT_HANDOFF.md`.
 - 2026-10-15 (CUDA-13 replace): Pod `vx4oe3oyfsqnz8` driver 580; `START.sh` + E2E **VERIFIED**. Evidence: `docs/results/runpod-cuda13-replace-2026-10-15.md`.
-- 2026-10-15 (agent loop): Async progress, cancel, and auditable task history landed locally (90 agent + 23 web tests OK). **Next:** stop idle Pod if still running; deploy updated console to the Pod only when owner wants live Agent UI polling.
+- 2026-10-15 (agent loop): Async progress, cancel, and auditable task history at `0165267` (90 agent + 23 web tests OK). Pod **STOPPED**. **Next:** when owner wants live Agent UI, Start the same Pod, pull tip onto console, focused Agent async/history smoke.
 
 ## Required handover format
 Report briefly:
