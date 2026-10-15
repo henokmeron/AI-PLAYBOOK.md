@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (shutdown pass: GitHub has the source; the Global Volume was **not** written from this machine).
+Last updated: **2026-10-15** (Pod restarted; old SSH port refused; this session still has no key).
 
 ## Only this repository
 
@@ -161,6 +161,13 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — Pod turned back on, still no deployment session
+
+- **VERIFIED:** this process is still not the Pod. No SSH private key, no SSH agent, no RunPod API credential, and no connected self-hosted worker. Cursor’s cloud environment for this run does not attach the Global Volume.
+- **VERIFIED:** `154.54.102.31:11165` now returns connection refused. A Pod restart drops that mapped port. The old SSH command must not be reused. Nothing was tried on port 22, and no replacement key was generated.
+- **NOT CHECKED:** Qwen `:8002`, gateway `:8010`, console `:8080`, and the running commit. The last console seen before shutdown was `98511df`. `MICROSOFT_CLIENT_ID` was unset then and is unset here. No Entra application was created. No Graph call was made.
+- Source to deploy after access exists: `34c3e726274103978743177d1a371337ad7c8589`, which contains console commit `c99cb4c`.
 
 ### 2026-10-15 — shutdown copy: GitHub pushed, volume snapshot NOT written
 
