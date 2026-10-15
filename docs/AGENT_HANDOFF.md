@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (Owner says the Pod is restarted and open in the Cursor browser. This agent could not read the page because the desktop is locked. Live health was not checked.)
+Last updated: **2026-10-15** (Desktop was free. Chrome has no RunPod tab. The new SSH port is still unknown. Live Pod health was not checked.)
 
 ## Only this repository
 
@@ -161,6 +161,13 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — desktop free, RunPod page not open here
+
+- The owner said continue. The desktop was free. Chrome on this Linux machine had the local console at `http://127.0.0.1:8080`, a Google tab, and Chrome’s What’s New page. No RunPod tab, no RunPod history entry, and no web terminal.
+- `id_ed25519` is still absent. Port `19091` was not reused. `findmnt`, GPU, disk, weights, Qwen `:8002`, gateway `:8010`, console on the Pod, and `/tmp/AI-PLAYBOOK` were **NOT CHECKED**. `START.sh` was not run.
+- The local page on `:8080` is the Cloud Agent demo, not the Pod. Do not treat it as Qwen health.
+- Next action: open the restarted Pod’s RunPod page in this browser, or run the PowerShell health check from `C:\Users\henok\src\AI-PLAYBOOK.md` with `C:\Users\henok\.ssh\id_ed25519` and the new port shown on that page.
 
 ### 2026-10-15 — restarted Pod is open in the browser, page not read
 
