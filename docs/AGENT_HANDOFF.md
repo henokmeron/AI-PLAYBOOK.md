@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (callback page and sign-in status are in source; the Pod was checked from outside and was not changed).
+Last updated: **2026-10-15** (shutdown pass: GitHub has the source; the Global Volume was **not** written from this machine).
 
 ## Only this repository
 
@@ -61,10 +61,10 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 - RAG wheels: `/workspace/runtime-setup/rag-wheelhouse/`.
 - Launcher: `/workspace/ai-platform-release/START.sh` (canonical in git: `ops/release/START.sh`).
 - Managed docs: `/workspace/rag-managed-docs`.
-- Source snapshot for the published tip `01e76922`:  
+- Source snapshot last confirmed **on the volume** is still `01e76922`:  
   `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-runpod-first-01e7692.tar.gz`  
   SHA-256: `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370` (re-checked against the file and its manifest on 2026-10-14).  
-  Older snapshots `083fa58` and `0b49946` are still on the volume. The `083fa58` checksum was not re-hashed this session.
+  Older snapshots `083fa58` and `0b49946` were still on the volume then. **No newer snapshot was written on 2026-10-15.** The shutdown pass could not SSH to the Pod. See `docs/results/shutdown-recovery-2026-10-15.md`.
 
 ### Git
 
@@ -161,6 +161,15 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — shutdown copy: GitHub pushed, volume snapshot NOT written
+
+- **VERIFIED:** this process is not on the Pod. Hostname `cursor`, user `ubuntu`. `findmnt -T /workspace` shows the root disk `/dev/vdc` `ext4`, target `/`, not `fuse.geesefs`. `/workspace/models/Qwen3.5-27B`, `/workspace/runtime-setup`, `/workspace/ai-platform-backups`, `/workspace/ai-platform-release`, and `/workspace/rag-managed-docs` are absent. Nothing is listening on `:8002`, `:8010`, or `:8080`.
+- **VERIFIED:** TCP `154.54.102.31:11165` accepted a connection. One SSH attempt, `BatchMode=yes`, connect timeout 8 seconds: `Permission denied (publickey,password)`, exit 255. `~/.ssh` contains `known_hosts` only. The attempt was not repeated. No RunPod credential was present, and no Pod was started.
+- **NOT DONE:** a new file under `/workspace/ai-platform-backups/source-snapshots/`. The Global Volume could not be written from here. The owner must not assume a snapshot of `c99cb4c` (or of this note) exists on the volume. `VERSION.txt` was not changed. Weights, archives, managed docs, and older snapshots were not deleted because they were not on this disk.
+- **VERIFIED before this note:** `git ls-remote` showed `main`, `feature/qwen-a100-start-hardening`, `feature/qwen3.5-27b-integration`, and `cursor/microsoft-signin-options-2e6d` all at `c99cb4cb9eeb974176476766dcd64964db53f68f`. This entry is the next fast-forward on those four refs. Nothing was force-pushed.
+- **Last seen on the volume, 2026-10-15, from a machine that had the SSH key (not this one):** volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (`fuse.geesefs`); Qwen weights present; `/tmp/AI-PLAYBOOK` at `98511df` (ephemeral; dies with the Pod); Qwen `:8002` and gateway `:8010` HTTP 200; console `:8080/` HTTP 200. The runtime archive checksum and snapshot `01e7692` (`a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370`) were last hashed on 2026-10-14, not in this pass.
+- Qwen and the gateway were not stopped. The safe command for the owner’s PC, while the Pod is still up, is in `docs/results/shutdown-recovery-2026-10-15.md`. It is `ops/release/snapshot-published-tip.sh`. It was not run here.
 
 ### 2026-10-15 — callback page, token revocation, console not replaced
 

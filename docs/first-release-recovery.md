@@ -156,3 +156,14 @@ If you see `ERR_CONNECTION_REFUSED`, the tunnel is not running (or the Pod IP/po
 
 - **VERIFIED (isolated drill, 2026-10-14, H100 Pod):** fresh GitHub clone; preflight pass and fail cases; real runtime restore from the volume archive into an empty folder; second start reusing everything with no new processes; lock refusing a concurrent start; ownership repair; chat, Document Q&A, PDF and XLSX through a second gateway/console on test ports. Details: `docs/results/a100-switch-readiness-2026-10-14.md`.
 - **NOT TESTED:** a cold start on a brand-new Pod, meaning Qwen loading from the volume onto an empty GPU with the new launcher. The drill reused the already-running Qwen, because a second model cannot fit on the same GPU. The first real A100 start is that test.
+
+## Shutdown state (2026-10-15)
+
+GitHub `feature/qwen3.5-27b-integration` is the source of truth for the next start. A cloud agent confirmed the published tip and then added this note, but it was not on the Pod: SSH to `154.54.102.31:11165` was denied, and `/workspace` on that agent was an ordinary disk. **No new source snapshot was written to the Global Volume.**
+
+The newest snapshot known to be on the volume remains:
+
+`/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-runpod-first-01e7692.tar.gz`  
+SHA-256 `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370`
+
+`START.sh` uses that snapshot only when GitHub cannot be cloned. Weights, the vLLM archive, the RAG wheelhouse, and managed docs were last confirmed on volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373` and were not re-checked from the cloud agent. Details and the on-Pod command that would write a newer snapshot: `docs/results/shutdown-recovery-2026-10-15.md`.
