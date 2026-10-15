@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (Resume was attempted on the Cloud Agent. The Windows SSH key is absent here, so the health check and console deploy were not run.)
+Last updated: **2026-10-15** (SSH to port 19091 failed: identity file missing, then `Permission denied (publickey,password)`, exit 255. Console deploy was not run.)
 
 ## Only this repository
 
@@ -161,6 +161,13 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — SSH health check failed before login
+
+- Started from `0da700d4730f68f63e580c1d5202a83a590d0eb9`. `uname` reports Linux. `USERPROFILE` is unset. PowerShell is absent. The process is not the Windows PC at `C:\Users\henok\src\AI-PLAYBOOK.md`.
+- **FAILED:** one SSH attempt, `BatchMode=yes`, `IdentitiesOnly=yes`, connect timeout 8 seconds, port `19091`, identity `$HOME/.ssh/id_ed25519`. Output: `Warning: Identity file /home/ubuntu/.ssh/id_ed25519 not accessible: No such file or directory.` then `root@216.81.248.126: Permission denied (publickey,password).` Exit 255. No key was generated or printed.
+- **NOT RUN:** `/workspace` mount, Qwen `:8002`, gateway `:8010`, console `:8080`, `/tmp/AI-PLAYBOOK`, `deploy-console-only.sh`, `START.sh`, and Entra setup. No application id was invented.
+- Next action remains the PowerShell command on the Windows PC, where `C:\Users\henok\.ssh\id_ed25519` exists.
 
 ### 2026-10-15 — resume stopped before SSH because the key file is absent
 
