@@ -25,6 +25,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from agents.adapters.rag_library import GroundedDocumentRetriever
+from agents.it_support import looks_like_it_support
 from agents.model import OpenAICompatibleClient
 from agents.workspace import CONSOLE_TENANT, AgentDesk
 from integrations.endpoint import DeviceRegistry
@@ -735,10 +736,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error_json(400, "wait must be a boolean")
             return
         try:
+            # Helpdesk workflows need several tool rounds against Qwen; keep
+            # non-IT agent tasks on the shorter ceiling.
+            wall_cap = 180.0 if isinstance(goal, str) and looks_like_it_support(goal) else 60.0
             view = self.server.desk.start(  # type: ignore[attr-defined]
                 goal,
                 self._agent_model(),
-                wall_seconds=min(60.0, self.config.upstream_timeout),
+                wall_seconds=min(wall_cap, self.config.upstream_timeout),
                 wait=wait,
             )
         except ValueError as exc:

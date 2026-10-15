@@ -9,6 +9,7 @@ from pathlib import Path
 from agents.builtin.helpdesk import helpdesk_tools
 from agents.it_support import approval_presentation, looks_like_it_support
 from agents.model import ScriptedModel
+from agents.protocol import parse_action
 from agents.runtime import AgentRunner
 from agents.tools import ToolRegistry
 from agents.workspace import AgentDesk, public_view
@@ -205,6 +206,20 @@ class HelpdeskFlowTests(unittest.TestCase):
         self.assertIsNotNone(final_view["incident_report"])
         self.assertEqual(final_view["incident_report"]["outcome"], "resolved")
         self.assertFalse((cache / "noise.bin").exists())
+
+    def test_tool_name_as_action_is_normalized(self) -> None:
+        """Qwen often emits {"action":"<tool>","arguments":{...}} — accept it."""
+        action = parse_action(json.dumps({
+            "action": "classify_it_issue",
+            "arguments": {
+                "category": "application",
+                "severity": "medium",
+                "desired_outcome": "Restore chat",
+            },
+        }))
+        self.assertEqual(action.kind, "tool")
+        self.assertEqual(action.tool, "classify_it_issue")
+        self.assertEqual(action.arguments["category"], "application")
 
     def test_desk_it_goal_gets_incident_schema(self) -> None:
         desk = AgentDesk()
