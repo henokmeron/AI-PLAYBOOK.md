@@ -169,7 +169,7 @@ E2E helper (uses key file; does not print it):
 - First live helpdesk attempt failed: protocol violation (tool name as `action`). Fixed + pushed `7b61967`. Second failure after approval: token budget exhausted. Fixed + pushed `c069674`.
 - **VERIFIED live:** `agents.live_async_smoke` FAILS=0; helpdesk smoke FAILS=0; approval smoke FAILS=0; browser UI ticket with Approve → completed/resolved. Details in `docs/results/helpdesk-live-qwen-2026-10-15.md`.
 - **NOT RUN / NOT CLAIMED:** Entra, Graph mail, enrolled remote control, force-push, volume delete.
-- After docs commit: **stop** the Pod if idle (prefer Stop, not Terminate).
+- After docs commit: Pod **Stopped** via RunPod console (not Terminated). Global Volume retained. Resume with Start + existing recovery path.
 
 ### 2026-10-15 — AI IT Helpdesk implemented (source + mock tests)
 
