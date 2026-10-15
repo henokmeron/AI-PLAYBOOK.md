@@ -3,7 +3,7 @@
 **Every new agent / new chat must read this file before changing or starting anything.**  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (agent document search and OAuth corrections are in source only; the Pod was not restarted).
+Last updated: **2026-10-15** (agent execution states are in source only; the Pod was not restarted).
 
 ## Only this repository
 
@@ -161,6 +161,16 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-15 — execution states, catalog evidence, source only
+
+- Cheap SSH check, no restart and no model call: Pod `00n856z3eue5v9`, volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (fuse.geesefs), checkout `/tmp/AI-PLAYBOOK` `98511df` on `feature/qwen3.5-27b-integration`. Qwen `:8002/health` and gateway `:8010/health` returned HTTP 200. Console `:8080/` and `:8080/api/status` returned HTTP 200. Console `:8080/health` is not a route (HTTP 404). Gemma `:8000` was down. GPU 71,347 / 81,920 MiB. Qwen weights were present. `MICROSOFT_CLIENT_ID` was unset. Billing was not re-queried. Last known rate is $1.79/hour. The Pod was left running.
+- The runner now records operator states as it moves: received, investigating, awaiting information, awaiting approval, executing, verifying, completed, failed, escalated, and cancelled. A task record stores the objective, plan steps, tool calls, results, approvals, errors, verification, and outcome. Retries, timeouts, and cancellation were already enforced; an interrupted tool call is recovered without calling that tool again. The model is not the approval boundary: a catalog write runs only after a one-time grant for that exact call. Mail tools stay hidden unless `mail:read` is granted. Mail search and read are **mock-tested**. Nothing in the catalog is marked live-tested. Send and the other writes stay unavailable and still make no Graph call.
+- Document search stays on the same loop. Instruction-like document text and tool output are untrusted data. Secret-shaped values are redacted before they reach the operator view or the next model turn. File attachments on the Agent page are still unsupported.
+- Entra still needs a signed-in user. No application was created and no client id exists. The registration steps are unchanged in `docs/integrations/microsoft-365-signin.md`.
+- `docs/integrations/endpoint-diagnostics.md` is a research note only. No remote-control software was installed and no device connector runs.
+- Tests: `agents.tests.test_execution`, `test_runtime`, `test_workspace`, `test_tools`, `integrations.tests.test_catalog`, `test_microsoft_oauth`, `test_framework`, and `web.test_server` — 141 tests, OK. All mocked. No live Graph call, no email, no model load, no calculator re-run.
+- **Approval required before this code can run on the Pod.** Do not stop Qwen or the gateway. The exact request is in `docs/integrations/microsoft-365-signin.md`. Publishing to GitHub does not deploy it. The live checkout remains `98511df`.
 
 ### 2026-10-15 — agent document search and OAuth corrections, source only
 

@@ -1,6 +1,7 @@
 """Catalog rules for the Microsoft 365 connector. No network and no account."""
 from __future__ import annotations
 
+import json
 import unittest
 
 from integrations.catalog import Effect
@@ -64,4 +65,28 @@ class CatalogTests(unittest.TestCase):
         described = platform_catalog()[0].describe("acme")[0]
         self.assertEqual(described["connector_id"], "microsoft365")
         self.assertFalse(described["connected"])
+        self.assertEqual(described["readiness"], "disconnected")
         self.assertTrue(all(not item["available"] for item in described["operations"]))
+        by_status = {item["name"]: item for item in described["operations"]}
+        self.assertEqual(by_status["search_mail"]["evidence"], "mock-tested")
+        self.assertEqual(by_status["search_mail"]["status"], "disconnected")
+        self.assertEqual(by_status["read_mail"]["evidence"], "mock-tested")
+        self.assertEqual(by_status["send_mail"]["evidence"], "unavailable")
+        self.assertEqual(by_status["send_mail"]["status"], "unavailable")
+        self.assertNotIn("live-tested", json.dumps(described))
+
+    def test_another_tenant_cannot_use_a_connected_mailbox(self) -> None:
+        catalog, client = platform_catalog()
+        record = catalog.connection("acme", "microsoft365")
+        record.connected = True
+        record.granted_scopes = frozenset({"mail:read"})
+        with self.assertRaises(AuthenticationError) as caught:
+            catalog.execute(_ctx("other-co"), "microsoft365", "search_mail", {"query": "invoice"})
+        self.assertIn("No request was sent", str(caught.exception))
+        self.assertEqual(client.network_calls, 0)
+        connected = catalog.describe("acme")[0]
+        self.assertEqual(connected["readiness"], "mock-tested")
+        mail = {item["name"]: item for item in connected["operations"]}
+        self.assertEqual(mail["search_mail"]["status"], "mock-tested")
+        self.assertEqual(mail["send_mail"]["status"], "unavailable")
+        self.assertNotEqual(mail["search_mail"]["status"], "live-tested")

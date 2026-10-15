@@ -462,6 +462,10 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_agent()
         elif path == "/api/agent/decision":
             self.handle_agent_decision()
+        elif path == "/api/agent/information":
+            self.handle_agent_information()
+        elif path == "/api/agent/cancel":
+            self.handle_agent_cancel()
         elif path == "/api/microsoft/disconnect":
             self.handle_microsoft_disconnect()
         else:
@@ -576,11 +580,22 @@ class Handler(BaseHTTPRequestHandler):
             return
         task_id = payload.get("task_id")
         approved = payload.get("approved")
-        if not isinstance(task_id, str) or not task_id or not isinstance(approved, bool):
-            self.send_error_json(400, "task_id and approved are required")
+        call_id = payload.get("call_id")
+        if (
+            not isinstance(task_id, str) or not task_id
+            or not isinstance(approved, bool)
+            or not isinstance(call_id, str) or not call_id
+        ):
+            self.send_error_json(400, "task_id, call_id and approved are required")
+            return
+        arguments = payload.get("arguments")
+        if arguments is not None and not isinstance(arguments, dict):
+            self.send_error_json(400, "approval arguments must be an object")
             return
         try:
-            view = self.server.desk.decide(task_id, approved, "console-operator")  # type: ignore[attr-defined]
+            view = self.server.desk.decide(  # type: ignore[attr-defined]
+                task_id, approved, "console-operator", call_id, arguments,
+            )
         except KeyError:
             self.send_error_json(404, "task not found")
             return
@@ -589,6 +604,47 @@ class Handler(BaseHTTPRequestHandler):
             return
         except ValueError as exc:
             self.send_error_json(400, str(exc))
+            return
+        self.send_json(200, view)
+
+    def handle_agent_information(self) -> None:
+        if self.require_key() is None:
+            return
+        payload = self.read_json_object()
+        if payload is None:
+            return
+        task_id = payload.get("task_id")
+        information = payload.get("information")
+        if not isinstance(task_id, str) or not task_id or not isinstance(information, str):
+            self.send_error_json(400, "task_id and information are required")
+            return
+        try:
+            view = self.server.desk.inform(task_id, information)  # type: ignore[attr-defined]
+        except KeyError:
+            self.send_error_json(404, "task not found")
+            return
+        except RuntimeError as exc:
+            self.send_error_json(409, str(exc))
+            return
+        except ValueError as exc:
+            self.send_error_json(400, str(exc))
+            return
+        self.send_json(200, view)
+
+    def handle_agent_cancel(self) -> None:
+        if self.require_key() is None:
+            return
+        payload = self.read_json_object()
+        if payload is None:
+            return
+        task_id = payload.get("task_id")
+        if not isinstance(task_id, str) or not task_id:
+            self.send_error_json(400, "task_id is required")
+            return
+        try:
+            view = self.server.desk.cancel(task_id)  # type: ignore[attr-defined]
+        except KeyError:
+            self.send_error_json(404, "task not found")
             return
         self.send_json(200, view)
 

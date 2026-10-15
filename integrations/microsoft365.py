@@ -74,6 +74,7 @@ def _op(
     permissions: tuple[str, ...],
     schema: dict[str, Any] | None = None,
     output_schema: dict[str, Any] | None = None,
+    evidence: str = "unavailable",
 ) -> OperationSpec:
     return OperationSpec(
         name=name,
@@ -86,6 +87,7 @@ def _op(
         tool_name="m365_" + name,
         requires_approval=effect in {Effect.REVERSIBLE, Effect.CONSEQUENTIAL},
         idempotent=effect is Effect.READ,
+        evidence=evidence,
     )
 
 
@@ -97,13 +99,13 @@ MICROSOFT_365 = ConnectorSpec(
     auth="oauth_delegated",
     operations=(
         _op("search_mail", "Search the connected mailbox.", Effect.READ, "mail:read", ("Mail.Read",),
-            _QUERY, _MAIL_RESULT),
+            _QUERY, _MAIL_RESULT, "mock-tested"),
         _op("read_mail", "Read one authorised message.", Effect.READ, "mail:read", ("Mail.Read",), {
             "type": "object",
             "additionalProperties": False,
             "required": ["message_id"],
             "properties": {"message_id": {"type": "string", "minLength": 8, "maxLength": 512}},
-        }, _MAIL_RESULT),
+        }, _MAIL_RESULT, evidence="mock-tested"),
         _op("create_mail_draft", "Create an unsent mail draft.", Effect.DRAFT, "mail:write",
             ("Mail.ReadWrite",), _MESSAGE),
         _op("send_mail", "Send an email.", Effect.CONSEQUENTIAL, "mail:write", ("Mail.Send",), _MESSAGE),

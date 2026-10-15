@@ -647,19 +647,62 @@
   var agentLoading = document.getElementById("agent-loading");
   var agentApproval = document.getElementById("agent-approval");
   var agentApprovalText = document.getElementById("agent-approval-text");
+  var agentApprovalTarget = document.getElementById("agent-approval-target");
   var agentApprovalArgs = document.getElementById("agent-approval-args");
+  var agentExecution = document.getElementById("agent-execution");
+  var agentRecord = document.getElementById("agent-record");
+  var agentInfo = document.getElementById("agent-info");
+  var agentInfoText = document.getElementById("agent-info-text");
+  var agentInfoInput = document.getElementById("agent-info-input");
+  var agentCancel = document.getElementById("agent-cancel");
   var connectorList = document.getElementById("connector-list");
   var agentTaskId = "";
+  var agentCallId = "";
+  var executionLabels = {
+    received: "Received",
+    investigating: "Investigating",
+    awaiting_information: "Awaiting information",
+    awaiting_approval: "Awaiting approval",
+    executing: "Executing",
+    verifying: "Verifying",
+    completed: "Completed",
+    failed: "Failed",
+    escalated: "Escalated",
+    cancelled: "Cancelled"
+  };
 
   function renderAgent(view) {
     agentLog.textContent = "";
+    agentRecord.textContent = "";
     if (!view) {
+      agentExecution.textContent = "";
       agentLog.appendChild(el("p", "empty", "Run a task to see what the agent did."));
       agentApproval.hidden = true;
+      agentInfo.hidden = true;
+      agentCancel.hidden = true;
       return;
     }
-    var heading = el("p", null, view.state === "final" ? (view.answer || "Finished.") : (view.failure || view.state));
-    agentLog.appendChild(heading);
+    var execution = view.execution || view.state;
+    var label = executionLabels[execution] || execution;
+    var states = (view.states || []).map(function (item) {
+      return executionLabels[item] || item;
+    });
+    agentExecution.textContent = states.length
+      ? "Execution: " + label + ". Recorded states: " + states.join(" → ")
+      : "Execution: " + label;
+    var record = view.record || {};
+    if (record.objective) agentRecord.appendChild(el("p", null, "Objective: " + record.objective));
+    (record.plan || []).forEach(function (step) {
+      agentRecord.appendChild(el("p", "meta", "Plan: " + step));
+    });
+    (record.tool_calls || []).forEach(function (call) {
+      agentRecord.appendChild(el("p", "meta", "Tool: " + (call.tool || "unknown")));
+    });
+    if (record.outcome) agentRecord.appendChild(el("p", "meta", "Outcome: " + record.outcome));
+    var headingText = view.answer || view.failure || label;
+    if (execution === "completed") headingText = view.answer || "Completed.";
+    if (execution === "escalated") headingText = view.answer || "Escalated.";
+    agentLog.appendChild(el("p", null, headingText));
     (view.activity || []).forEach(function (item) {
       var labels = {
         tool_requested: "Used a tool",
@@ -667,6 +710,7 @@
         tool_error: "Tool problem",
         approval_required: "Waiting for approval",
         approval_decision: "Approval recorded",
+        information_requested: "Asked for information",
         task_final: "Finished",
         task_failed: "Failed",
         task_cancelled: "Cancelled"
@@ -677,10 +721,20 @@
     });
     var pending = view.pending_approval;
     agentApproval.hidden = !pending;
+    agentInfo.hidden = execution !== "awaiting_information";
+    agentCancel.hidden = execution !== "awaiting_approval" && execution !== "awaiting_information";
     if (pending) {
       agentTaskId = view.task_id;
+      agentCallId = pending.call_id || "";
       agentApprovalText.textContent = pending.reason || "This action needs approval.";
+      agentApprovalTarget.textContent = "Tool " + pending.tool + ", call " + pending.call_id;
       agentApprovalArgs.textContent = JSON.stringify(pending.arguments || {}, null, 2);
+    } else {
+      agentCallId = "";
+    }
+    if (execution === "awaiting_information") {
+      agentTaskId = view.task_id;
+      agentInfoText.textContent = view.pending_question || "The agent needs more information.";
     }
   }
 
@@ -702,10 +756,15 @@
         return;
       }
       rows.forEach(function (row) {
-        var label = row.service + (row.connected ? " — connected" : " — not connected");
+        var readiness = row.readiness || (row.connected ? "connected" : "disconnected");
+        var label = row.service + " — " + readiness;
         if (row.account) label += " as " + row.account;
         if (row.detail) label += ". " + row.detail;
         connectorList.appendChild(el("li", null, label));
+        (row.operations || []).forEach(function (op) {
+          var opLabel = (op.tool_name || op.name) + " — " + (op.status || op.evidence || "unavailable");
+          connectorList.appendChild(el("li", "meta", opLabel));
+        });
         if (row.connector_id === "microsoft365") renderMicrosoft(row.sign_in || {});
       });
     }).catch(function (error) {
@@ -735,7 +794,7 @@
     if (!agentTaskId) return;
     request("/api/agent/decision", {
       method: "POST",
-      body: { task_id: agentTaskId, approved: approved }
+      body: { task_id: agentTaskId, call_id: agentCallId, approved: approved }
     }).then(function (result) {
       renderAgent(result);
     }).catch(function (error) {
@@ -752,6 +811,30 @@
   });
   document.getElementById("agent-approve").addEventListener("click", function () { decide(true); });
   document.getElementById("agent-reject").addEventListener("click", function () { decide(false); });
+  document.getElementById("agent-info-send").addEventListener("click", function () {
+    var information = agentInfoInput.value.trim();
+    if (!agentTaskId || !information) return;
+    request("/api/agent/information", {
+      method: "POST",
+      body: { task_id: agentTaskId, information: information }
+    }).then(function (result) {
+      agentInfoInput.value = "";
+      renderAgent(result);
+    }).catch(function (error) {
+      showError(agentError, errorMessage(error));
+    });
+  });
+  agentCancel.addEventListener("click", function () {
+    if (!agentTaskId) return;
+    request("/api/agent/cancel", {
+      method: "POST",
+      body: { task_id: agentTaskId }
+    }).then(function (result) {
+      renderAgent(result);
+    }).catch(function (error) {
+      showError(agentError, errorMessage(error));
+    });
+  });
   renderAgent(null);
 
   document.getElementById("status-refresh").addEventListener("click", refreshStatus);

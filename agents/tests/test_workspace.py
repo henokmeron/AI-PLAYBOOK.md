@@ -53,7 +53,9 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(view["state"], "awaiting_approval")
         self.assertEqual(view["pending_approval"]["tool"], "m365_send_teams_message")
         self.assertEqual(client.network_calls, 0)
-        decided = desk.decide(view["task_id"], False, "reviewer@example.com")
+        decided = desk.decide(
+            view["task_id"], False, "reviewer@example.com", view["pending_approval"]["call_id"],
+        )
         self.assertEqual(client.network_calls, 0)
         self.assertNotEqual(decided["state"], "awaiting_approval")
 

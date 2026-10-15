@@ -25,6 +25,7 @@ class Effect(str, Enum):
 
 
 _APPROVED_EFFECTS = {Effect.REVERSIBLE, Effect.CONSEQUENTIAL}
+EVIDENCE = frozenset({"implemented", "mock-tested", "live-tested", "unavailable", "disconnected"})
 
 
 @dataclass(frozen=True)
@@ -39,10 +40,13 @@ class OperationSpec:
     tool_name: str
     requires_approval: bool = False
     idempotent: bool = True
+    evidence: str = "implemented"
 
     def __post_init__(self) -> None:
         check_schema(self.input_schema)
         check_schema(self.output_schema)
+        if self.evidence not in EVIDENCE:
+            raise ValueError(f"{self.name} evidence must be one of {sorted(EVIDENCE)}")
         if self.input_schema.get("type") != "object":
             raise ValueError(f"{self.name} input schema must be an object")
         if self.effect in _APPROVED_EFFECTS and not self.requires_approval:
@@ -125,6 +129,7 @@ class Catalog:
                 "auth": spec.auth,
                 "connected": record.connected,
                 "account": record.account if record.connected else None,
+                "readiness": self._connector_readiness(spec, record),
                 "detail": record.detail,
                 "operations": [
                     {
@@ -134,13 +139,41 @@ class Catalog:
                         "effect": op.effect.value,
                         "scope": op.scope,
                         "requires_approval": op.requires_approval,
-                        "available": record.connected and op.scope in record.granted_scopes,
+                        "available": (
+                            record.connected
+                            and op.scope in record.granted_scopes
+                            and op.evidence != "unavailable"
+                        ),
+                        "evidence": op.evidence,
+                        "status": self._operation_status(op, record),
                         "provider_permissions": list(op.provider_permissions),
                     }
                     for op in spec.operations
                 ],
             })
         return rows
+
+    def _operation_status(self, op: OperationSpec, record: ConnectionRecord) -> str:
+        if op.evidence == "unavailable":
+            return "unavailable"
+        if not record.connected or op.scope not in record.granted_scopes:
+            return "disconnected"
+        return op.evidence
+
+    def _connector_readiness(self, spec: ConnectorSpec, record: ConnectionRecord) -> str:
+        if not record.connected:
+            return "disconnected"
+        granted = [
+            op for op in spec.operations
+            if op.scope in record.granted_scopes and op.evidence != "unavailable"
+        ]
+        if not granted:
+            return "unavailable"
+        if any(op.evidence == "live-tested" for op in granted):
+            return "live-tested"
+        if any(op.evidence == "mock-tested" for op in granted):
+            return "mock-tested"
+        return "implemented"
 
     def execute(
         self,

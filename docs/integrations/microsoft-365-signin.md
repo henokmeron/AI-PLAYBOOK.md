@@ -56,6 +56,10 @@ Leave `MICROSOFT_TOKEN_FILE` at `/tmp/microsoft-365-token.json`.
 
 ## Agent documents
 
+The Agent page shows the runner's execution state (received, investigating, awaiting information, awaiting approval, executing, verifying, completed, failed, escalated, or cancelled), the tool it used, and the exact approval target (tool name, call id, and arguments). It does not invent steps. The catalog labels each operation `implemented`, `mock-tested`, `live-tested`, `unavailable`, or `disconnected`. Mail search and read are mock-tested. They are not live-tested. Send and the other writes are unavailable. The local document search and calculator rows are also mock-tested; an older live calculator check on commit `98511df` was not repeated.
+
+A paused task can be cancelled or given more information from the Agent page. Cancelling does not call Microsoft. An interrupted tool call is not run a second time when the task is restored.
+
 The Agent page can search the same on-disk library as Document Q&A
 (`/workspace/rag-demo-docs`, or a named collection under
 `/workspace/rag-managed-docs`). The tool returns passages, file names, and
