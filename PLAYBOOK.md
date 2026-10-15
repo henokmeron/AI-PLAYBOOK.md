@@ -73,6 +73,10 @@ Azure is an option, not a requirement. We will choose infrastructure after evalu
 
 Do not buy large cloud resources until the technical design requires them.
 
+### Operator system manual
+
+- Beginner map of the whole platform (GitHub vs volume vs Pod, ports, folders, what each piece is): **`docs/SYSTEM_MANUAL.md`**. Update it when the architecture changes.
+
 ### 2026-10-15 — AI IT Helpdesk
 
 - Agent page is the IT Helpdesk: classify → docs/health/diagnostics → approval-gated local remediation → verify → incident report.

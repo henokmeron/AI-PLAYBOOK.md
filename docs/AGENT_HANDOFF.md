@@ -1,6 +1,7 @@
 # Agent handoff — read this first
 
 **Every new agent / new chat must read this file before changing or starting anything.**  
+**Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
 Last updated: **2026-10-15** (Live Qwen IT Helpdesk **VERIFIED** on Pod `4lvr54b0wmkz6c` at tip **`c069674`**; see `docs/results/helpdesk-live-qwen-2026-10-15.md`).
