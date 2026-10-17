@@ -83,12 +83,23 @@ if kill -0 "$P8080" 2>/dev/null; then
   fail "the previous console process is still running. Qwen and the gateway were not signalled."
 fi
 
+# Named-operator auth: fail-closed when OPERATOR_AUTH_DIR has no active operators.
+# Provision the first admin BEFORE approving a restart that includes this console:
+#   OPERATOR_AUTH_DIR=/tmp/console-operators \
+#     python3 "$REPO_ROOT/scripts/provision_console_operator.py" create-admin --username <name>
+OPERATOR_AUTH_DIR="${OPERATOR_AUTH_DIR:-/tmp/console-operators}"
+if [[ ! -f "$OPERATOR_AUTH_DIR/operators.json" ]]; then
+  fail "OPERATOR_AUTH_DIR=$OPERATOR_AUTH_DIR has no operators.json. Provision create-admin first so the console is not locked out. Qwen and the gateway were not signalled."
+fi
+
 nohup env \
   WEB_HOST=127.0.0.1 \
   WEB_PORT=8080 \
   PLATFORM_GATEWAY_URL=http://127.0.0.1:8010 \
   PLATFORM_API_KEY_FILE="$KEY" \
   PLATFORM_MODEL_ID=qwen3.5-27b \
+  OPERATOR_AUTH_DIR="$OPERATOR_AUTH_DIR" \
+  WEB_COOKIE_SECURE="${WEB_COOKIE_SECURE:-false}" \
   MICROSOFT_CLIENT_ID="${MICROSOFT_CLIENT_ID:-}" \
   MICROSOFT_TENANT="${MICROSOFT_TENANT:-common}" \
   MICROSOFT_REDIRECT_URI="${MICROSOFT_REDIRECT_URI:-http://127.0.0.1:18080/api/microsoft/callback}" \

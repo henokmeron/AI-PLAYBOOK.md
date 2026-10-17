@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-16** (AI Security & Operations Centre v1 added in source — `ops_centre/`, console **Operations** page. **Pod not started.** Gap/architecture: `docs/ops_centre/GAP_AND_ARCHITECTURE.md`).
+Last updated: **2026-10-17** (Phase 0 named-operator auth committed on branch `cursor/operator-auth-phase0-787e`. Deploy/live verify **BLOCKED** on this Cloud Agent: no SSH private key, no `RUNPOD_API_KEY`, no self-hosted worker.)
 
 ## Only this repository
 
@@ -164,13 +164,21 @@ E2E helper (uses key file; does not print it):
 
 ## Session log (newest first)
 
+### 2026-10-17 — Phase 0 named-operator auth (commit + PR; deploy blocked here)
+
+- **Implemented / reviewed:** `web/auth/` (scrypt passwords, sessions, CSRF, RBAC, login throttle), console wiring, login UI, `scripts/provision_console_operator.py`, `docs/security/operator-auth.md`. Actor for ops/agent comes from session, not client JSON. Device enroll failed-attempt rate limit added; report gap limit unchanged. Microsoft OAuth callback remains public; PKCE/`state` validated server-side.
+- **Deploy guard:** `ops/release/deploy-console-only.sh` now requires `OPERATOR_AUTH_DIR/operators.json` and passes `OPERATOR_AUTH_DIR` into the console env (provision admin before restart).
+- **Local tests:** web 40 OK; integrations 52 OK; agents 102 OK; ops_centre 4 OK; models 8 OK; api 27 OK; ops 5 OK. RAG: 2 skipped (no pypdf/openpyxl); 2 discover import errors without `PYTHONPATH=rag` (pre-existing env, not auth regressions).
+- **BLOCKED on this VM:** RunPod Start/SSH/console-only deploy, live authz verify, Graph/M365 slice, Pod Stop via API. Evidence: `~/.ssh` absent; `RUNPOD_API_KEY` unset; `list-self-hosted-workers` returned 0. Docs still list Pod `4lvr54b0wmkz6c` (often Stopped) and prior mention of `cxtkodd99mxas9` — confirm live id from RunPod UI/API before any deploy.
+- **Next agent with Pod access:** Start existing Pod (same volume), provision first admin via documented CLI (password from env/stdin — do not invent/log), console-only deploy this tip, verify anonymous 401 / login / RBAC / CSRF / logout, then optional M365 read-only if `MICROSOFT_CLIENT_ID` set; Stop Pod when done.
+
 ### 2026-10-16 — AI Security & Operations Centre (local source)
 
 - **Gap assessment + architecture:** `docs/ops_centre/GAP_AND_ARCHITECTURE.md`.
 - **Implemented:** `ops_centre/` event store (hash-chained), health aggregator (works if Qwen down), detections, alerts, incidents, `/api/ops/*`, console **Operations** view, AI Ops allowlisted tools on `AgentDesk`.
 - **Tests:** `ops_centre.tests.test_ops_centre` OK; `web.test_server` OK.
 - **NOT RUN:** RunPod Start, model load, live SOC vs Qwen. Do not claim live SOC verification until a deliberate Pod session.
-- **Still true:** Console has no login (baseline H-3); keep loopback. Hash chain is not forensic WORM.
+- **Update 2026-10-17:** Console named-operator login is in source (Phase 0). Keep loopback. Hash chain is not forensic WORM.
 
 ### 2026-10-15 — FINAL live IT Helpdesk deploy (Qwen VERIFIED)
 
