@@ -10,6 +10,8 @@
   var catalogModels = [];
   var selectedModelId = "";
   var MAX_RAG_HISTORY_MESSAGES = 12;
+  var authState = null;
+  var csrfToken = "";
 
   var navStatus = document.getElementById("nav-status");
   var chatLog = document.getElementById("chat-log");
@@ -79,10 +81,17 @@
     var signal = typeof AbortSignal !== "undefined" && AbortSignal.timeout
       ? AbortSignal.timeout(190000)
       : undefined;
+    var method = options && options.method ? options.method : "GET";
+    var headers = { "Accept": "application/json" };
+    if (options && options.body) headers["Content-Type"] = "application/json";
+    if (csrfToken && method !== "GET" && method !== "HEAD") {
+      headers["X-CSRF-Token"] = csrfToken;
+    }
     return fetch(path, {
-      method: options && options.method ? options.method : "GET",
-      headers: options && options.body ? { "Content-Type": "application/json", "Accept": "application/json" } : { "Accept": "application/json" },
+      method: method,
+      headers: headers,
       body: options && options.body ? JSON.stringify(options.body) : undefined,
+      credentials: "same-origin",
       signal: signal
     }).then(function (response) {
       return response.text().then(function (text) {
@@ -94,6 +103,10 @@
             throw new Error("The server returned an unreadable response.");
           }
         }
+        if (response.status === 401 && path.indexOf("/api/auth/") !== 0) {
+          showLoginGate(authState);
+          throw new Error("Sign in required.");
+        }
         if (!response.ok) {
           var message = body && body.error ? body.error : "Request failed (" + response.status + ").";
           if (body && typeof body.error_id === "string") message += " (error id " + body.error_id + ")";
@@ -101,6 +114,54 @@
         }
         return body;
       });
+    });
+  }
+
+  function showLoginGate(status) {
+    var gate = document.getElementById("login-gate");
+    var shell = document.getElementById("app-shell");
+    var setup = document.getElementById("login-setup");
+    if (gate) gate.hidden = false;
+    if (shell) shell.hidden = true;
+    authState = status || authState;
+    csrfToken = "";
+    if (setup) {
+      if (status && status.configured === false && status.setup) {
+        setup.hidden = false;
+        setup.textContent = status.setup;
+      } else {
+        setup.hidden = true;
+        setup.textContent = "";
+      }
+    }
+  }
+
+  function showAppShell(status) {
+    var gate = document.getElementById("login-gate");
+    var shell = document.getElementById("app-shell");
+    var label = document.getElementById("operator-label");
+    if (gate) gate.hidden = true;
+    if (shell) shell.hidden = false;
+    authState = status;
+    csrfToken = status && status.csrf_token ? status.csrf_token : "";
+    if (label) {
+      label.textContent = status && status.username
+        ? (status.username + " · " + (status.role || "operator"))
+        : "Signed in";
+    }
+  }
+
+  function refreshAuth() {
+    return request("/api/auth/status").then(function (body) {
+      if (body && body.authenticated) {
+        showAppShell(body);
+        return body;
+      }
+      showLoginGate(body);
+      return body;
+    }).catch(function () {
+      showLoginGate({ configured: false, setup: "Could not reach the console auth status endpoint." });
+      return null;
     });
   }
 
@@ -1255,13 +1316,59 @@
     loadOpsCentre(document.getElementById("ops-filter-q").value.trim());
   });
 
-  renderChat();
-  renderRag();
-  var microsoftResult = new URLSearchParams(location.search).get("microsoft");
-  var startView = location.hash.replace("#", "");
-  if (microsoftResult) startView = "agent";
-  showView(startView || "chat");
-  loadDocuments().catch(function () {});
-  refreshStatus();
-  window.setInterval(refreshStatus, 15000);
+  var loginForm = document.getElementById("login-form");
+  var loginError = document.getElementById("login-error");
+  var loginLoading = document.getElementById("login-loading");
+  var loginSubmit = document.getElementById("login-submit");
+  var logoutButton = document.getElementById("logout-button");
+
+  if (loginForm) {
+    loginForm.addEventListener("submit", function (event) {
+      event.preventDefault();
+      showError(loginError, "");
+      if (loginLoading) loginLoading.hidden = false;
+      if (loginSubmit) loginSubmit.disabled = true;
+      var username = document.getElementById("login-username").value.trim();
+      var password = document.getElementById("login-password").value;
+      request("/api/auth/login", {
+        method: "POST",
+        body: { username: username, password: password }
+      }).then(function (body) {
+        document.getElementById("login-password").value = "";
+        showAppShell(body);
+        bootConsole();
+      }).catch(function (error) {
+        showError(loginError, errorMessage(error));
+      }).then(function () {
+        if (loginLoading) loginLoading.hidden = true;
+        if (loginSubmit) loginSubmit.disabled = false;
+      });
+    });
+  }
+
+  if (logoutButton) {
+    logoutButton.addEventListener("click", function () {
+      request("/api/auth/logout", { method: "POST", body: {} }).catch(function () {}).then(function () {
+        showLoginGate(authState);
+      });
+    });
+  }
+
+  function bootConsole() {
+    renderChat();
+    renderRag();
+    var microsoftResult = new URLSearchParams(location.search).get("microsoft");
+    var startView = location.hash.replace("#", "");
+    if (microsoftResult) startView = "agent";
+    showView(startView || "chat");
+    loadDocuments().catch(function () {});
+    refreshStatus();
+  }
+
+  refreshAuth().then(function (body) {
+    if (body && body.authenticated) bootConsole();
+  });
+  window.setInterval(function () {
+    if (authState && authState.authenticated) refreshStatus();
+  }, 15000);
 })();

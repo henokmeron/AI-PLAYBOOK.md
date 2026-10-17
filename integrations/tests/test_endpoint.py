@@ -103,6 +103,17 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(stored["remote_control"], False)
         self.assertNotIn("token", json.dumps(stored))
 
+    def test_enrol_failure_rate_limit(self) -> None:
+        from integrations.endpoint import _ENROL_MAX_FAILURES
+
+        now = [5_000.0]
+        registry = DeviceRegistry(clock=lambda: now[0])
+        for _ in range(_ENROL_MAX_FAILURES):
+            with self.assertRaises(AuthenticationError):
+                registry.enrol("not-a-real-enrolment-code-xx", "Office PC", "z" * 40)
+        with self.assertRaises(RateLimited):
+            registry.enrol("not-a-real-enrolment-code-yy", "Office PC", "z" * 40)
+
     def test_state_file_keeps_the_hash_only_and_reloads(self) -> None:
         secret = "z" * 40
         with tempfile.TemporaryDirectory() as directory:

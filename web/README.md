@@ -14,7 +14,7 @@ Starting this console does not verify a connection to RunPod. A green status mea
 
 The gateway remains `127.0.0.1:8010`. Do not change `PLATFORM_HOST`, do not bind the gateway to `0.0.0.0`, and do not publish port 8010. This console also refuses to bind to anything except loopback, and it refuses a non-loopback gateway URL.
 
-The console has no login of its own. Anyone who can open it can send prompts. Keep it on loopback and do not attach a public RunPod HTTP proxy to its port.
+The console requires named operator accounts (see [docs/security/operator-auth.md](../docs/security/operator-auth.md)). Provision the first administrator with `scripts/provision_console_operator.py` before privileged APIs will answer. Keep the console on loopback and do not attach a public RunPod HTTP proxy to its port.
 
 ## Secrets
 
@@ -49,6 +49,9 @@ export PLATFORM_MODEL_ID=qwen3.5-27b
 export PLATFORM_API_KEY_FILE=/tmp/platform-gateway.key
 export WEB_HOST=127.0.0.1
 export WEB_PORT=8080
+export OPERATOR_AUTH_DIR=/tmp/console-operators
+# First time only — create an administrator (password via stdin / OPERATOR_PASSWORD):
+#   python3 scripts/provision_console_operator.py create-admin --username alice
 python3 web/server.py
 ```
 
@@ -65,6 +68,8 @@ $env:PLATFORM_GATEWAY_URL = "http://127.0.0.1:8010"
 $env:PLATFORM_MODEL_ID = "qwen3.5-27b"
 $env:PLATFORM_API_KEY_FILE = ""
 $env:PLATFORM_API_KEY = "replace-with-a-local-test-key-of-32-plus-chars"
+$env:OPERATOR_AUTH_DIR = "$env:TEMP\console-operators"
+$env:WEB_COOKIE_SECURE = "false"
 python web/server.py
 ```
 
@@ -78,8 +83,10 @@ Static files are read from `web/static/` on each request. Refresh the browser af
 
 The browser routes are:
 
-- `GET /` the dashboard
+- `GET /` the dashboard (sign-in gate until an operator session exists)
 - `GET /api/status` gateway health, key presence, and model configuration
+- `GET /api/auth/status` / `POST /api/auth/login` / `POST /api/auth/logout` / `POST /api/auth/rotate` operator session
+- Admin operator CRUD under `/api/auth/operators*`
 - `POST /api/chat` forwards a cleaned message list to `/v1/chat/completions`
 - `POST /api/rag` forwards `question`, optional `collection`, `top_k`, and a bounded validated `history` of prior user/assistant turns to `/v1/rag/ask`
 - `GET /api/documents?collection=slug` lists files in a managed collection
@@ -105,11 +112,13 @@ The web unit tests start a fake loopback gateway. The API conversation tests cov
 ## Files
 
 - `web/server.py` — loopback server and gateway proxy
-- `web/static/index.html` — dashboard shell
-- `web/static/app.js` — chat, document Q&A, and status behaviour
+- `web/auth/` — operator passwords, sessions, roles
+- `web/static/index.html` — dashboard shell + login gate
+- `web/static/app.js` — auth, chat, document Q&A, and status behaviour
 - `web/static/styles.css` — layout
-- `web/test_server.py` — proxy and page checks
+- `web/test_server.py` / `web/test_auth.py` — proxy, page, and auth checks
 - `web/.env.example` — variable reference
+- `scripts/provision_console_operator.py` — local operator provisioning
 
 
 ## Managed document upload in the web console
@@ -118,4 +127,4 @@ The Document Q&A view includes a document-library section. Enter a collection sl
 
 Supported extensions are TXT, Markdown, CSV, HTML/HTM, DOCX, text-based PDF and XLSX. The per-file limit is 10 MiB. Scanned PDFs without extractable text are rejected. Duplicate filenames are rejected by default; delete the old file first before re-uploading. The upload feature requires a deployed gateway version that supports `/v1/rag/documents`; the current repository gateway source has that API, but the running Pod must be verified after deployment.
 
-To ask about uploaded documents, use the same collection name in Document Q&A. Leaving the collection blank uses the demo corpus. Uploading is for authorized, non-sensitive test documents only: this prototype has no user login or tenant-level access control, so do not upload confidential/customer documents.
+To ask about uploaded documents, use the same collection name in Document Q&A. Leaving the collection blank uses the demo corpus. Uploading is for authorized, non-sensitive test documents only: operator login is not multi-tenant isolation, so do not upload confidential/customer documents.

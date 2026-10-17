@@ -240,15 +240,28 @@ class Recorder(ThreadingHTTPServer):
 
 
 class ConsoleTests(unittest.TestCase):
+    ADMIN_USER = "admin"
+    ADMIN_PASSWORD = "unit-test-admin-password"
+
     def setUp(self) -> None:
         self.servers: list[ThreadingHTTPServer] = []
         self._endpoint_state = os.environ.pop("ENDPOINT_STATE_FILE", None)
+        self._auth_dirs: list[tempfile.TemporaryDirectory] = []
+        self._prev_auth_dir = os.environ.get("OPERATOR_AUTH_DIR")
+        self.session_cookie = ""
+        self.csrf_token = ""
 
     def tearDown(self) -> None:
         for item in self.servers:
             item.shutdown()
         for item in self.servers:
             item.server_close()
+        for tmp in self._auth_dirs:
+            tmp.cleanup()
+        if self._prev_auth_dir is None:
+            os.environ.pop("OPERATOR_AUTH_DIR", None)
+        else:
+            os.environ["OPERATOR_AUTH_DIR"] = self._prev_auth_dir
         if self._endpoint_state is not None:
             os.environ["ENDPOINT_STATE_FILE"] = self._endpoint_state
 
@@ -256,6 +269,15 @@ class ConsoleTests(unittest.TestCase):
         self.servers.append(instance)
         threading.Thread(target=instance.serve_forever, daemon=True).start()
         return instance
+
+    def _provision_admin(self) -> None:
+        tmp = tempfile.TemporaryDirectory(prefix="console-auth-")
+        self._auth_dirs.append(tmp)
+        os.environ["OPERATOR_AUTH_DIR"] = tmp.name
+        from auth.service import AuthService
+        AuthService(tmp.name).create_operator(
+            self.ADMIN_USER, self.ADMIN_PASSWORD, "admin", allow_first_admin=True, actor="test",
+        )
 
     def web(
         self,
@@ -265,7 +287,15 @@ class ConsoleTests(unittest.TestCase):
         api_key_file: str = "",
         model_id: str = MODEL,
         gateway_url: str | None = None,
+        provision_admin: bool = True,
+        auto_login: bool = True,
     ) -> str:
+        if provision_admin:
+            self._provision_admin()
+        else:
+            tmp = tempfile.TemporaryDirectory(prefix="console-auth-empty-")
+            self._auth_dirs.append(tmp)
+            os.environ["OPERATOR_AUTH_DIR"] = tmp.name
         if gateway is not None:
             self.start(gateway)
             gateway_url = f"http://127.0.0.1:{gateway.server_address[1]}"
@@ -279,19 +309,57 @@ class ConsoleTests(unittest.TestCase):
             upstream_timeout=5,
             health_timeout=1,
         )))
-        return f"http://127.0.0.1:{httpd.server_address[1]}"
+        base = f"http://127.0.0.1:{httpd.server_address[1]}"
+        self.session_cookie = ""
+        self.csrf_token = ""
+        if provision_admin and auto_login:
+            self.login(base)
+        return base
 
-    def request(self, base: str, method: str, path: str, payload: dict | None = None, headers: dict | None = None) -> tuple[int, bytes]:
+    def login(self, base: str, username: str | None = None, password: str | None = None) -> tuple[int, dict]:
+        status, body, headers = self.request_raw(
+            base, "POST", "/api/auth/login",
+            {"username": username or self.ADMIN_USER, "password": password or self.ADMIN_PASSWORD},
+            headers={"Origin": base},
+            auth=False,
+        )
+        payload = json.loads(body.decode("utf-8") or "{}")
+        if status == 200:
+            cookie = headers.get("Set-Cookie") or ""
+            self.session_cookie = cookie.split(";", 1)[0]
+            self.csrf_token = str(payload.get("csrf_token") or "")
+        return status, payload
+
+    def request_raw(
+        self,
+        base: str,
+        method: str,
+        path: str,
+        payload: dict | None = None,
+        headers: dict | None = None,
+        *,
+        auth: bool = True,
+    ) -> tuple[int, bytes, dict[str, str]]:
         data = None if payload is None else json.dumps(payload).encode("utf-8")
         request_headers = dict(headers or {})
         if data is not None:
             request_headers.setdefault("Content-Type", "application/json")
+        if auth and self.session_cookie:
+            request_headers.setdefault("Cookie", self.session_cookie)
+            if method in {"POST", "PUT", "DELETE", "PATCH"}:
+                request_headers.setdefault("Origin", base)
+                if self.csrf_token:
+                    request_headers.setdefault("X-CSRF-Token", self.csrf_token)
         request = urllib.request.Request(base + path, data=data, headers=request_headers, method=method)
         try:
             with OPENER.open(request, timeout=5) as response:
-                return int(response.getcode()), response.read()
+                return int(response.getcode()), response.read(), dict(response.headers.items())
         except urllib.error.HTTPError as exc:
-            return exc.code, exc.read()
+            return exc.code, exc.read(), dict(exc.headers.items()) if exc.headers else {}
+
+    def request(self, base: str, method: str, path: str, payload: dict | None = None, headers: dict | None = None) -> tuple[int, bytes]:
+        status, body, _headers = self.request_raw(base, method, path, payload, headers)
+        return status, body
 
     def test_config_rejects_public_targets_and_hides_key(self) -> None:
         with self.assertRaises(ValueError):
@@ -316,6 +384,8 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("System Status", text)
         self.assertIn(">IT Helpdesk<", text)
         self.assertIn(">Operations<", text)
+        self.assertIn('id="login-gate"', text)
+        self.assertIn('id="login-form"', text)
         self.assertIn('id="ops-view"', text)
         self.assertIn('id="agent-task"', text)
         self.assertIn('id="agent-incident"', text)
@@ -346,6 +416,9 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("syncCollectionFields", script_text)
         self.assertIn("removed_from_index", script_text)
         self.assertIn("searchable !== true", script_text)
+        self.assertIn("X-CSRF-Token", script_text)
+        self.assertIn("/api/auth/login", script_text)
+        self.assertIn("credentials", script_text)
         self.assertIn('value="my-docs"', text)
         self.assertIn("upload-form", text)
         self.assertIn("document-list", text)
@@ -717,7 +790,11 @@ class ConsoleTests(unittest.TestCase):
                     raise urllib.error.HTTPError(newurl, code, msg, headers, fp)
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), RefuseRedirect)
             try:
-                opener.open(base + "/api/microsoft/start", timeout=5)
+                req = urllib.request.Request(
+                    base + "/api/microsoft/start",
+                    headers={"Cookie": self.session_cookie} if self.session_cookie else {},
+                )
+                opener.open(req, timeout=5)
                 location = ""
                 status = 200
             except urllib.error.HTTPError as exc:
@@ -746,7 +823,11 @@ class ConsoleTests(unittest.TestCase):
                         raise urllib.error.HTTPError(newurl, code, msg, headers, fp)
                 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), RefuseRedirect)
                 try:
-                    opener.open(base + path, timeout=5)
+                    req = urllib.request.Request(
+                        base + path,
+                        headers={"Cookie": self.session_cookie} if self.session_cookie else {},
+                    )
+                    opener.open(req, timeout=5)
                 except urllib.error.HTTPError as exc:
                     return exc.code, exc.headers.get("Location") or ""
                 return 200, ""

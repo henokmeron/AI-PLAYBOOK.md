@@ -159,6 +159,7 @@ AI-PLAYBOOK.md/                 ← this repository
 │   └── results/                ← dated VERIFIED / FAILED evidence
 ├── web/                        ← Console (website)
 │   ├── server.py               ← HTTP server :8080
+│   ├── auth/                   ← Named-operator auth (sessions, roles, CSRF)
 │   └── static/                 ← HTML / JS / CSS in the browser
 ├── api/
 │   └── local_gateway.py        ← Gateway API :8010
@@ -174,7 +175,8 @@ AI-PLAYBOOK.md/                 ← this repository
 │       ├── START.sh            ← canonical full bring-up
 │       └── deploy-console-only.sh  ← update website without restarting Qwen
 ├── eval/                       ← RAG benchmarks
-└── scripts/                    ← utilities
+└── scripts/
+    └── provision_console_operator.py  ← create/disable local console operators
 ```
 
 **On the running Pod**, the same code is usually checked out at:
@@ -216,7 +218,9 @@ sequenceDiagram
 ssh -N -L 18080:127.0.0.1:8080 -p <POD_SSH_PORT> -i $env:USERPROFILE\.ssh\id_ed25519 root@<POD_IP>
 ```
 
-Then open `http://127.0.0.1:18080/` — pages: **Chat**, **Document Q&A**, **IT Helpdesk**, **System Status**.
+Then open `http://127.0.0.1:18080/` — pages: **Chat**, **Document Q&A**, **IT Helpdesk**, **Operations**, **System Status**.
+
+The console requires a **named operator sign-in** (local accounts, not Microsoft Entra). Provision the first administrator with `scripts/provision_console_operator.py` before using privileged pages. Details: `docs/security/operator-auth.md`. This is implemented in source; do not assume it is already deployed on a running Pod unless verified.
 
 SSH IP/port **change** when RunPod places the Pod on a new machine. Read them from RunPod → Pod → Connect.
 
@@ -231,6 +235,7 @@ SSH IP/port **change** when RunPod places the Pod on a new machine. Read them fr
 | IT Helpdesk | IT Helpdesk | Agent loop + helpdesk tools + Qwen | **VERIFIED live** (clear local temp cache only) |
 | System Status | System Status | Console → gateway health | Works when Pod is up |
 | **Security & Operations Centre** | **Operations** | `ops_centre/` events, health, alerts, incidents | **Implemented in source** (local); live Pod not required to develop/test |
+| **Named operator login** | Sign-in gate | `web/auth/`, `OPERATOR_AUTH_DIR` | **Implemented in source** (Phase 0); not claimed deployed/live-tested |
 | Microsoft mail | Connected accounts | Entra app id + OAuth | **Not configured** |
 | Enrolled PC remote control | Enrolled computers | Endpoint agent | **Not live** / no remote shell |
 
@@ -366,6 +371,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 
 | Date | Change |
 | --- | --- |
+| 2026-10-17 | Phase 0 named-operator auth (`web/auth/`, login gate, CSRF/sessions/RBAC). `deploy-console-only.sh` requires provisioned `OPERATOR_AUTH_DIR` before console restart. See `docs/security/operator-auth.md`. |
 | 2026-10-16 | AI Security & Operations Centre v1 in source (`ops_centre/`, console **Operations** page). Gap doc: `docs/ops_centre/GAP_AND_ARCHITECTURE.md`. No Pod started for this work. |
 | 2026-10-15 | First version of this manual after live IT Helpdesk verification; Pod stopped; tip `3447b79`. |
 
