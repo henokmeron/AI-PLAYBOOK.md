@@ -20,6 +20,7 @@
         <button type="button" data-view="chat" id="nav-chat">Chat</button>
         <button type="button" data-view="documents" id="nav-documents">Document Q&amp;A</button>
         <button type="button" data-view="agent" id="nav-agent">IT Helpdesk</button>
+        <button type="button" data-view="repair" id="nav-repair">Windows repair</button>
         <button type="button" data-view="ops" id="nav-ops">Operations</button>
         <button type="button" data-view="status" id="nav-status-tab">System Status</button>
       </nav>
@@ -189,6 +190,33 @@
         <div class="form-row">
           <button type="button" id="agent-cancel" class="secondary" hidden>Cancel task</button>
         </div>
+      </section>
+
+      <section id="repair-view" aria-labelledby="repair-title" hidden>
+        <header class="view-head">
+          <h1 id="repair-title">Windows repair</h1>
+          <p>This page plans registered diagnostics. A successful check is not a repaired computer. Elevated actions stay unrun on this console. Remote desktop stays unavailable until MeshCentral is configured.</p>
+        </header>
+        <div id="repair-error" class="banner banner-error" role="alert" hidden></div>
+        <section class="result" aria-labelledby="repair-remote-title">
+          <h2 id="repair-remote-title">Remote support</h2>
+          <p id="repair-remote" class="meta">Not checked yet.</p>
+        </section>
+        <form id="repair-form" class="composer">
+          <label for="repair-symptom">Customer symptom</label>
+          <textarea id="repair-symptom" rows="3" maxlength="300" required placeholder="For example: the printer queue will not print"></textarea>
+          <label for="repair-fixture">Practice fixture</label>
+          <select id="repair-fixture">
+            <option value="">No fixture — plan only</option>
+            <option value="printer_stuck_usb">Mocked stuck USB printer</option>
+            <option value="network_dns">Mocked DNS failure</option>
+            <option value="driver_code_28">Mocked missing driver</option>
+          </select>
+          <div class="form-row">
+            <button type="submit" id="repair-send">Plan and diagnose</button>
+          </div>
+        </form>
+        <pre id="repair-result" class="log"></pre>
       </section>
 
       <section id="ops-view" aria-labelledby="ops-title" hidden>

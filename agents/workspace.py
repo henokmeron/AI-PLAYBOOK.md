@@ -87,6 +87,9 @@ def tools_for(
 ) -> list[Tool]:
     tools = [calculator_tool()]
     tools.extend(helpdesk_tools())
+    from windows_repair.agent_tools import windows_repair_tools
+
+    tools.extend(windows_repair_tools())
     if documents is not None:
         tools.append(search_documents_tool(documents))
     if ops_centre is not None:

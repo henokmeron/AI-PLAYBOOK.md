@@ -518,6 +518,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/ops/director":
             self.handle_ops_director()
             return
+        if path == "/api/repair/procedures":
+            self.handle_repair_procedures()
+            return
+        if path == "/api/repair/remote":
+            self.handle_repair_remote()
+            return
         if path == "/api/platform/models":
             self.handle_platform_models()
             return
@@ -582,6 +588,10 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_ops_incident_note()
         elif path == "/api/ops/refresh":
             self.handle_ops_refresh()
+        elif path == "/api/repair/plan":
+            self.handle_repair_plan()
+        elif path == "/api/repair/execute":
+            self.handle_repair_execute()
         elif path == "/api/microsoft/disconnect":
             self.handle_microsoft_disconnect()
         elif path == "/api/devices/enrolment":
@@ -1002,6 +1012,60 @@ class Handler(BaseHTTPRequestHandler):
             return
         from ops_centre.detections import COVERAGE
         self.send_json(200, {"coverage": COVERAGE.strip()})
+
+    def handle_repair_procedures(self) -> None:
+        if self.require_key() is None:
+            return
+        from windows_repair.engine import list_procedures
+
+        self.send_json(200, {"procedures": list_procedures(), "live_printer_verified": False})
+
+    def handle_repair_remote(self) -> None:
+        if self.require_key() is None:
+            return
+        from windows_repair.remote_support import status_from_env
+
+        self.send_json(200, status_from_env())
+
+    def handle_repair_plan(self) -> None:
+        if self.require_key() is None:
+            return
+        from windows_repair.engine import plan
+
+        payload = self.read_json_object(max_bytes=8192)
+        if payload is None:
+            return
+        symptom = payload.get("symptom")
+        if not isinstance(symptom, str) or not symptom.strip():
+            self.send_error_json(400, "symptom is required")
+            return
+        fixture = payload.get("fixture")
+        if fixture is not None and not isinstance(fixture, str):
+            self.send_error_json(400, "fixture must be a string")
+            return
+        self.send_json(200, plan(symptom.strip(), fixture=fixture))
+
+    def handle_repair_execute(self) -> None:
+        if self.require_key() is None:
+            return
+        from windows_repair.engine import RepairDenied, execute
+
+        payload = self.read_json_object(max_bytes=8192)
+        if payload is None:
+            return
+        procedure_id = payload.get("procedure_id")
+        if not isinstance(procedure_id, str):
+            self.send_error_json(400, "procedure_id is required")
+            return
+        evidence = payload.get("evidence") if isinstance(payload.get("evidence"), dict) else None
+        fixture = payload.get("fixture") if isinstance(payload.get("fixture"), str) else None
+        approval_id = payload.get("approval_id") if isinstance(payload.get("approval_id"), str) else None
+        try:
+            result = execute(procedure_id, evidence=evidence, fixture=fixture, approval_id=approval_id)
+        except RepairDenied as exc:
+            self.send_error_json(400, exc.message)
+            return
+        self.send_json(200, result)
 
     def handle_ops_director(self) -> None:
         if self.require_key() is None:

@@ -220,6 +220,53 @@ def build_report(centre: OpsCentre, *, desk: Any | None = None) -> dict[str, Any
             checked_at=verified_at,
         ))
 
+    try:
+        from windows_repair.engine import list_procedures
+
+        procedures = list_procedures()
+        components.append(_component(
+            "repair_catalogue",
+            "HEALTHY" if procedures else "DEGRADED",
+            evidence=[f"registered_procedures={len(procedures)}"],
+            detail="The procedure catalogue loaded in this process. That does not mean a customer PC was repaired.",
+            checked_at=verified_at,
+        ))
+    except Exception as exc:  # noqa: BLE001
+        components.append(_component(
+            "repair_catalogue",
+            "UNKNOWN",
+            evidence=[type(exc).__name__],
+            detail="The repair catalogue could not be loaded.",
+            checked_at=verified_at,
+        ))
+    components.append(_component(
+        "endpoint_fleet",
+        "UNKNOWN",
+        evidence=["this report did not read device check-ins"],
+        detail="Last-seen times for enrolled computers were not collected.",
+        checked_at=verified_at,
+    ))
+
+    try:
+        from windows_repair.remote_support import status_from_env
+
+        remote = status_from_env()
+        components.append(_component(
+            "remote_support",
+            str(remote.get("state") or "UNKNOWN"),
+            evidence=[str(remote.get("detail") or "no detail")],
+            detail=str(remote.get("detail") or ""),
+            checked_at=verified_at if remote.get("state") != "NOT CONFIGURED" else verified_at,
+        ))
+    except Exception as exc:  # noqa: BLE001
+        components.append(_component(
+            "remote_support",
+            "UNKNOWN",
+            evidence=[type(exc).__name__],
+            detail="Remote-support status could not be collected.",
+            checked_at=verified_at,
+        ))
+
     alerts = overview.get("open_alerts") or []
     incidents = overview.get("open_incidents") or []
     facts = [

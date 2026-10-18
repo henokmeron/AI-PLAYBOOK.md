@@ -306,6 +306,31 @@ class ConsoleTests(unittest.TestCase):
         self.assertNotIn(KEY, repr(config))
         self.assertEqual(config.host, "127.0.0.1")
 
+    def test_repair_page_plans_a_fixture_and_denies_firewall_changes(self) -> None:
+        base = self.web(FakeGateway())
+        status, body = self.request(base, "GET", "/")
+        self.assertEqual(status, 200)
+        self.assertIn("Windows repair", body.decode("utf-8"))
+        status, body = self.request(base, "POST", "/api/repair/plan", {
+            "symptom": "the printer queue will not print",
+            "fixture": "printer_stuck_usb",
+        })
+        planned = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertIn("print.diagnose", planned["procedure_ids"])
+        self.assertFalse(planned["problem_resolved"])
+        status, body = self.request(base, "POST", "/api/repair/execute", {
+            "procedure_id": "net.firewall.disable",
+            "approval_id": "approval-1",
+        })
+        denied = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertEqual(denied["status"], "denied")
+        self.assertFalse(denied["executed"])
+        status, remote = self.request(base, "GET", "/api/repair/remote")
+        self.assertEqual(status, 200)
+        self.assertFalse(json.loads(remote)["remote_desktop_verified"])
+
     def test_pages_do_not_contain_the_key_or_gateway_calls(self) -> None:
         base = self.web(FakeGateway())
         status, body = self.request(base, "GET", "/")

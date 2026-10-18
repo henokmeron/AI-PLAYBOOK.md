@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var views = ["chat", "documents", "agent", "ops", "status"];
+  var views = ["chat", "documents", "agent", "repair", "ops", "status"];
   var messages = [];
   var ragTurns = [];
   var busy = false;
@@ -122,6 +122,7 @@
     document.title =
       name === "documents" ? "Document Q&A"
         : name === "agent" ? "IT Helpdesk"
+        : name === "repair" ? "Windows repair"
         : name === "ops" ? "Operations Centre"
         : name === "status" ? "System Status"
         : "Chat";
@@ -129,6 +130,7 @@
       loadConnectors();
       loadAgentHistory();
     }
+    if (name === "repair") loadRepair();
     if (name === "ops") loadOpsCentre();
     if (name === "status") renderStatus();
   }
@@ -1242,6 +1244,47 @@
       showOpsError(errorMessage(error));
     });
   }
+
+  function loadRepair() {
+    var remote = document.getElementById("repair-remote");
+    var errorBox = document.getElementById("repair-error");
+    errorBox.hidden = true;
+    request("/api/repair/remote").then(function (body) {
+      remote.textContent = (body.state || "UNKNOWN") + " — " + (body.detail || "No detail.");
+    }).catch(function (error) {
+      errorBox.hidden = false;
+      errorBox.textContent = errorMessage(error);
+    });
+  }
+
+  document.getElementById("repair-form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    var errorBox = document.getElementById("repair-error");
+    var symptom = document.getElementById("repair-symptom").value.trim();
+    var fixture = document.getElementById("repair-fixture").value;
+    errorBox.hidden = true;
+    var body = { symptom: symptom };
+    if (fixture) body.fixture = fixture;
+    request("/api/repair/plan", { method: "POST", body: body }).then(function (planned) {
+      var ids = planned.procedure_ids || [];
+      var first = ids[0];
+      if (!first) {
+        document.getElementById("repair-result").textContent = JSON.stringify(planned, null, 2);
+        return null;
+      }
+      var executeBody = { procedure_id: first };
+      if (fixture) executeBody.fixture = fixture;
+      return request("/api/repair/execute", { method: "POST", body: executeBody }).then(function (result) {
+        document.getElementById("repair-result").textContent = JSON.stringify({
+          plan: planned,
+          first_procedure: result
+        }, null, 2);
+      });
+    }).catch(function (error) {
+      errorBox.hidden = false;
+      errorBox.textContent = errorMessage(error);
+    });
+  });
 
   document.getElementById("ops-refresh").addEventListener("click", function () {
     request("/api/ops/refresh", { method: "POST", body: {} }).then(function () {
