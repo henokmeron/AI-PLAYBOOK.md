@@ -231,6 +231,7 @@ SSH IP/port **change** when RunPod places the Pod on a new machine. Read them fr
 | IT Helpdesk | IT Helpdesk | Agent loop + helpdesk tools + Qwen | **VERIFIED live** (clear local temp cache only) |
 | System Status | System Status | Console → gateway health | Works when Pod is up |
 | **Security & Operations Centre** | **Operations** | `ops_centre/` events, health, alerts, incidents | **Implemented in source** (local); live Pod not required to develop/test |
+| **Operations Director report** | `python -m ops_centre.director`, or `GET /api/ops/director` when the console is up | `ops_centre/director.py` | **In source**. Not live-verified on the Pod. No schedule. See `docs/ops_centre/DIRECTOR.md`. |
 | Microsoft mail | Connected accounts | Entra app id + OAuth | **Not configured** |
 | Enrolled PC remote control | Enrolled computers | Endpoint agent | **Not live** / no remote shell |
 
@@ -366,6 +367,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 
 | Date | Change |
 | --- | --- |
+| 2026-10-18 | On-demand Operations Director report (`ops_centre/director.py`, `GET /api/ops/director`). No scheduler. Pod was not started or stopped for this change. See `docs/ops_centre/DIRECTOR.md`. |
 | 2026-10-16 | AI Security & Operations Centre v1 in source (`ops_centre/`, console **Operations** page). Gap doc: `docs/ops_centre/GAP_AND_ARCHITECTURE.md`. No Pod started for this work. |
 | 2026-10-15 | First version of this manual after live IT Helpdesk verification; Pod stopped; tip `3447b79`. |
 

@@ -515,6 +515,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/ops/coverage":
             self.handle_ops_coverage()
             return
+        if path == "/api/ops/director":
+            self.handle_ops_director()
+            return
         if path == "/api/platform/models":
             self.handle_platform_models()
             return
@@ -999,6 +1002,18 @@ class Handler(BaseHTTPRequestHandler):
             return
         from ops_centre.detections import COVERAGE
         self.send_json(200, {"coverage": COVERAGE.strip()})
+
+    def handle_ops_director(self) -> None:
+        if self.require_key() is None:
+            return
+        from ops_centre.director import build_report
+
+        ops = self._ops()
+        try:
+            report = build_report(ops, desk=self.server.desk)  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001 — still return a report if the desk snapshot fails
+            report = build_report(ops)
+        self.send_json(200, report)
 
     def handle_ops_refresh(self) -> None:
         if self.require_key() is None:
