@@ -878,5 +878,30 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(after, 401)
 
 
+class HistoryDirectoryTests(unittest.TestCase):
+    def test_history_stays_off_a_normal_workspace_disk(self) -> None:
+        previous = os.environ.pop("AGENT_HISTORY_DIR", None)
+        try:
+            self.assertEqual(server.default_agent_history_dir("ext4"), "/tmp/agent-task-history")
+            self.assertEqual(
+                server.default_agent_history_dir("fuse.geesefs"),
+                "/workspace/agent-task-history",
+            )
+        finally:
+            if previous is not None:
+                os.environ["AGENT_HISTORY_DIR"] = previous
+
+    def test_history_env_override_wins(self) -> None:
+        previous = os.environ.get("AGENT_HISTORY_DIR")
+        os.environ["AGENT_HISTORY_DIR"] = "/tmp/unit-agent-history"
+        try:
+            self.assertEqual(server.default_agent_history_dir("fuse.geesefs"), "/tmp/unit-agent-history")
+        finally:
+            if previous is None:
+                os.environ.pop("AGENT_HISTORY_DIR", None)
+            else:
+                os.environ["AGENT_HISTORY_DIR"] = previous
+
+
 if __name__ == "__main__":
     unittest.main()

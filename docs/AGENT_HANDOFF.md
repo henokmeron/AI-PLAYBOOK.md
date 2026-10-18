@@ -164,6 +164,12 @@ E2E helper (uses key file; does not print it):
 
 ## Session log (newest first)
 
+### 2026-10-18 — task history no longer lands in the git tree
+
+- The console treated any writable `/workspace` as the volume and wrote `agent-task-history/` into this checkout during a local test. That file was a failed mock task, not a volume backup, and it was not committed.
+- History now stays at `/tmp/agent-task-history` unless `findmnt` reports `fuse.geesefs`, which is the Global Volume. `AGENT_HISTORY_DIR` still overrides that. On the Pod the volume path remains `/workspace/agent-task-history`.
+- Tests: `web.test_server.HistoryDirectoryTests` and the agent-page console test, 3 OK. The repo directory was not recreated. `/tmp/agent-task-history` received the mock record.
+
 ### 2026-10-18 — health check could not reach the Pod
 
 - Fast-forwarded this checkout from `7708140` to GitHub `693e2b46fd4e578cbb4022f79b5dd9d30ee7f765`. Untracked `ops/__pycache__/` was left untracked.

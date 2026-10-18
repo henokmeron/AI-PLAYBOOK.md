@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -398,6 +399,37 @@ def connection_state(*, reachable: bool, upstream_ok: bool, key_ok: bool, model_
     return "ready"
 
 
+def workspace_fstype() -> str:
+    """Filesystem type of /workspace. The Global Volume is fuse.geesefs."""
+    try:
+        completed = subprocess.run(
+            ["findmnt", "-n", "-o", "FSTYPE", "/workspace"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return completed.stdout.strip()
+
+
+def default_agent_history_dir(fstype: str | None = None) -> str:
+    """Keep task history on the volume only. A normal disk must not use /workspace.
+
+    This repository is checked out at /workspace on the Cloud Agent. Writing
+    history there would put task records in the git tree. On the Pod, /workspace
+    is the Global Volume and the checkout lives under /tmp.
+    """
+    override = os.environ.get("AGENT_HISTORY_DIR", "").strip()
+    if override:
+        return override
+    kind = workspace_fstype() if fstype is None else fstype
+    if kind == "fuse.geesefs":
+        return "/workspace/agent-task-history"
+    return "/tmp/agent-task-history"
+
+
 class WebServer(ThreadingHTTPServer):
     allow_reuse_address = True
     daemon_threads = True
@@ -414,13 +446,7 @@ class WebServer(ThreadingHTTPServer):
             Path(os.environ.get("RAG_DOCS_DIR", "/workspace/rag-demo-docs")),
             Path(os.environ.get("RAG_MANAGED_DOCS_DIR", "/workspace/rag-managed-docs")),
         )
-        history_dir = os.environ.get("AGENT_HISTORY_DIR")
-        if not history_dir:
-            volume_history = Path("/workspace/agent-task-history")
-            if Path("/workspace").is_dir() and os.access("/workspace", os.W_OK):
-                history_dir = str(volume_history)
-            else:
-                history_dir = "/tmp/agent-task-history"
+        history_dir = default_agent_history_dir()
         self.ops = OpsCentre()
         self.desk = AgentDesk(
             catalog, documents=documents, history_dir=history_dir, ops_centre=self.ops,
