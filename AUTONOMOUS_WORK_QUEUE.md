@@ -59,6 +59,7 @@ Keep Qwen3.5-27B as the RunPod-first production default, preserve volume recover
 - 2026-10-15 (agent loop): Async progress, cancel, and auditable task history at `0165267` (90 agent + 23 web tests OK). Pod **STOPPED**.
 - 2026-10-15 (agent queue + IT): Serial queue, IT incident schema/playbook, richer Agent UI (95 agent + 23 web OK).
 - 2026-10-15 (live resume): Migrate API failed; new Pod `1cj381fjuujeq7` + volume; tip `a680580`; E2E **FAILS:NONE**; Agent async/cancel **VERIFIED**. **Next:** Stop Pod when idle; continue product features offline or after Start.
+- 2026-10-18: From this Linux agent, `154.54.102.40:13212` and `216.81.248.126:19091` refused connections. No `id_ed25519` here. Pod health not read. `START.sh` not run. Local unittest of ops centre, helpdesk, history, queue, and web console: **40 OK**. Volume was not touched.
 
 ## Required handover format
 Report briefly:

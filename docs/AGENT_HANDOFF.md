@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-16** (AI Security & Operations Centre v1 added in source — `ops_centre/`, console **Operations** page. **Pod not started.** Gap/architecture: `docs/ops_centre/GAP_AND_ARCHITECTURE.md`).
+Last updated: **2026-10-18** (SSH `154.54.102.40:13212` and `216.81.248.126:19091` both refused. This machine has no `id_ed25519`. Pod health was not read. Local tests 40 OK.)
 
 ## Only this repository
 
@@ -47,7 +47,7 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 | --- | --- | --- |
 | Active test Pod | RunPod `4lvr54b0wmkz6c` (“rising_chocolate_locust”), **A100-SXM4-80GB**, **$1.79/hr**, driver **580.126.16** | Redeployed 2026-10-15 after `1cj381fjuujeq7` disappeared from the Pods list (likely terminated). Same Global Volume. Prefer **Stop** when idle. Do **not** Terminate without approval. |
 | Prior Pod | `1cj381fjuujeq7` / `vx4oe3oyfsqnz8` | Gone from console / left alone. Do not recreate extras. |
-| SSH (TCP) | `root@154.54.102.40 -p 13212`, key `%USERPROFILE%\.ssh\id_ed25519` | **VERIFIED** 2026-10-15 after redeploy. |
+| SSH (TCP) | Last running address `root@154.54.102.40 -p 13212`, key `%USERPROFILE%\.ssh\id_ed25519` | **VERIFIED** 2026-10-15, then the Pod was stopped. On 2026-10-18 this machine got connection refused on `13212` and on old `19091`. The key file is not on this machine. Read the new port from the RunPod page after Start. |
 | GPU / driver | 81,920 MiB, ~**71,091 MiB used**, driver **580.126.16** | **VERIFIED.** |
 | Container | PyTorch 2.8.0; runtime in `/tmp/vllm-qwen-env` | Restored from volume archive. |
 | Global Volume | `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` | **VERIFIED.** |
@@ -163,6 +163,14 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-18 — health check could not reach the Pod
+
+- Fast-forwarded this checkout from `7708140` to GitHub `693e2b46fd4e578cbb4022f79b5dd9d30ee7f765`. Untracked `ops/__pycache__/` was left untracked.
+- **FAILED:** TCP `154.54.102.40:13212` connection refused. TCP `216.81.248.126:19091` connection refused. SSH to port `13212` with identity `$HOME/.ssh/id_ed25519` printed that the identity file is missing and `Connection refused`, exit 255. No key was generated. No Pod was started.
+- **NOT RUN:** `/workspace` mount, GPU, weights, runtime archive, preflight, Qwen `:8002`, gateway `:8010`, console `:8080`, and `START.sh`. Recovery files in git say Pod `4lvr54b0wmkz6c` was stopped after the live helpdesk check and the Global Volume was kept. That stop was not re-checked in the RunPod UI.
+- **Local tests, not live:** `/opt/ai-playbook-venv/bin/python -m unittest ops_centre.tests.test_ops_centre agents.tests.test_helpdesk agents.tests.test_history agents.tests.test_queue web.test_server` — 40 tests, OK, exit 0. Existing venv. No model load and no Graph call.
+- Next action: Start the existing Pod in the RunPod UI (do not create another Pod), then connect from the Windows PC with `C:\Users\henok\.ssh\id_ed25519` and the new port. Do not reuse `13212` or `19091` until that page shows them.
 
 ### 2026-10-16 — AI Security & Operations Centre (local source)
 
