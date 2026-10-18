@@ -73,6 +73,21 @@ Azure is an option, not a requirement. We will choose infrastructure after evalu
 
 Do not buy large cloud resources until the technical design requires them.
 
+### Operator system manual
+
+- Beginner map of the whole platform (GitHub vs volume vs Pod, ports, folders, what each piece is): **`docs/SYSTEM_MANUAL.md`**. Update it when the architecture changes.
+
+### 2026-10-15 — AI IT Helpdesk
+
+- Agent page is the IT Helpdesk: classify → docs/health/diagnostics → approval-gated local remediation → verify → incident report.
+- Tools: `agents/builtin/helpdesk.py`. Docs: `docs/agents/helpdesk.md`. Mock E2E **VERIFIED**. Live Qwen on Pod `4lvr54b0wmkz6c` tip **`c069674`**: **VERIFIED** (`docs/results/helpdesk-live-qwen-2026-10-15.md`) — smoke + UI approval of `clear_temp_cache` only.
+- Active Pod: `4lvr54b0wmkz6c` (A100 SXM, same Global Volume). Prefer Stop when idle.
+
+### 2026-10-15 — Agent execution loop (progress + history)
+
+- Console Agent desk supports async runs (`wait: false`), live status polling, cooperative cancel, serial `queued` tasks, IT-support incident reports, and redacted task history (defaults to `/workspace/agent-task-history` on the volume).
+- Live on Pod `1cj381fjuujeq7` (tip **`a680580`**): E2E + Agent async **VERIFIED** 2026-10-15 (pod later replaced by `4lvr54b0wmkz6c`). Details: `docs/results/runpod-migrate-deploy-2026-10-15.md`.
+
 ### 2026-10-14 — RunPod-first first release (Qwen primary)
 
 - **Hosting:** RunPod Global Volume + Pod GPU is the standalone first-release deployment. Azure is optional/deferred and not required to start, chat, or recover.
@@ -1079,9 +1094,18 @@ Research should lead to a decision, not a pile of links. Every research report s
 - **Next:** redeploy same volume on driver ≥580, then `bash ops/start-first-release.sh --start` and E2E browser tests.
 - Acceptance: `ops/results/final-mission-acceptance-2026-10-13.md`.
 
+### 2026-10-15 — Cloud Agent cannot use the RunPod key
+
+- Started from `4f3f4f82af268e6363182b886dac3a9a5cc01faf`. TCP `216.81.248.126:19091` accepts a connection. This Cloud Agent has no private key, no RunPod credential, and no self-hosted worker. The Pod was not changed.
+- Resume in Cursor on the Windows PC at `C:\Users\henok\src\AI-PLAYBOOK.md`. The key is `C:\Users\henok\.ssh\id_ed25519`. The read-only SSH check and the console-only deploy command are in `docs/AGENT_HANDOFF.md`. Deploy the console only after `:8002` and `:8010` already return HTTP 200. Do not run `START.sh` without a separate approval. Do not paste the key or a Microsoft application id into chat.
+
 ### 2026-10-15 — Idle Pod confirmed; read-only device check-in is source-only
 
 - Pod `1g41ejmd99iyun` is an A100 SXM at $1.79/hour. SSH `root@216.81.248.126 -p 19091` worked. The old port `11165` refused. The Global Volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373` is mounted. Qwen weights (11 shards) and the 3.8G runtime archive are present. GPU memory was 0. Ports 8002, 8010, and 8080 were not listening. Nothing was started or stopped.
+
+### 2026-10-15 — Current Pod blocked by NVIDIA driver 570
+
+- Current Pod `tn28umxi9a5lqx` (“relative_emerald_ant”), SSH `root@185.216.23.194 -p 45209`. Same Global Volume. Archive checksum and snapshot `01e7692` **OK**. Driver **570.172.08**. `START.sh --preflight` correctly fails `nvidia-driver>=580` and does not start Qwen. Redeploy the same volume on a host with driver ≥580 (RunPod CUDA 13 filter). Evidence: `docs/results/runpod-driver570-health-2026-10-15.md`.
 - `ops/release/deploy-console-only.sh` can replace only the console, and only after Qwen and the gateway are already healthy. It was not run.
 - Enrolled computers can submit operating system, disk, memory, and boot time through `integrations/endpoint_worker.py`. The server stores a hash of the device secret. There is no remote-control command. Catalog evidence is mock-tested. A collector call on the developer Windows PC was schema-valid and was not sent to the Pod.
 - Microsoft Graph is still not connected. A personal Microsoft account cannot open Entra app registrations (AADSTS16000). No application was created.

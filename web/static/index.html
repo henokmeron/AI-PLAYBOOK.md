@@ -19,7 +19,8 @@
       <nav class="nav-list" aria-label="Primary">
         <button type="button" data-view="chat" id="nav-chat">Chat</button>
         <button type="button" data-view="documents" id="nav-documents">Document Q&amp;A</button>
-        <button type="button" data-view="agent" id="nav-agent">Agent</button>
+        <button type="button" data-view="agent" id="nav-agent">IT Helpdesk</button>
+        <button type="button" data-view="ops" id="nav-ops">Operations</button>
         <button type="button" data-view="status" id="nav-status-tab">System Status</button>
       </nav>
       <p class="nav-status" id="nav-status" role="status">Checking gateway…</p>
@@ -111,8 +112,8 @@
 
       <section id="agent-view" aria-labelledby="agent-title" hidden>
         <header class="view-head">
-          <h1 id="agent-title">Agent</h1>
-          <p>Give the agent a task. It can calculate, and it can search the same document library as Document Q&amp;A. It cites the file it used and says when the library does not contain the answer. External accounts are listed below and are not used until you connect them. Sending or changing records waits for your approval.</p>
+          <h1 id="agent-title">IT Helpdesk</h1>
+          <p>Describe an IT problem. The agent classifies it, searches support docs, checks local platform health, and can propose a safe change that waits for your approval. You see real tool results, can cancel anytime, and receive an incident report with evidence and verification. External accounts below stay unused until you connect them.</p>
         </header>
         <div id="agent-error" class="banner banner-error" role="alert" hidden></div>
         <section class="composer" aria-labelledby="connector-title">
@@ -142,19 +143,33 @@
         </section>
         <p id="agent-execution" class="meta"></p>
         <div id="agent-record" class="log"></div>
+        <div id="agent-incident" class="composer" hidden>
+          <h2>Incident report</h2>
+          <div id="agent-incident-body" class="log"></div>
+        </div>
         <div id="agent-log" class="log" aria-live="polite"></div>
         <form id="agent-form" class="composer">
-          <label for="agent-task">Task</label>
-          <textarea id="agent-task" rows="3" maxlength="2000" required placeholder="For example: what is 99.498 times 7?"></textarea>
-          <p class="meta">File attachments on this page are not supported and are not indexed. Upload a file on Document Q&amp;A if it should be searchable.</p>
+          <label for="agent-task">IT issue or task</label>
+          <textarea id="agent-task" rows="3" maxlength="2000" required placeholder="For example: Helpdesk ticket — the gateway looks down and users cannot chat."></textarea>
+          <p class="meta">File attachments on this page are not supported. Upload on Document Q&amp;A if a procedure should be searchable. Progress updates while the task runs; recent tasks below are kept for audit.</p>
           <div class="form-row">
-            <button type="submit" id="agent-send">Run task</button>
-            <span id="agent-loading" class="loading" role="status" hidden>Working…</span>
+            <button type="submit" id="agent-send">Submit issue</button>
+            <span id="agent-loading" class="loading" role="status" hidden>Investigating…</span>
           </div>
         </form>
+        <section class="composer" aria-labelledby="agent-history-title">
+          <h2 id="agent-history-title">Recent tasks</h2>
+          <ul id="agent-history" class="sources"></ul>
+          <p id="agent-history-empty" class="meta">No saved tasks yet on this console.</p>
+        </section>
         <div id="agent-approval" class="composer" hidden>
-          <h2>Approve this exact action</h2>
+          <h2>Approve this change</h2>
           <p id="agent-approval-text"></p>
+          <p id="agent-approval-what" class="meta"></p>
+          <p id="agent-approval-why" class="meta"></p>
+          <p id="agent-approval-system" class="meta"></p>
+          <p id="agent-approval-risks" class="meta"></p>
+          <p id="agent-approval-verify" class="meta"></p>
           <p id="agent-approval-target" class="meta"></p>
           <pre id="agent-approval-args"></pre>
           <div class="form-row">
@@ -174,6 +189,56 @@
         <div class="form-row">
           <button type="button" id="agent-cancel" class="secondary" hidden>Cancel task</button>
         </div>
+      </section>
+
+      <section id="ops-view" aria-labelledby="ops-title" hidden>
+        <header class="view-head">
+          <h1 id="ops-title">Security &amp; Operations Centre</h1>
+          <p>
+            Platform health, activity timeline, alerts and security incidents.
+            Status is never shown as healthy unless a fresh probe succeeded.
+            External paging is not configured unless you add a notifier deliberately.
+          </p>
+        </header>
+        <div id="ops-error" class="banner banner-error" role="alert" hidden></div>
+        <div class="form-row">
+          <button type="button" id="ops-refresh">Refresh probes &amp; detections</button>
+        </div>
+        <section class="result" aria-labelledby="ops-overview-title">
+          <h2 id="ops-overview-title">Executive overview</h2>
+          <p id="ops-overall" class="meta">Not checked yet.</p>
+          <ul id="ops-overview-list" class="sources"></ul>
+        </section>
+        <section class="result" aria-labelledby="ops-health-title">
+          <h2 id="ops-health-title">Services</h2>
+          <ul id="ops-health-list" class="sources"></ul>
+        </section>
+        <section class="result" aria-labelledby="ops-alerts-title">
+          <h2 id="ops-alerts-title">Alerts</h2>
+          <ul id="ops-alerts-list" class="sources"></ul>
+          <p id="ops-alerts-empty" class="meta">No open alerts.</p>
+        </section>
+        <section class="result" aria-labelledby="ops-incidents-title">
+          <h2 id="ops-incidents-title">Incidents</h2>
+          <ul id="ops-incidents-list" class="sources"></ul>
+          <p id="ops-incidents-empty" class="meta">No open incidents.</p>
+        </section>
+        <section class="result" aria-labelledby="ops-timeline-title">
+          <h2 id="ops-timeline-title">Activity timeline</h2>
+          <form id="ops-filter-form" class="composer">
+            <label for="ops-filter-q">Search</label>
+            <input id="ops-filter-q" type="search" maxlength="120" placeholder="component, type, or text">
+            <div class="form-row">
+              <button type="submit">Filter timeline</button>
+            </div>
+          </form>
+          <ul id="ops-timeline" class="sources"></ul>
+        </section>
+        <section class="result" aria-labelledby="ops-coverage-title">
+          <h2 id="ops-coverage-title">Detection coverage &amp; limits</h2>
+          <pre id="ops-coverage" class="meta"></pre>
+          <p id="ops-integrity" class="meta"></p>
+        </section>
       </section>
 
       <section id="status-view" aria-labelledby="status-title" hidden>

@@ -1,9 +1,10 @@
 # Agent handoff — read this first
 
 **Every new agent / new chat must read this file before changing or starting anything.**  
+**Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-15** (new Pod checked over SSH; Qwen is not loaded; source was not deployed).
+Last updated: **2026-10-18** (SSH `154.54.102.40:13212` and `216.81.248.126:19091` both refused. This machine has no `id_ed25519`. Pod health was not read. Local tests 40 OK.)
 
 ## Only this repository
 
@@ -44,15 +45,14 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 | Item | Value | Status |
 | --- | --- | --- |
-| Active test Pod | RunPod `1g41ejmd99iyun` (“brand new pod”), **A100-SXM4-80GB**, **$1.79/hr** | Running and idle. The older Pod `00n856z3eue5v9` is not in the Pod list. |
-| SSH (TCP) | `root@216.81.248.126 -p 19091`, key `%USERPROFILE%\.ssh\id_ed25519` | VERIFIED 2026-10-15. The old `154.54.102.31:11165` actively refused. |
-| GPU / driver | 81,920 MiB, **0 MiB used**, driver 580.159.04 | VERIFIED 2026-10-15. Qwen is not loaded. |
-| Container | Host `uptime` printed about 9 weeks; treat that as the machine, not proof this Pod has been serving | Platform ports are down |
-| Global Volume | Same volume id `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (fuse.geesefs) | VERIFIED. The RunPod UI showed 0 bytes; SSH showed the files. |
-| Qwen | `127.0.0.1:8002` | Not listening. Weights present: 11 shards under revision `fc05daec…`. |
-| Gateway | `127.0.0.1:8010` | Not listening |
-| Console | `127.0.0.1:8080` | Not listening. `/tmp/AI-PLAYBOOK` is absent, so there is no running commit. |
-| Other Pod | “Qwen model testing system” **H100 NVL** showed **$0.00/hr** earlier; do not assume it is still needed or safe to delete | Leave alone unless user says otherwise |
+| Active test Pod | RunPod `4lvr54b0wmkz6c` (“rising_chocolate_locust”), **A100-SXM4-80GB**, **$1.79/hr**, driver **580.126.16** | Redeployed 2026-10-15 after `1cj381fjuujeq7` disappeared from the Pods list (likely terminated). Same Global Volume. Prefer **Stop** when idle. Do **not** Terminate without approval. |
+| Prior Pod | `1cj381fjuujeq7` / `vx4oe3oyfsqnz8` | Gone from console / left alone. Do not recreate extras. |
+| SSH (TCP) | Last running address `root@154.54.102.40 -p 13212`, key `%USERPROFILE%\.ssh\id_ed25519` | **VERIFIED** 2026-10-15, then the Pod was stopped. On 2026-10-18 this machine got connection refused on `13212` and on old `19091`. The key file is not on this machine. Read the new port from the RunPod page after Start. |
+| GPU / driver | 81,920 MiB, ~**71,091 MiB used**, driver **580.126.16** | **VERIFIED.** |
+| Container | PyTorch 2.8.0; runtime in `/tmp/vllm-qwen-env` | Restored from volume archive. |
+| Global Volume | `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` | **VERIFIED.** |
+| Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | **VERIFIED** HTTP 200. Console tip **`c069674`**. Live IT Helpdesk **VERIFIED**. |
+| Other Pod | Older idle/terminated Pods | Leave alone unless user says otherwise |
 
 ### Exact volume paths that must remain
 
@@ -71,8 +71,8 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 - **GitHub** feature branches include the Qwen routing work. `main` is fast-forwarded to the same tip and pushed. It is not force-pushed.
 - `e1e360f` is the parent of **`c2323238041cea8317d2322e6d16554d0bc967bc`** (Qwen routing). That push is a fast-forward. The `ninja` PATH change itself is **`083fa58`**, already inside `e1e360f`.
 - Local checkout is `feature/qwen-a100-start-hardening`. Keep `feature/qwen3.5-27b-integration` on the same commit.
-- Live Pod source was `/tmp/AI-PLAYBOOK` at `98511df` on an earlier Pod. On 2026-10-15 that checkout is **absent** on `1g41ejmd99iyun`. Nothing is listening on `:8002`, `:8010`, or `:8080`. Gemma on `:8000` is down. `MICROSOFT_CLIENT_ID` is unset. Weights are still present. The Pod was not stopped and Qwen was not started.
-- Volume `VERSION.txt` and snapshot `…-01e7692.tar.gz` match SHA-256 `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370` (checked 2026-10-14).
+- Live Pod source on `vx4oe3oyfsqnz8` is `/tmp/AI-PLAYBOOK` at **`2d273f6`**. Qwen `:8002`, gateway `:8010`, and console `:8080` are up. Gemma on `:8000` is down. `MICROSOFT_CLIENT_ID` is unset. Weights were not re-downloaded.
+- Volume snapshot `…-01e7692.tar.gz` SHA-256 `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370` re-checked **OK** on 2026-10-15. Runtime `SHA256SUMS` **OK**. Volume `START.sh` matches git (`6059e4c2…`).
 - Do not commit untracked `ops/_*.sh` / `ops/_*.py` probe helpers or `__pycache__`.
 
 ---
@@ -102,9 +102,11 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 ### Agents / security / integrations
 
 - `agents/`, `integrations/`, security review, fine-tuning plan: committed (`de40330`, smoke `473d119`).
-- Live agent smoke vs Qwen on Pod `00n856z3eue5v9`, deployed code `98511df`: **calculator VERIFIED** on 2026-10-14. `agents.live_smoke` and `POST /api/agent` both returned `696.486` from the calculator tool. Document Q&A on `POST /api/rag` answered the receipt question from the demo corpus and abstained on CEO salary. That live check was not repeated on 2026-10-15 because the new code is not deployed.
-- In source, the Agent desk now has `search_documents`. It uses the existing retrieval pipeline, cites the file, abstains when coverage is too low, and flags instruction-like document text. That path is **unit-tested with a fake model**, not live against Qwen. Standalone Document Q&A, Chat, and System Status remain. File attachments on the Agent page are unsupported and are not indexed.
-- Approval pause is unit-tested. No live external approval was clicked, and no email was sent.
+- Live agent smoke vs Qwen on Pod `00n856z3eue5v9`, deployed code `98511df`: **calculator VERIFIED** on 2026-10-14. `agents.live_smoke` and `POST /api/agent` both returned `696.486` from the calculator tool. Document Q&A on `POST /api/rag` answered the receipt question from the demo corpus and abstained on CEO salary.
+- **2026-10-15 live IT Helpdesk on Pod `4lvr54b0wmkz6c` tip `c069674`: VERIFIED** against real Qwen (not mocked). Evidence: `docs/results/helpdesk-live-qwen-2026-10-15.md`. Async calculator smoke FAILS=0; helpdesk smoke FAILS=0; approval path cleared local temp cache only; web UI submit → Approve → incident report `resolved` (task `9dc32d7f8a774dfeb43573eeab8dc41a`).
+- Protocol fix: accept Qwen’s `{"action":"<tool_name>",...}` shortcut. IT token budget raised to 48k after a live run hit the old 16k ceiling post-approval.
+- In source, the Agent desk has `search_documents` (unit-tested with a fake model; live Document Q&A remains separate). File attachments on the Agent page are unsupported and are not indexed.
+- Helpdesk approval pause: **live VERIFIED** for `clear_temp_cache` only. No email was sent. No customer systems touched.
 - Microsoft 365 OAuth is implemented in source for read-only mail. **No Entra application was created. No application id is configured. No real account was authorised. No real Graph request or mailbox search succeeded.** The live console is still `98511df` and was not restarted. See `docs/integrations/microsoft-365-signin.md`.
 - Nginx on some Pods listens on `0.0.0.0:8081` → console without login. User **deferred** fixing auth/nginx until a later “login” phase. Treat Pod docs as non-sensitive until then (`docs/security/baseline-review.md`).
 
@@ -161,6 +163,152 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-18 — task history no longer lands in the git tree
+
+- The console treated any writable `/workspace` as the volume and wrote `agent-task-history/` into this checkout during a local test. That file was a failed mock task, not a volume backup, and it was not committed.
+- History now stays at `/tmp/agent-task-history` unless `findmnt` reports `fuse.geesefs`, which is the Global Volume. `AGENT_HISTORY_DIR` still overrides that. On the Pod the volume path remains `/workspace/agent-task-history`.
+- Tests: `web.test_server.HistoryDirectoryTests` and the agent-page console test, 3 OK. The repo directory was not recreated. `/tmp/agent-task-history` received the mock record.
+
+### 2026-10-18 — health check could not reach the Pod
+
+- Fast-forwarded this checkout from `7708140` to GitHub `693e2b46fd4e578cbb4022f79b5dd9d30ee7f765`. Untracked `ops/__pycache__/` was left untracked.
+- **FAILED:** TCP `154.54.102.40:13212` connection refused. TCP `216.81.248.126:19091` connection refused. SSH to port `13212` with identity `$HOME/.ssh/id_ed25519` printed that the identity file is missing and `Connection refused`, exit 255. No key was generated. No Pod was started.
+- **NOT RUN:** `/workspace` mount, GPU, weights, runtime archive, preflight, Qwen `:8002`, gateway `:8010`, console `:8080`, and `START.sh`. Recovery files in git say Pod `4lvr54b0wmkz6c` was stopped after the live helpdesk check and the Global Volume was kept. That stop was not re-checked in the RunPod UI.
+- **Local tests, not live:** `/opt/ai-playbook-venv/bin/python -m unittest ops_centre.tests.test_ops_centre agents.tests.test_helpdesk agents.tests.test_history agents.tests.test_queue web.test_server` — 40 tests, OK, exit 0. Existing venv. No model load and no Graph call.
+- Next action: Start the existing Pod in the RunPod UI (do not create another Pod), then connect from the Windows PC with `C:\Users\henok\.ssh\id_ed25519` and the new port. Do not reuse `13212` or `19091` until that page shows them.
+
+### 2026-10-16 — AI Security & Operations Centre (local source)
+
+- **Gap assessment + architecture:** `docs/ops_centre/GAP_AND_ARCHITECTURE.md`.
+- **Implemented:** `ops_centre/` event store (hash-chained), health aggregator (works if Qwen down), detections, alerts, incidents, `/api/ops/*`, console **Operations** view, AI Ops allowlisted tools on `AgentDesk`.
+- **Tests:** `ops_centre.tests.test_ops_centre` OK; `web.test_server` OK.
+- **NOT RUN:** RunPod Start, model load, live SOC vs Qwen. Do not claim live SOC verification until a deliberate Pod session.
+- **Still true:** Console has no login (baseline H-3); keep loopback. Hash chain is not forensic WORM.
+
+### 2026-10-15 — FINAL live IT Helpdesk deploy (Qwen VERIFIED)
+
+- Restored existing Pod `4lvr54b0wmkz6c` (SSH `154.54.102.40:13212`). Did **not** create a second Pod or redownload weights. Qwen/gateway already healthy; console-only deploy to **`c069674`**.
+- First live helpdesk attempt failed: protocol violation (tool name as `action`). Fixed + pushed `7b61967`. Second failure after approval: token budget exhausted. Fixed + pushed `c069674`.
+- **VERIFIED live:** `agents.live_async_smoke` FAILS=0; helpdesk smoke FAILS=0; approval smoke FAILS=0; browser UI ticket with Approve → completed/resolved. Details in `docs/results/helpdesk-live-qwen-2026-10-15.md`.
+- **NOT RUN / NOT CLAIMED:** Entra, Graph mail, enrolled remote control, force-push, volume delete.
+- After docs commit: Pod **Stopped** via RunPod console (not Terminated). Global Volume retained. Resume with Start + existing recovery path.
+
+### 2026-10-15 — AI IT Helpdesk implemented (source + mock tests)
+
+- Added `agents/builtin/helpdesk.py`: classify, platform health, allowlisted logs (redacted), safe diagnostics, approval-gated remediation, compose incident report.
+- Wired into `AgentDesk` / console tools; richer IT playbook; approval panel fields (what/why/system/risks/verify); incident report in public view + UI.
+- Agent page retitled **IT Helpdesk**. Existing async queue, cancel, history, `search_documents`, and connector catalog reused.
+- **VERIFIED (local/mock):** `agents.tests` 101 OK; `agents.tests.test_helpdesk` 6 OK (includes scripted investigate → approve → verify → incident); `web.test_server` 23 OK.
+- **NOT TESTED:** live Qwen helpdesk on the Pod with this commit (needs console deploy after `START.sh` finishes). No Entra app created. No live Graph.
+- Emergency Pod restore earlier same day: `4lvr54b0wmkz6c`, SSH `154.54.102.40:13212`, volume OK, `START.sh` launched at tip `8dbbfbd` then this commit follows.
+
+### 2026-10-15 — migrate failed; new A100 Pod live with `a680580`
+
+- Owner approved migrate. API error: **Failed to get mount info for source pod**. Deployed `1cj381fjuujeq7` A100 SXM CUDA 13 + same volume instead. Old `vx4oe3oyfsqnz8` left stopped.
+- **VERIFIED:** driver 580.126.16; `START.sh` → `FIRST_RELEASE_READY` (~730 s); `/tmp/AI-PLAYBOOK` = **`a680580`**; `:8002`/`:8010`/`:8080` HTTP 200; `_pod_e2e_verify.py` **FAILS: NONE**; Agent async calculator **50**; Agent cancel **cancelled**; console status **ready**.
+- SSH: `root@154.54.102.45 -p 13502`. Evidence: `docs/results/runpod-migrate-deploy-2026-10-15.md`.
+- **Cost:** Stop `1cj381fjuujeq7` when idle; keep volume; do not Terminate without approval.
+
+### 2026-10-15 — agent queue + IT playbook; Start blocked (GPU gone)
+
+- **VERIFIED (local):** Serial async queue (`queued` → run), cancel-while-queued, IT support playbook + incident output schema, richer Agent UI, history default `/workspace/agent-task-history` when volume writable. Tests: agents suite **95 OK**; `web.test_server` **23 OK**.
+- **Live Start** on `vx4oe3oyfsqnz8` blocked (GPU unavailable). Later resolved by new Pod deploy (see entry above).
+
+### 2026-10-15 — agent async progress + auditable history; Pod stopped
+
+- **VERIFIED (local):** `AgentDesk.start(wait=False)`, cooperative cancel, `TaskHistoryStore`, `GET /api/agent`, `GET /api/agent/history`, Agent UI poll + recent-task list. Tests: `agents.tests.test_history` 4 OK; agents suite 90 OK; `web.test_server` 23 OK. Tip **`0165267`** on `feature/qwen-a100-start-hardening`, `feature/qwen3.5-27b-integration`, and `main`.
+- **Live Pod cheap recheck (before stop):** `vx4oe3oyfsqnz8` at `154.54.102.49:18454`, driver 580.126.16, `:8002`/`:8010`/`:8080` HTTP 200, model `qwen3.5-27b`. Expensive E2E/agent live smoke **not** re-run. Evidence: `docs/results/agent-async-history-2026-10-15.md`.
+- **E2E script note:** `_pod_e2e_verify.py` covers real chat + RAG only; it does not cover Agent desk/history.
+- **Cost:** Pod **STOPPED** via RunPod UI (not terminated). Compute **$0.00/hr**. Global Volume kept. Results markdown scp’d to `/workspace/platform-diagnostics/`.
+
+### 2026-10-15 — replace driver-570 Pod with CUDA-13 A100; platform VERIFIED
+
+- Terminated blocked Pod `tn28umxi9a5lqx` without deleting Global Volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373`.
+- Deployed `vx4oe3oyfsqnz8` (“romantic_gray_canidae”): A100 SXM **$1.79/hr**, CUDA filter **13.x**, same volume at `/workspace`, 30 GB container disk.
+- **VERIFIED:** driver **580.126.16**; `START.sh --preflight` → `PREFLIGHT_PASS`; `START.sh` → `FIRST_RELEASE_READY` (~810 s Qwen cold load); `:8002`/`:8010`/`:8080` HTTP 200; `_pod_e2e_verify.py` → **FAILS: NONE**.
+- SSH: `root@154.54.102.49 -p 18454`. Pod checkout `2d273f6`. Evidence: `docs/results/runpod-cuda13-replace-2026-10-15.md`.
+- Balance was under $5 at deploy; stop the Pod when idle.
+
+### 2026-10-15 — health check: driver 570 blocks start; recovery assets OK
+
+- **VERIFIED:** Pod `tn28umxi9a5lqx` (“relative_emerald_ant”), SSH `root@185.216.23.194 -p 45209`. Volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace`. Qwen 11 shards present. Runtime archive checksum and `zstd -t` **OK**. Snapshot `01e7692` SHA **OK**. Volume `START.sh` matches git. GPU 0 / 81920 MiB. Driver **570.172.08**. Ports 8002/8010/8080/8000 down. Balance warning about $4.89 at $1.79/hour.
+- **PREFLIGHT:** `START.sh --preflight` exited 1 with only `nvidia-driver>=580` failing (`found '570'`). All other checks passed. `--start` was **not** run. No weights, archives, or snapshots were deleted.
+- **Diagnosis:** this host cannot run the archived CUDA-13 Qwen runtime. Safe fix is a new Pod on the same volume with RunPod CUDA 13 / driver >=580 filter. Older volume logs show successful Qwen loads on other hosts; they do not clear this block.
+- Local suites after fast-forward to `7708140`: integrations / agents / web / ops.test_console_deploy — **159 tests OK**. Evidence: `docs/results/runpod-driver570-health-2026-10-15.md`.
+
+### 2026-10-15 — documented SSH port refused
+
+- Started from `934056fed638409a390ceb3aab340e67de10c168`. Working tree had only untracked `ops/__pycache__/` and `ops/release/__pycache__/`. Those were not committed. This process is Linux. `USERPROFILE` is unset. `%USERPROFILE%\.ssh\id_ed25519` is not here.
+- **FAILED:** TCP `216.81.248.126:19091` returned connection refused. SSH with `BatchMode=yes`, `IdentitiesOnly=yes`, connect timeout 8 seconds, identity `$HOME/.ssh/id_ed25519` printed `Identity file /home/ubuntu/.ssh/id_ed25519 not accessible: No such file or directory` and `ssh: connect to host 216.81.248.126 port 19091: Connection refused`. Exit 255. No key was generated.
+- **NOT RUN:** `/workspace` mount, GPU, weights, runtime archive, source revision, preflight, Qwen `:8002`, gateway `:8010`, console `:8080`, and `START.sh`. No Pod was created and nothing was deleted.
+- Next action: on the Windows PC, read the new SSH host and port from the running Pod’s RunPod page and connect with `C:\Users\henok\.ssh\id_ed25519`. Do not reuse port `19091`.
+
+### 2026-10-15 — desktop free, RunPod page not open here
+
+- The owner said continue. The desktop was free. Chrome on this Linux machine had the local console at `http://127.0.0.1:8080`, a Google tab, and Chrome’s What’s New page. No RunPod tab, no RunPod history entry, and no web terminal.
+- `id_ed25519` is still absent. Port `19091` was not reused. `findmnt`, GPU, disk, weights, Qwen `:8002`, gateway `:8010`, console on the Pod, and `/tmp/AI-PLAYBOOK` were **NOT CHECKED**. `START.sh` was not run.
+- The local page on `:8080` is the Cloud Agent demo, not the Pod. Do not treat it as Qwen health.
+- Next action: open the restarted Pod’s RunPod page in this browser, or run the PowerShell health check from `C:\Users\henok\src\AI-PLAYBOOK.md` with `C:\Users\henok\.ssh\id_ed25519` and the new port shown on that page.
+
+### 2026-10-15 — restarted Pod is open in the browser, page not read
+
+- The owner says the Pod was restarted and is open in the Cursor browser. This process is still Linux. `id_ed25519` is absent. The old port `19091` was not used.
+- **BLOCKED:** the browser agent returned `DESKTOP_LOCKED` three times. It did not read the Pod id, the new SSH host, or the new TCP port, and it did not open a web terminal.
+- **NOT RUN:** `findmnt`, GPU, disk, weight inventory, Qwen `:8002`, gateway `:8010`, console `:8080`, `/tmp/AI-PLAYBOOK`, preflight, and `START.sh`. No service was started or stopped. No application id was invented.
+- Next action: release the desktop so the browser agent can read the open RunPod page. Then run the read-only checks. Do not run `START.sh` until `/workspace` is `fuse.geesefs` and the preflight has been read.
+
+### 2026-10-15 — owner is stopping the Pod
+
+- The owner said they are turning off RunPod Pod `1g41ejmd99iyun` now. This agent did not call the RunPod API, did not click Stop, and did not see a stopped status. No new Pod was created.
+- **Keep** Global Volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373`. It holds the Qwen weights, `/workspace/runtime-setup`, `/workspace/ai-platform-backups`, `/workspace/ai-platform-release`, and `/workspace/rag-managed-docs`. Stopping the Pod does not delete that volume. Terminating the Pod or deleting the volume would. Network volume storage can keep billing while the Pod is stopped.
+- Qwen `:8002`, the gateway `:8010`, and the console `:8080` stop with the Pod. `/tmp/AI-PLAYBOOK` is on the Pod disk and does not survive. The last login that could see the volume found those ports already down and the checkout absent. This agent could not re-check them: SSH on port `19091` exited 255.
+- **When the owner returns:** start the same Pod, not a new one, with the same volume. The SSH address will change. On the Windows PC, use `C:\Users\henok\.ssh\id_ed25519` and the new port. Confirm `findmnt` shows `fuse.geesefs` for `/workspace` before any service command. Do not run `START.sh` until that check and `docs/AGENT_HANDOFF.md` have been read. `START.sh` cold-loads Qwen.
+- Microsoft sign-in was not started. No application id was created.
+
+### 2026-10-15 — SSH health check failed before login
+
+- Started from `0da700d4730f68f63e580c1d5202a83a590d0eb9`. `uname` reports Linux. `USERPROFILE` is unset. PowerShell is absent. The process is not the Windows PC at `C:\Users\henok\src\AI-PLAYBOOK.md`.
+- **FAILED:** one SSH attempt, `BatchMode=yes`, `IdentitiesOnly=yes`, connect timeout 8 seconds, port `19091`, identity `$HOME/.ssh/id_ed25519`. Output: `Warning: Identity file /home/ubuntu/.ssh/id_ed25519 not accessible: No such file or directory.` then `root@216.81.248.126: Permission denied (publickey,password).` Exit 255. No key was generated or printed.
+- **NOT RUN:** `/workspace` mount, Qwen `:8002`, gateway `:8010`, console `:8080`, `/tmp/AI-PLAYBOOK`, `deploy-console-only.sh`, `START.sh`, and Entra setup. No application id was invented.
+- Next action remains the PowerShell command on the Windows PC, where `C:\Users\henok\.ssh\id_ed25519` exists.
+
+### 2026-10-15 — resume stopped before SSH because the key file is absent
+
+- **VERIFIED:** this process is Linux host `cursor`, user `ubuntu`, checkout `/workspace` at `9ca1aa33c5e3b6f92d8d9516914c8a25494f05e2`. Remote is `henokmeron/ai-playbook.md`. `main` and both Qwen feature branches match that commit. `/workspace` is `ext4` on `/dev/vdc`, not `fuse.geesefs`.
+- **BLOCKED:** `Test-Path "$env:USERPROFILE\.ssh\id_ed25519"` cannot be run here. `USERPROFILE` is unset, PowerShell is absent, and `C:\Users\henok` is not mounted. `$HOME/.ssh/id_ed25519` is absent. `~/.ssh` contains `known_hosts` only. No self-hosted worker is connected. The private key was not printed.
+- **NOT RUN:** SSH to `root@216.81.248.126 -p 19091`, the console-only deploy, `START.sh`, a Pod restart, and Entra registration. Qwen `:8002`, gateway `:8010`, console `:8080`, and `/tmp/AI-PLAYBOOK` were not re-checked because the health check requires that key. No application id was invented.
+- The single next action is still the PowerShell check in the session entry below, run in Cursor on the Windows PC at `C:\Users\henok\src\AI-PLAYBOOK.md`.
+
+### 2026-10-15 — existing RunPod key is not on this Cloud Agent
+
+- Started from GitHub `4f3f4f82af268e6363182b886dac3a9a5cc01faf`.
+- **VERIFIED:** TCP `216.81.248.126:19091` still accepts a connection. No SSH login was attempted in this pass. The earlier login from this VM returned `Permission denied (publickey,password)`.
+- **VERIFIED:** this VM has no private key. `~/.ssh` contains `known_hosts` only. A filename search and a header search found no OpenSSH or RSA private key outside test data. No SSH config, no `ssh-agent`, no RunPod API credential, no RunPod config file, and no connected self-hosted worker. GitHub Actions secret names are not readable from this token (HTTP 403). The cloud environment JSON is owner-restricted and was not exposed. `/workspace` here is the root disk, not `fuse.geesefs`.
+- The documented key remains `%USERPROFILE%\.ssh\id_ed25519` on the owner’s Windows PC (`C:\Users\henok\.ssh\id_ed25519`). It was not copied, printed, or committed.
+- **NOT RUN:** a new Pod, a firewall change, an SSH reset, `START.sh`, `ops/release/deploy-console-only.sh`, and any Graph call. The 35 passing tests were not rerun. No Entra application id was invented.
+- **Next action, on the Windows PC, in PowerShell.** Confirm the key file exists, then run the read-only check. Do not paste the key into chat.
+
+```powershell
+Test-Path "$env:USERPROFILE\.ssh\id_ed25519"
+ssh -o BatchMode=yes -o ConnectTimeout=8 -p 19091 -i "$env:USERPROFILE\.ssh\id_ed25519" root@216.81.248.126 "echo SSH_OK; findmnt -n -o FSTYPE /workspace; curl -s -o /dev/null -w 'qwen:%{http_code}\n' --max-time 3 http://127.0.0.1:8002/health; curl -s -o /dev/null -w 'gateway:%{http_code}\n' --max-time 3 http://127.0.0.1:8010/health; curl -s -o /dev/null -w 'console:%{http_code}\n' --max-time 3 http://127.0.0.1:8080/; if test -d /tmp/AI-PLAYBOOK; then git -C /tmp/AI-PLAYBOOK rev-parse HEAD; else echo NO_CHECKOUT; fi"
+```
+
+Replace the console only when that check prints `qwen:200` and `gateway:200`. Run it on the Pod from a checkout of `feature/qwen3.5-27b-integration`. The script refuses otherwise, and it does not signal Qwen or the gateway. A lone download of the shell script is not enough: it calls `ops/release/console_deploy.py` from `/tmp/AI-PLAYBOOK`.
+
+```powershell
+ssh -o BatchMode=yes -p 19091 -i "$env:USERPROFILE\.ssh\id_ed25519" root@216.81.248.126 "if test ! -d /tmp/AI-PLAYBOOK/.git; then git clone --branch feature/qwen3.5-27b-integration --depth 1 https://github.com/henokmeron/AI-PLAYBOOK.md.git /tmp/AI-PLAYBOOK; fi; CONSOLE_RESTART_APPROVED=yes bash /tmp/AI-PLAYBOOK/ops/release/deploy-console-only.sh"
+```
+
+The last successful login, earlier on 2026-10-15, found `:8002`, `:8010`, and `:8080` down. If they are still down, stop. `START.sh` is a cold Qwen load of about 1080 seconds on a Pod billing $1.79/hour. It needs a separate approval. The command in `docs/results/shutdown-recovery-2026-10-15.md` that uses port `11165` is stale. Microsoft sign-in still waits for a work or school account. Do not paste a client id.
+
+### 2026-10-15 — GitHub tip rechecked; sign-in test no longer hard-codes `/tmp`
+
+- **VERIFIED:** `git fetch` showed `main`, `feature/qwen-a100-start-hardening`, `feature/qwen3.5-27b-integration`, and `cursor/microsoft-signin-options-2e6d` all at `7056a63913e1932bff640d0c1cd264104e03ba73`. Issue #1 is still the 2026-10-13 handover and is not the live queue.
+- **VERIFIED:** TCP `216.81.248.126:19091` accepted a connection. TCP `154.54.102.31:11165` refused. `~/.ssh` contains `known_hosts` only. The earlier SSH attempt from this VM, `BatchMode=yes` on port 19091, returned `Permission denied (publickey,password)`, exit 255. That login was not repeated. No private key was generated and no RunPod API credential was present.
+- **NOT RUN:** `START.sh`, `ops/release/deploy-console-only.sh`, a Qwen load, and a Graph call. `/opt/ai-playbook-venv` and `/opt/rag-deps` were already present and were not reinstalled. `MICROSOFT_CLIENT_ID` and `MICROSOFT_TENANT` are unset. No Entra application was created and no client id was written into the repo.
+- The revoked-refresh test used `tempfile.TemporaryDirectory(dir="/tmp")`, which fails on Windows because that directory is not there. It now uses the system temporary directory. On this Linux VM that directory resolved under `/tmp` and stayed outside the repo and `/workspace`.
+- Tests, with `/opt/ai-playbook-venv/bin/python -m unittest web.test_server integrations.tests.test_microsoft_oauth`: 35 tests, OK, exit 0. Mocked only. No live Graph call and no model load.
 
 ### 2026-10-15 — idle Pod checked; read-only device check-in added in source
 

@@ -314,9 +314,12 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("Chat", text)
         self.assertIn("Document Q&amp;A", text)
         self.assertIn("System Status", text)
-        self.assertIn(">Agent<", text)
+        self.assertIn(">IT Helpdesk<", text)
+        self.assertIn(">Operations<", text)
+        self.assertIn('id="ops-view"', text)
         self.assertIn('id="agent-task"', text)
-        self.assertIn("not indexed", text)
+        self.assertIn('id="agent-incident"', text)
+        self.assertIn("File attachments on this page are not supported", text)
         self.assertEqual(
             server.redact_request_log("GET /api/microsoft/callback?code=secret-code&state=abc HTTP/1.1"),
             "GET /api/microsoft/callback [query redacted] HTTP/1.1",
@@ -873,6 +876,31 @@ class ConsoleTests(unittest.TestCase):
             {"Authorization": "Bearer " + secret},
         )
         self.assertEqual(after, 401)
+
+
+class HistoryDirectoryTests(unittest.TestCase):
+    def test_history_stays_off_a_normal_workspace_disk(self) -> None:
+        previous = os.environ.pop("AGENT_HISTORY_DIR", None)
+        try:
+            self.assertEqual(server.default_agent_history_dir("ext4"), "/tmp/agent-task-history")
+            self.assertEqual(
+                server.default_agent_history_dir("fuse.geesefs"),
+                "/workspace/agent-task-history",
+            )
+        finally:
+            if previous is not None:
+                os.environ["AGENT_HISTORY_DIR"] = previous
+
+    def test_history_env_override_wins(self) -> None:
+        previous = os.environ.get("AGENT_HISTORY_DIR")
+        os.environ["AGENT_HISTORY_DIR"] = "/tmp/unit-agent-history"
+        try:
+            self.assertEqual(server.default_agent_history_dir("fuse.geesefs"), "/tmp/unit-agent-history")
+        finally:
+            if previous is None:
+                os.environ.pop("AGENT_HISTORY_DIR", None)
+            else:
+                os.environ["AGENT_HISTORY_DIR"] = previous
 
 
 if __name__ == "__main__":

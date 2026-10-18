@@ -5,7 +5,9 @@ not receive the system prompt, model transcripts, or hidden reasoning.
 """
 from __future__ import annotations
 
+import os
 import threading
+from pathlib import Path
 from typing import Any
 
 from integrations.approvals import payload_hash
@@ -15,11 +17,14 @@ from integrations.microsoft365 import platform_catalog
 from integrations.tenancy import TenantContext
 
 from .builtin.calculator import calculator_tool
+from .builtin.helpdesk import helpdesk_tools
 from .builtin.search import search_documents_tool
+from .history import TaskHistoryStore
+from .it_support import approval_presentation, incident_from_output, looks_like_it_support
 from .model import ModelClient
 from .redaction import redact
-from .runtime import AgentRunner
-from .state import AgentTask, Budget
+from .runtime import AgentRunner, CancellationToken
+from .state import EXECUTION_TERMINAL, AgentTask, Budget, ExecutionStatus, TaskState
 from .tools import Tool, ToolError, ToolRegistry
 from .trace import ExecutionTrace
 
@@ -31,6 +36,7 @@ _OBSERVABLE = {
 CONSOLE_TENANT = "local-console"
 _CONSOLE_TENANT = CONSOLE_TENANT
 _CONSOLE_PRINCIPAL = "console-user"
+_PAUSED = frozenset({TaskState.AWAITING_APPROVAL, TaskState.AWAITING_INFORMATION})
 
 
 def _tool(catalog: Catalog, ctx: TenantContext, connector_id: str, operation: str, spec_tool: str,
@@ -73,10 +79,20 @@ def _tool(catalog: Catalog, ctx: TenantContext, connector_id: str, operation: st
     return tool
 
 
-def tools_for(catalog: Catalog, ctx: TenantContext, documents: Any = None) -> list[Tool]:
+def tools_for(
+    catalog: Catalog,
+    ctx: TenantContext,
+    documents: Any = None,
+    ops_centre: Any = None,
+) -> list[Tool]:
     tools = [calculator_tool()]
+    tools.extend(helpdesk_tools())
     if documents is not None:
         tools.append(search_documents_tool(documents))
+    if ops_centre is not None:
+        from ops_centre.agent_tools import ops_centre_tools
+
+        tools.extend(ops_centre_tools(ops_centre))
     for spec, operation in catalog.visible_operations(ctx):
         tools.append(_tool(
             catalog, ctx, spec.connector_id, operation.name, operation.tool_name,
@@ -86,15 +102,21 @@ def tools_for(catalog: Catalog, ctx: TenantContext, documents: Any = None) -> li
     return tools
 
 
-def public_view(task: AgentTask, trace: ExecutionTrace) -> dict[str, Any]:
+def public_view(task: AgentTask, trace: ExecutionTrace, *, running: bool = False) -> dict[str, Any]:
     pending = None
     if task.pending_approval is not None:
         item = task.pending_approval
+        presentation = approval_presentation(item.tool, item.arguments, item.reason)
         pending = {
             "call_id": item.call_id,
             "tool": item.tool,
             "arguments": redact(item.arguments),
             "reason": item.reason,
+            "what_changes": presentation["what_changes"],
+            "why": presentation["why"],
+            "system": presentation["system"],
+            "risks": presentation["risks"],
+            "verification_plan": presentation["verification_plan"],
         }
     activity = []
     for event in trace.events:
@@ -107,6 +129,7 @@ def public_view(task: AgentTask, trace: ExecutionTrace) -> dict[str, Any]:
             "detail": event.data.get("error") or event.data.get("preview") or event.data.get("reason"),
             "approved": event.data.get("approved"),
         })
+    incident = incident_from_output(task.final_output)
     return {
         "task_id": task.task_id,
         "state": task.state.value,
@@ -119,23 +142,39 @@ def public_view(task: AgentTask, trace: ExecutionTrace) -> dict[str, Any]:
         "pending_approval": pending,
         "activity": activity,
         "record": redact(task.record.to_dict()),
+        "incident_report": redact(incident) if incident else None,
+        "running": bool(running),
+        "cancellable": bool(
+            running
+            or task.execution == ExecutionStatus.QUEUED
+            or task.state in _PAUSED
+            or (not task.is_terminal and task.execution not in EXECUTION_TERMINAL)
+        ),
     }
 
 
 class AgentDesk:
-    """In-memory tasks for one loopback console. Not a customer tenant store."""
+    """In-memory tasks for one loopback console, with optional on-disk history."""
 
     def __init__(
         self,
         catalog: Catalog | None = None,
         ctx: TenantContext | None = None,
         documents: Any = None,
+        history_dir: Path | str | None = None,
+        ops_centre: Any = None,
     ) -> None:
         self.catalog = catalog if catalog is not None else platform_catalog()[0]
         self.ctx = ctx or TenantContext.create(_CONSOLE_TENANT, _CONSOLE_PRINCIPAL, [])
         self.documents = documents
+        self.ops_centre = ops_centre
         self._lock = threading.Lock()
-        self._sessions: dict[str, tuple[AgentRunner, AgentTask, ExecutionTrace]] = {}
+        self._sessions: dict[str, dict[str, Any]] = {}
+        if history_dir is None:
+            history_dir = os.environ.get("AGENT_HISTORY_DIR", "")
+        self.history = TaskHistoryStore(history_dir) if history_dir else None
+        self._queue: list[str] = []
+        self._active_id: str | None = None
 
     def connectors(self) -> list[dict[str, Any]]:
         rows = self.catalog.describe(self.ctx.tenant_id)
@@ -192,21 +231,220 @@ class AgentDesk:
                 "provider_permissions": [],
             }],
         })
+        rows.append({
+            "connector_id": "helpdesk",
+            "version": "local",
+            "service": "IT helpdesk tools",
+            "summary": "Classify issues, check platform health, read allowlisted logs, run safe diagnostics, and apply approved local remediations.",
+            "auth": "none",
+            "connected": True,
+            "account": None,
+            "readiness": "mock-tested",
+            "detail": (
+                "Local tools only. No unrestricted shell. Remediation pauses for approval. "
+                "Microsoft 365 and enrolled-device tools stay separate and appear only when connected."
+            ),
+            "operations": [
+                {
+                    "name": name,
+                    "tool_name": name,
+                    "summary": summary,
+                    "effect": effect,
+                    "scope": "helpdesk:local",
+                    "requires_approval": approval,
+                    "available": True,
+                    "evidence": "mock-tested",
+                    "status": "mock-tested",
+                    "provider_permissions": [],
+                }
+                for name, summary, effect, approval in (
+                    ("classify_it_issue", "Classify the IT issue and desired outcome.", "read", False),
+                    ("check_platform_health", "Check local model, gateway, and console health.", "read", False),
+                    ("read_approved_log", "Read an allowlisted diagnostic log with secrets redacted.", "read", False),
+                    ("run_safe_diagnostic", "Run one allowlisted local diagnostic check.", "read", False),
+                    ("apply_safe_remediation", "Apply one allowlisted local change after approval.", "consequential", True),
+                    ("compose_incident_report", "Assemble the incident report fields.", "read", False),
+                )
+            ],
+        })
         return rows
 
-    def start(self, goal: str, model: ModelClient, *, wall_seconds: float = 60.0) -> dict[str, Any]:
+    def _view(self, task: AgentTask, trace: ExecutionTrace, *, running: bool = False) -> dict[str, Any]:
+        view = public_view(task, trace, running=running)
+        if self.history is not None:
+            self.history.save(view)
+        return view
+
+    def _session(self, task_id: str) -> dict[str, Any]:
+        with self._lock:
+            session = self._sessions.get(task_id)
+        if session is None:
+            raise KeyError(task_id)
+        return session
+
+    def _busy_unlocked(self) -> bool:
+        if self._active_id is None:
+            return False
+        session = self._sessions.get(self._active_id)
+        if session is None:
+            self._active_id = None
+            return False
+        thread = session.get("thread")
+        # Claimed for launch but thread not attached yet still counts as busy.
+        if thread is None:
+            return True
+        return thread.is_alive()
+
+    def _mark_queued(self, task: AgentTask) -> None:
+        task.execution = ExecutionStatus.QUEUED
+        task.status_log = [ExecutionStatus.QUEUED.value]
+
+    def _pop_next_queued_unlocked(self) -> str | None:
+        while self._queue:
+            candidate = self._queue.pop(0)
+            queued = self._sessions.get(candidate)
+            if queued is None:
+                continue
+            if queued["task"].is_terminal or queued["cancel"].cancelled:
+                continue
+            return candidate
+        return None
+
+    def _start_thread(self, task_id: str) -> None:
+        session = self._session(task_id)
+        runner: AgentRunner = session["runner"]
+        task: AgentTask = session["task"]
+        trace: ExecutionTrace = session["trace"]
+        cancel: CancellationToken = session["cancel"]
+
+        def worker() -> None:
+            try:
+                runner.run(task, cancel)
+            finally:
+                with self._lock:
+                    current = self._sessions.get(task_id)
+                    if current is not None:
+                        current["thread"] = None
+                    if self._active_id == task_id:
+                        self._active_id = None
+                self._view(task, trace, running=False)
+                self._pump_queue()
+
+        thread = threading.Thread(target=worker, name=f"agent-{task_id[:8]}", daemon=True)
+        with self._lock:
+            session["thread"] = thread
+            self._active_id = task_id
+        self._view(task, trace, running=True)
+        thread.start()
+
+    def _pump_queue(self) -> None:
+        with self._lock:
+            if self._busy_unlocked():
+                return
+            next_id = self._pop_next_queued_unlocked()
+            if next_id is None:
+                return
+            self._active_id = next_id
+        self._start_thread(next_id)
+
+    def start(
+        self,
+        goal: str,
+        model: ModelClient,
+        *,
+        wall_seconds: float = 60.0,
+        wait: bool = True,
+    ) -> dict[str, Any]:
         if not isinstance(goal, str) or not goal.strip() or len(goal) > 2000:
             raise ValueError("task must be 1 to 2000 characters")
+        cancel = CancellationToken()
         trace = ExecutionTrace()
-        registry = ToolRegistry(tools_for(self.catalog, self.ctx, self.documents))
-        runner = AgentRunner(model, registry, trace=trace, model_timeout=wall_seconds)
-        task = runner.new_task(goal, budget=Budget(
-            max_iterations=6, max_tool_calls=4, max_total_tokens=12000, max_wall_seconds=wall_seconds,
-        ))
-        runner.run(task)
+
+        def on_progress(task: AgentTask) -> None:
+            with self._lock:
+                session = self._sessions.get(task.task_id)
+                running = bool(session and session.get("thread") and session["thread"].is_alive())
+            self._view(task, trace, running=running)
+
+        registry = ToolRegistry(
+            tools_for(self.catalog, self.ctx, self.documents, ops_centre=self.ops_centre)
+        )
+        runner = AgentRunner(
+            model, registry, trace=trace, model_timeout=wall_seconds, on_progress=on_progress,
+        )
+        if looks_like_it_support(goal):
+            # Live Qwen helpdesk needs classify → diagnose → approve → verify →
+            # report; 16k tokens ran out after a successful remediation.
+            budget = Budget(
+                max_iterations=12, max_tool_calls=10, max_total_tokens=48000,
+                max_wall_seconds=wall_seconds,
+            )
+        else:
+            budget = Budget(
+                max_iterations=6, max_tool_calls=4, max_total_tokens=12000,
+                max_wall_seconds=wall_seconds,
+            )
+        task = runner.new_task(goal, budget=budget)
+        session = {
+            "runner": runner,
+            "task": task,
+            "trace": trace,
+            "cancel": cancel,
+            "thread": None,
+        }
         with self._lock:
-            self._sessions[task.task_id] = (runner, task, trace)
-        return public_view(task, trace)
+            self._sessions[task.task_id] = session
+
+        if wait:
+            runner.run(task, cancel)
+            return self._view(task, trace, running=False)
+
+        with self._lock:
+            if self._busy_unlocked():
+                self._mark_queued(task)
+                self._queue.append(task.task_id)
+                queued = True
+            else:
+                self._active_id = task.task_id
+                queued = False
+        if queued:
+            return self._view(task, trace, running=False)
+        self._start_thread(task.task_id)
+        return public_view(task, trace, running=True)
+
+    def get(self, task_id: str) -> dict[str, Any]:
+        try:
+            session = self._session(task_id)
+        except KeyError:
+            if self.history is not None:
+                stored = self.history.get(task_id)
+                if stored is not None:
+                    return stored
+            raise
+        task = session["task"]
+        trace = session["trace"]
+        thread = session.get("thread")
+        running = bool(thread is not None and thread.is_alive())
+        return public_view(task, trace, running=running)
+
+    def history_list(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        live: dict[str, dict[str, Any]] = {}
+        with self._lock:
+            for task_id, session in self._sessions.items():
+                thread = session.get("thread")
+                running = bool(thread is not None and thread.is_alive())
+                live[task_id] = public_view(session["task"], session["trace"], running=running)
+        if self.history is None:
+            rows = sorted(
+                live.values(),
+                key=lambda row: row.get("task_id") or "",
+                reverse=True,
+            )
+            return rows[:limit]
+        # Refresh history for live tasks, then list from disk (newest first).
+        for view in live.values():
+            self.history.save(view)
+        return self.history.list(limit=limit)
 
     def decide(
         self, task_id: str, approved: bool, approver: str, call_id: str,
@@ -214,33 +452,40 @@ class AgentDesk:
     ) -> dict[str, Any]:
         if not isinstance(call_id, str) or not call_id:
             raise ValueError("call_id is required")
-        with self._lock:
-            session = self._sessions.get(task_id)
-        if session is None:
-            raise KeyError(task_id)
-        runner, task, trace = session
+        session = self._session(task_id)
+        runner, task, trace, cancel = (
+            session["runner"], session["task"], session["trace"], session["cancel"],
+        )
         pending = task.pending_approval
         if pending is None or pending.call_id != call_id:
             raise ValueError("approval does not match the pending action")
         if arguments is not None and arguments != pending.arguments:
             raise ValueError("approval arguments do not match the pending action")
-        runner.resolve_approval(task, approved=approved, approver=approver, call_id=call_id)
-        return public_view(task, trace)
+        runner.resolve_approval(
+            task, approved=approved, approver=approver, call_id=call_id, cancel=cancel,
+        )
+        return self._view(task, trace, running=False)
 
     def inform(self, task_id: str, text: str) -> dict[str, Any]:
-        with self._lock:
-            session = self._sessions.get(task_id)
-        if session is None:
-            raise KeyError(task_id)
-        runner, task, trace = session
-        runner.provide_information(task, text)
-        return public_view(task, trace)
+        session = self._session(task_id)
+        runner, task, trace, cancel = (
+            session["runner"], session["task"], session["trace"], session["cancel"],
+        )
+        runner.provide_information(task, text, cancel)
+        return self._view(task, trace, running=False)
 
     def cancel(self, task_id: str) -> dict[str, Any]:
+        session = self._session(task_id)
+        runner, task, trace, cancel = (
+            session["runner"], session["task"], session["trace"], session["cancel"],
+        )
+        cancel.cancel()
         with self._lock:
-            session = self._sessions.get(task_id)
-        if session is None:
-            raise KeyError(task_id)
-        runner, task, trace = session
+            if task_id in self._queue:
+                self._queue = [item for item in self._queue if item != task_id]
+        thread = session.get("thread")
+        if thread is not None and thread.is_alive():
+            # Cooperative: the worker checks the token between steps.
+            return public_view(task, trace, running=True)
         runner.cancel(task, "cancelled by the operator")
-        return public_view(task, trace)
+        return self._view(task, trace, running=False)

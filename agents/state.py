@@ -25,6 +25,7 @@ class TaskState(str, Enum):
 class ExecutionStatus(str, Enum):
     """Operator-facing status. The runner writes these; the UI does not invent them."""
 
+    QUEUED = "queued"
     RECEIVED = "received"
     INVESTIGATING = "investigating"
     AWAITING_INFORMATION = "awaiting_information"
@@ -65,6 +66,9 @@ ALLOWED_TRANSITIONS: dict[TaskState, frozenset[TaskState]] = {
 }
 
 ALLOWED_EXECUTION: dict[ExecutionStatus, frozenset[ExecutionStatus]] = {
+    ExecutionStatus.QUEUED: frozenset({
+        ExecutionStatus.RECEIVED, ExecutionStatus.FAILED, ExecutionStatus.CANCELLED,
+    }),
     ExecutionStatus.RECEIVED: frozenset({
         ExecutionStatus.INVESTIGATING, ExecutionStatus.FAILED, ExecutionStatus.CANCELLED,
     }),

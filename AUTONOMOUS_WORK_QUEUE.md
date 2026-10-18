@@ -3,10 +3,10 @@
 **Purpose:** Shared handover for Cursor and other collaborators working on AI Platform Build.
 **Current workstream:** Qwen3.5-27B integration.
 **Branch:** `feature/qwen3.5-27b-integration`
-**Last reported feature commit:** `main` and both feature branches match. Qwen routing is `c232323`. Completion audit is `docs/results/completion-audit-2026-10-14.md`.
+**Last reported feature commit:** IT Helpdesk on `feature/qwen-a100-start-hardening` (see tip after push).
 **Tracking issue:** https://github.com/henokmeron/AI-PLAYBOOK.md/issues/1
-**Status:** Qwen is the RunPod-first production default, but on 2026-10-15 Pod `1g41ejmd99iyun` had the volume mounted and the weights present while `:8002`/`:8010`/`:8080` were down. Do not assume the old SSH port `11165`. See `docs/AGENT_HANDOFF.md`.
-**Owner approval boundary:** Do not create new paid Pods, merge to `main`, delete volume assets, or restore Gemma onto the GPU without explicit approval. Prefer stopping idle Pods to limit GPU cost while leaving the volume intact.
+**Status:** IT Helpdesk mock-tested in source. Active Pod `4lvr54b0wmkz6c` (A100 SXM, same volume) after loss of `1cj381fjuujeq7`. Prefer **Stop** when idle. Helpdesk live-vs-Qwen **NOT TESTED** until console redeploy.
+**Owner approval boundary:** Do not create new paid Pods, delete volume assets, or restore Gemma onto the GPU without explicit approval. Prefer stopping idle Pods to limit GPU cost while leaving the volume intact.
 
 ## Read first
 - `docs/qwen3.5-27b-integration.md`
@@ -55,7 +55,11 @@ Keep Qwen3.5-27B as the RunPod-first production default, preserve volume recover
 - 2026-10-13 (honest integration status): **Partially yes — not fully the platform** (historical). Superseded by 2026-10-14 status.
 - 2026-10-13 (tonight completion / post-acceptance): Dual-model registry; Qwen runtime archived to `/workspace/runtime-setup/qwen-vllm/`.
 - 2026-10-14: **Qwen is the production default.** A100 SXM cold start + main `:8002`/`:8010`/`:8080` E2E (chat, text/PDF/XLSX RAG, console UI) **VERIFIED**. Snapshot `0b49946` checksum OK. Evidence: `ops/results/qwen-integration-status-2026-10-14.md`, `docs/AGENT_HANDOFF.md`.
-- **Next action requiring owner:** the idle A100 is billing at $1.79/hour with a balance near $4.89. Stopping it, or approving `START.sh` on the already-running Pod, is the owner's call. Microsoft sign-in still needs a work or school account that can open Entra app registrations. The personal account returned AADSTS16000. Do not paste a client id into chat.
+- 2026-10-15 (CUDA-13 replace): Pod `vx4oe3oyfsqnz8` driver 580; `START.sh` + E2E **VERIFIED**. Evidence: `docs/results/runpod-cuda13-replace-2026-10-15.md`.
+- 2026-10-15 (agent loop): Async progress, cancel, and auditable task history at `0165267` (90 agent + 23 web tests OK). Pod **STOPPED**.
+- 2026-10-15 (agent queue + IT): Serial queue, IT incident schema/playbook, richer Agent UI (95 agent + 23 web OK).
+- 2026-10-15 (live resume): Migrate API failed; new Pod `1cj381fjuujeq7` + volume; tip `a680580`; E2E **FAILS:NONE**; Agent async/cancel **VERIFIED**. **Next:** Stop Pod when idle; continue product features offline or after Start.
+- 2026-10-18: From this Linux agent, `154.54.102.40:13212` and `216.81.248.126:19091` refused connections. No `id_ed25519` here. Pod health not read. `START.sh` not run. Local unittest of ops centre, helpdesk, history, queue, and web console: **40 OK**. Volume was not touched.
 
 ## Required handover format
 Report briefly:

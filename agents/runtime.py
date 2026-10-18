@@ -21,6 +21,12 @@ import uuid
 from typing import Any, Callable
 
 from .model import ModelClient, ModelError
+from .it_support import (
+    INCIDENT_OUTPUT_SCHEMA,
+    incident_from_output,
+    looks_like_it_support,
+    playbook_for,
+)
 from .protocol import ProtocolError, build_system_prompt, parse_action
 from .redaction import redact, redact_text
 from .schema import ValidationError, check_schema, validate
@@ -79,6 +85,7 @@ class AgentRunner:
         max_reply_tokens: int = DEFAULT_MAX_REPLY_TOKENS,
         model_timeout: float = 120.0,
         retry_backoff_seconds: float = 0.5,
+        on_progress: Callable[[AgentTask], None] | None = None,
     ) -> None:
         self.model = model
         self.registry = registry
@@ -88,6 +95,7 @@ class AgentRunner:
         self.max_reply_tokens = max_reply_tokens
         self.model_timeout = model_timeout
         self.retry_backoff_seconds = retry_backoff_seconds
+        self.on_progress = on_progress
 
     # ----- public API -----------------------------------------------------
     def new_task(
@@ -100,6 +108,8 @@ class AgentRunner:
     ) -> AgentTask:
         if not isinstance(goal, str) or not goal.strip():
             raise ValueError("goal must be a non-empty string")
+        if output_schema is None and looks_like_it_support(goal):
+            output_schema = INCIDENT_OUTPUT_SCHEMA
         if output_schema is not None:
             check_schema(output_schema)
         if allowed_tools is not None:
@@ -112,7 +122,11 @@ class AgentRunner:
             allowed_tools=allowed_tools,
         )
         task.record.objective = task.goal
-        system = build_system_prompt(self.registry.catalog(allowed_tools), output_schema)
+        system = build_system_prompt(
+            self.registry.catalog(allowed_tools),
+            output_schema,
+            extra_rules=playbook_for(task.goal),
+        )
         task.messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": f"TASK\n{task.goal}"},
@@ -132,6 +146,8 @@ class AgentRunner:
                 if cancel is not None and cancel.cancelled:
                     self._finish(task, TaskState.CANCELLED, "cancelled by caller")
                     break
+                if task.execution == ExecutionStatus.QUEUED:
+                    self._status(task, ExecutionStatus.RECEIVED)
                 if task.state == TaskState.OBSERVATION:
                     task.transition(TaskState.PLANNING)
                     self._status(task, ExecutionStatus.INVESTIGATING)
@@ -245,6 +261,16 @@ class AgentRunner:
         if task.execution == status and status == ExecutionStatus.INVESTIGATING:
             return
         task.set_execution(status)
+        self._emit_progress(task)
+
+    def _emit_progress(self, task: AgentTask) -> None:
+        if self.on_progress is None:
+            return
+        try:
+            self.on_progress(task)
+        except Exception:
+            # Progress sinks must never break the run.
+            pass
 
     def _note(self, text: str, limit: int = 300) -> str:
         cleaned = redact_text(text)
@@ -270,6 +296,7 @@ class AgentRunner:
         task.transition(state)
         self.trace.record(task.task_id, "task_" + state.value, state.value,
                           reason=reason, usage=dict(task.usage.__dict__))
+        self._emit_progress(task)
 
     def _step(self, task: AgentTask, cancel: CancellationToken | None) -> None:
         task.usage.iterations += 1
@@ -368,7 +395,11 @@ class AgentRunner:
         task.final_answer = answer
         task.final_output = output
         task.record.verification.append({"check": "final_answer", "ok": True})
-        task.record.outcome = "completed"
+        incident = incident_from_output(output)
+        if incident is not None:
+            task.record.outcome = incident["outcome"]
+        else:
+            task.record.outcome = "completed"
         self._status(task, ExecutionStatus.COMPLETED)
         self._finish(task, TaskState.FINAL, None)
 

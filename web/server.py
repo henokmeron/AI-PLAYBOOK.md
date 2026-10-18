@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -25,8 +26,10 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from agents.adapters.rag_library import GroundedDocumentRetriever
+from agents.it_support import looks_like_it_support
 from agents.model import OpenAICompatibleClient
 from agents.workspace import CONSOLE_TENANT, AgentDesk
+from ops_centre import OpsCentre
 from integrations.endpoint import DeviceRegistry
 from integrations.errors import AuthenticationError, InvalidRequest, RateLimited
 from integrations.microsoft365 import platform_catalog
@@ -396,6 +399,37 @@ def connection_state(*, reachable: bool, upstream_ok: bool, key_ok: bool, model_
     return "ready"
 
 
+def workspace_fstype() -> str:
+    """Filesystem type of /workspace. The Global Volume is fuse.geesefs."""
+    try:
+        completed = subprocess.run(
+            ["findmnt", "-n", "-o", "FSTYPE", "/workspace"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return completed.stdout.strip()
+
+
+def default_agent_history_dir(fstype: str | None = None) -> str:
+    """Keep task history on the volume only. A normal disk must not use /workspace.
+
+    This repository is checked out at /workspace on the Cloud Agent. Writing
+    history there would put task records in the git tree. On the Pod, /workspace
+    is the Global Volume and the checkout lives under /tmp.
+    """
+    override = os.environ.get("AGENT_HISTORY_DIR", "").strip()
+    if override:
+        return override
+    kind = workspace_fstype() if fstype is None else fstype
+    if kind == "fuse.geesefs":
+        return "/workspace/agent-task-history"
+    return "/tmp/agent-task-history"
+
+
 class WebServer(ThreadingHTTPServer):
     allow_reuse_address = True
     daemon_threads = True
@@ -412,7 +446,11 @@ class WebServer(ThreadingHTTPServer):
             Path(os.environ.get("RAG_DOCS_DIR", "/workspace/rag-demo-docs")),
             Path(os.environ.get("RAG_MANAGED_DOCS_DIR", "/workspace/rag-managed-docs")),
         )
-        self.desk = AgentDesk(catalog, documents=documents)
+        history_dir = default_agent_history_dir()
+        self.ops = OpsCentre()
+        self.desk = AgentDesk(
+            catalog, documents=documents, history_dir=history_dir, ops_centre=self.ops,
+        )
         super().__init__((config.host, config.port), Handler)
 
 
@@ -456,6 +494,27 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/status":
             self.handle_status()
             return
+        if path == "/api/ops/overview":
+            self.handle_ops_overview()
+            return
+        if path == "/api/ops/health":
+            self.handle_ops_health()
+            return
+        if path == "/api/ops/events":
+            self.handle_ops_events(parsed)
+            return
+        if path == "/api/ops/alerts":
+            self.handle_ops_alerts(parsed)
+            return
+        if path == "/api/ops/incidents":
+            self.handle_ops_incidents(parsed)
+            return
+        if path == "/api/ops/integrity":
+            self.handle_ops_integrity()
+            return
+        if path == "/api/ops/coverage":
+            self.handle_ops_coverage()
+            return
         if path == "/api/platform/models":
             self.handle_platform_models()
             return
@@ -464,6 +523,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/connectors":
             self.handle_connectors()
+            return
+        if path == "/api/agent":
+            self.handle_agent_get(parsed)
+            return
+        if path == "/api/agent/history":
+            self.handle_agent_history(parsed)
             return
         if path == "/api/microsoft/start":
             self.handle_microsoft_start()
@@ -504,6 +569,16 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_agent_information()
         elif path == "/api/agent/cancel":
             self.handle_agent_cancel()
+        elif path == "/api/ops/alerts/transition":
+            self.handle_ops_alert_transition()
+        elif path == "/api/ops/incidents":
+            self.handle_ops_incident_create()
+        elif path == "/api/ops/incidents/transition":
+            self.handle_ops_incident_transition()
+        elif path == "/api/ops/incidents/note":
+            self.handle_ops_incident_note()
+        elif path == "/api/ops/refresh":
+            self.handle_ops_refresh()
         elif path == "/api/microsoft/disconnect":
             self.handle_microsoft_disconnect()
         elif path == "/api/devices/enrolment":
@@ -717,14 +792,60 @@ class Handler(BaseHTTPRequestHandler):
         if payload is None:
             return
         goal = payload.get("task")
+        wait = payload.get("wait", True)
+        if not isinstance(wait, bool):
+            self.send_error_json(400, "wait must be a boolean")
+            return
         try:
+            # Helpdesk workflows need several tool rounds against Qwen; keep
+            # non-IT agent tasks on the shorter ceiling.
+            wall_cap = 180.0 if isinstance(goal, str) and looks_like_it_support(goal) else 60.0
             view = self.server.desk.start(  # type: ignore[attr-defined]
-                goal, self._agent_model(), wall_seconds=min(60.0, self.config.upstream_timeout),
+                goal,
+                self._agent_model(),
+                wall_seconds=min(wall_cap, self.config.upstream_timeout),
+                wait=wait,
             )
         except ValueError as exc:
             self.send_error_json(400, str(exc))
             return
         self.send_json(200, view)
+
+    def handle_agent_get(self, parsed) -> None:  # type: ignore[no-untyped-def]
+        if self.require_key() is None:
+            return
+        query = parse_qs(parsed.query or "")
+        task_ids = query.get("task_id") or []
+        task_id = task_ids[0] if task_ids else ""
+        if not task_id:
+            self.send_error_json(400, "task_id is required")
+            return
+        try:
+            view = self.server.desk.get(task_id)  # type: ignore[attr-defined]
+        except KeyError:
+            self.send_error_json(404, "task not found")
+            return
+        except ValueError as exc:
+            self.send_error_json(400, str(exc))
+            return
+        self.send_json(200, view)
+
+    def handle_agent_history(self, parsed) -> None:  # type: ignore[no-untyped-def]
+        if self.require_key() is None:
+            return
+        query = parse_qs(parsed.query or "")
+        raw_limit = (query.get("limit") or ["20"])[0]
+        try:
+            limit = int(raw_limit)
+        except ValueError:
+            self.send_error_json(400, "limit must be an integer")
+            return
+        try:
+            rows = self.server.desk.history_list(limit=limit)  # type: ignore[attr-defined]
+        except ValueError as exc:
+            self.send_error_json(400, str(exc))
+            return
+        self.send_json(200, {"tasks": rows, "count": len(rows)})
 
     def handle_agent_decision(self) -> None:
         if self.require_key() is None:
@@ -808,6 +929,203 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error_json(503, "server-side API key is not configured")
             return None
         return key
+
+    def _ops(self) -> OpsCentre:
+        return self.server.ops  # type: ignore[attr-defined]
+
+    def handle_ops_overview(self) -> None:
+        if self.require_key() is None:
+            return
+        ops = self._ops()
+        try:
+            ops.collect_agent_snapshot(self.server.desk)  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001
+            pass
+        self.send_json(200, ops.overview())
+
+    def handle_ops_health(self) -> None:
+        if self.require_key() is None:
+            return
+        self.send_json(200, self._ops().refresh_health())
+
+    def handle_ops_events(self, parsed) -> None:  # type: ignore[no-untyped-def]
+        if self.require_key() is None:
+            return
+        query = parse_qs(parsed.query or "")
+        limit_raw = (query.get("limit") or ["100"])[0]
+        try:
+            limit = int(limit_raw)
+        except ValueError:
+            self.send_error_json(400, "limit must be an integer")
+            return
+        self.send_json(200, self._ops().timeline(
+            limit=limit,
+            event_type=(query.get("event_type") or [None])[0],
+            component=(query.get("component") or [None])[0],
+            severity=(query.get("severity") or [None])[0],
+            q=(query.get("q") or [None])[0],
+            correlation_id=(query.get("correlation_id") or [None])[0],
+        ))
+
+    def handle_ops_alerts(self, parsed) -> None:  # type: ignore[no-untyped-def]
+        if self.require_key() is None:
+            return
+        query = parse_qs(parsed.query or "")
+        status = (query.get("status") or [None])[0]
+        rows = self._ops().alerts.list(status=status, limit=100)
+        self.send_json(200, {"alerts": [a.to_public() for a in rows]})
+
+    def handle_ops_incidents(self, parsed) -> None:  # type: ignore[no-untyped-def]
+        if self.require_key() is None:
+            return
+        query = parse_qs(parsed.query or "")
+        status = (query.get("status") or [None])[0]
+        rows = self._ops().incidents.list(status=status, limit=50)
+        self.send_json(200, {"incidents": [i.to_public() for i in rows]})
+
+    def handle_ops_integrity(self) -> None:
+        if self.require_key() is None:
+            return
+        self.send_json(200, {
+            "event_store": self._ops().events.verify_chain(),
+            "limitation": (
+                "Hash chaining detects inconsistent rewrites of the event file we control. "
+                "A privileged host user can still replace the store. Not forensic-grade WORM."
+            ),
+        })
+
+    def handle_ops_coverage(self) -> None:
+        if self.require_key() is None:
+            return
+        from ops_centre.detections import COVERAGE
+        self.send_json(200, {"coverage": COVERAGE.strip()})
+
+    def handle_ops_refresh(self) -> None:
+        if self.require_key() is None:
+            return
+        ops = self._ops()
+        try:
+            ops.collect_agent_snapshot(self.server.desk)  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001
+            pass
+        health = ops.refresh_health()
+        detections = ops.run_detections()
+        self.send_json(200, {"health": health, "detections": detections})
+
+    def handle_ops_alert_transition(self) -> None:
+        if self.require_key() is None:
+            return
+        payload = self.read_json_object()
+        if payload is None:
+            return
+        alert_id = payload.get("alert_id")
+        status = payload.get("status")
+        actor = payload.get("actor") or "console-operator"
+        note = payload.get("note") or ""
+        if not isinstance(alert_id, str) or not isinstance(status, str):
+            self.send_error_json(400, "alert_id and status are required")
+            return
+        try:
+            alert = self._ops().alerts.transition(
+                alert_id, status=status, actor=str(actor), note=str(note),
+            )
+        except KeyError:
+            self.send_error_json(404, "alert not found")
+            return
+        except ValueError as exc:
+            self.send_error_json(400, str(exc))
+            return
+        self._ops().record_event(
+            event_type="ops.alert_transition",
+            component="ops_centre",
+            outcome=status,
+            severity="info",
+            actor=str(actor)[:120],
+            summary=f"Alert {alert_id[:12]}… → {status}",
+            detail={"alert_id": alert_id, "status": status},
+        )
+        self.send_json(200, alert.to_public())
+
+    def handle_ops_incident_create(self) -> None:
+        if self.require_key() is None:
+            return
+        payload = self.read_json_object()
+        if payload is None:
+            return
+        alert_id = payload.get("alert_id")
+        actor = payload.get("actor") or "console-operator"
+        if not isinstance(alert_id, str):
+            self.send_error_json(400, "alert_id is required")
+            return
+        alert = self._ops().alerts.get(alert_id)
+        if alert is None:
+            self.send_error_json(404, "alert not found")
+            return
+        try:
+            incident = self._ops().incidents.create_from_alert(alert, actor=str(actor))
+        except ValueError as exc:
+            self.send_error_json(400, str(exc))
+            return
+        self._ops().record_event(
+            event_type="ops.incident_opened",
+            component="ops_centre",
+            outcome="open",
+            severity=alert.severity,
+            actor=str(actor)[:120],
+            summary=f"Incident opened from alert: {alert.title}"[:400],
+            detail={"incident_id": incident.incident_id, "alert_id": alert_id},
+        )
+        self.send_json(200, incident.to_public())
+
+    def handle_ops_incident_transition(self) -> None:
+        if self.require_key() is None:
+            return
+        payload = self.read_json_object()
+        if payload is None:
+            return
+        incident_id = payload.get("incident_id")
+        status = payload.get("status")
+        actor = payload.get("actor") or "console-operator"
+        summary = payload.get("summary") or ""
+        if not isinstance(incident_id, str) or not isinstance(status, str):
+            self.send_error_json(400, "incident_id and status are required")
+            return
+        try:
+            incident = self._ops().incidents.transition(
+                incident_id, status=status, actor=str(actor), summary=str(summary),
+            )
+        except KeyError:
+            self.send_error_json(404, "incident not found")
+            return
+        except ValueError as exc:
+            self.send_error_json(400, str(exc))
+            return
+        self.send_json(200, incident.to_public())
+
+    def handle_ops_incident_note(self) -> None:
+        if self.require_key() is None:
+            return
+        payload = self.read_json_object()
+        if payload is None:
+            return
+        incident_id = payload.get("incident_id")
+        note = payload.get("note")
+        kind = payload.get("kind") or "note"
+        actor = payload.get("actor") or "console-operator"
+        if not isinstance(incident_id, str) or not isinstance(note, str):
+            self.send_error_json(400, "incident_id and note are required")
+            return
+        try:
+            incident = self._ops().incidents.add_note(
+                incident_id, actor=str(actor), note=note, kind=str(kind),
+            )
+        except KeyError:
+            self.send_error_json(404, "incident not found")
+            return
+        except ValueError as exc:
+            self.send_error_json(400, str(exc))
+            return
+        self.send_json(200, incident.to_public())
 
     def handle_status(self) -> None:
         config = self.config
