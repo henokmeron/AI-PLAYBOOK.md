@@ -1268,6 +1268,45 @@
     });
   });
 
+  document.getElementById("repair-practise").addEventListener("click", function () {
+    var errorBox = document.getElementById("repair-error");
+    var resultBox = document.getElementById("repair-result");
+    errorBox.hidden = true;
+    request("/api/repair/printer/diagnose", { method: "POST", body: { fixture: "printer_spooler_stopped" } }).then(function (diagnosis) {
+      return request("/api/repair/printer/request", {
+        method: "POST",
+        body: { tenant_id: "local-test", device_id: "this-pc", requester: "console-operator" }
+      }).then(function (requested) {
+        return request("/api/repair/printer/approve", {
+          method: "POST",
+          body: { tenant_id: "local-test", approval_id: requested.approval_id, approver: "console-reviewer" }
+        }).then(function (approved) {
+          return request("/api/repair/printer/execute", {
+            method: "POST",
+            body: {
+              tenant_id: "local-test",
+              device_id: "this-pc",
+              approval_id: requested.approval_id,
+              operator: "console-operator",
+              fixture: "printer_spooler_stopped"
+            }
+          }).then(function (executed) {
+            resultBox.textContent = JSON.stringify({
+              practice: true,
+              fixture: "printer_spooler_stopped",
+              diagnosis: diagnosis,
+              approval: approved,
+              execution: executed
+            }, null, 2);
+          });
+        });
+      });
+    }).catch(function (error) {
+      errorBox.hidden = false;
+      errorBox.textContent = errorMessage(error);
+    });
+  });
+
   document.getElementById("repair-form").addEventListener("submit", function (event) {
     event.preventDefault();
     var errorBox = document.getElementById("repair-error");

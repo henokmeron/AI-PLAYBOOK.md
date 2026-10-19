@@ -195,7 +195,7 @@
       <section id="repair-view" aria-labelledby="repair-title" hidden>
         <header class="view-head">
           <h1 id="repair-title">Windows repair</h1>
-          <p>This page plans registered diagnostics. A successful check is not a repaired computer. Elevated actions stay unrun on this console. Remote desktop stays unavailable until MeshCentral is configured.</p>
+          <p>This page plans registered diagnostics. A successful check is not a repaired computer. “Practise spooler approval” uses a fixture, not this PC’s printer, and it does not restart the spooler. Remote desktop stays unavailable until MeshCentral is configured.</p>
         </header>
         <div id="repair-error" class="banner banner-error" role="alert" hidden></div>
         <section class="result" aria-labelledby="repair-remote-title">
@@ -215,6 +215,7 @@
           <div class="form-row">
             <button type="submit" id="repair-send">Plan and diagnose</button>
             <button type="button" id="repair-live" class="secondary">Collect live printer evidence</button>
+            <button type="button" id="repair-practise" class="secondary">Practise spooler approval</button>
           </div>
         </form>
         <pre id="repair-result" class="log"></pre>

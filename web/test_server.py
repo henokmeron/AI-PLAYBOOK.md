@@ -331,6 +331,44 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertFalse(json.loads(remote)["remote_desktop_verified"])
 
+    def test_printer_restart_needs_a_different_approver_and_does_not_run(self) -> None:
+        base = self.web(FakeGateway())
+        status, body = self.request(base, "POST", "/api/repair/printer/diagnose", {"fixture": "printer_spooler_stopped"})
+        report = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertEqual(report["evidence_source"], "fixture")
+        self.assertEqual(report["proposed_procedure"], "print.spooler.restart")
+        self.assertFalse(report["problem_resolved"])
+        status, body = self.request(base, "POST", "/api/repair/printer/request", {
+            "tenant_id": "local-test", "device_id": "this-pc", "requester": "console-operator",
+        })
+        requested = json.loads(body)
+        self.assertEqual(status, 200)
+        approval_id = requested["approval_id"]
+        status, body = self.request(base, "POST", "/api/repair/printer/execute", {
+            "tenant_id": "local-test", "device_id": "this-pc", "approval_id": approval_id, "operator": "console-operator",
+        })
+        blocked = json.loads(body)
+        self.assertEqual(blocked["status"], "approval_rejected")
+        self.assertFalse(blocked["executed"])
+        status, body = self.request(base, "POST", "/api/repair/printer/approve", {
+            "tenant_id": "local-test", "approval_id": approval_id, "approver": "console-operator",
+        })
+        self.assertEqual(json.loads(body)["status"], "approval_rejected")
+        status, body = self.request(base, "POST", "/api/repair/printer/approve", {
+            "tenant_id": "local-test", "approval_id": approval_id, "approver": "console-reviewer",
+        })
+        self.assertEqual(json.loads(body)["status"], "approved")
+        status, body = self.request(base, "POST", "/api/repair/printer/execute", {
+            "tenant_id": "local-test", "device_id": "this-pc", "approval_id": approval_id,
+            "operator": "console-operator", "fixture": "printer_spooler_stopped",
+        })
+        result = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "needs_administrator")
+        self.assertFalse(result["executed"])
+        self.assertFalse(result["problem_resolved"])
+
     def test_pages_do_not_contain_the_key_or_gateway_calls(self) -> None:
         base = self.web(FakeGateway())
         status, body = self.request(base, "GET", "/")

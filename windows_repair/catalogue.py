@@ -405,6 +405,15 @@ def get_procedure(procedure_id: str) -> Procedure:
 
 
 FIXTURES: dict[str, dict[str, Any]] = {
+    "printer_spooler_stopped": {
+        "connection": "usb",
+        "queue": "Office",
+        "jobs": [],
+        "spooler": "Stopped",
+        "driver": "HP Universal Printing",
+        "printers": [{"name": "Office", "driver": "HP Universal Printing", "port": "USB001"}],
+        "reachable": None,
+    },
     "printer_stuck_usb": {
         "connection": "usb",
         "queue": "HP-Office",

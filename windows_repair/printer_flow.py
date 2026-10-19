@@ -142,7 +142,20 @@ class PrinterWorkflow:
         self._audit("approval_decided", item.status, approver)
         return {"status": item.status, "approval_id": item.approval_id}
 
-    def execute_restart(self, tenant_id: str, device_id: str, approval_id: str, operator: str) -> dict[str, Any]:
+    def _collect(self, fixture: str | None) -> dict[str, Any]:
+        if fixture:
+            return FixtureProvider().collect("print.diagnose", fixture)
+        return self.provider.collect("print.diagnose")
+
+    def execute_restart(
+        self,
+        tenant_id: str,
+        device_id: str,
+        approval_id: str,
+        operator: str,
+        *,
+        fixture: str | None = None,
+    ) -> dict[str, Any]:
         """Re-check the approval immediately, then restart only when the restarter allows it."""
         params = {"device_id": device_id, "service": _SERVICE, "procedure_id": "print.spooler.restart"}
         operator_ctx = TenantContext.create(tenant_id, operator, ["devices:write"])
@@ -158,9 +171,9 @@ class PrinterWorkflow:
                 "status": "approval_rejected",
                 "detail": exc.message,
             }
-        before = self.provider.collect("print.diagnose")
+        before = self._collect(fixture)
         action = self.restarter(params)
-        after = self.provider.collect("print.diagnose")
+        after = self._collect(fixture)
         before_running = str(before.get("spooler") or "").casefold() in {"running", "4"}
         after_running = str(after.get("spooler") or "").casefold() in {"running", "4"}
         if action.get("executed") and not before_running and after_running:

@@ -448,6 +448,8 @@ class WebServer(ThreadingHTTPServer):
         )
         history_dir = default_agent_history_dir()
         self.ops = OpsCentre()
+        from windows_repair.printer_flow import PrinterWorkflow
+        self.printer_flow = PrinterWorkflow()
         self.desk = AgentDesk(
             catalog, documents=documents, history_dir=history_dir, ops_centre=self.ops,
         )
@@ -594,6 +596,14 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_repair_execute()
         elif path == "/api/repair/live":
             self.handle_repair_live()
+        elif path == "/api/repair/printer/diagnose":
+            self.handle_printer_diagnose()
+        elif path == "/api/repair/printer/request":
+            self.handle_printer_request()
+        elif path == "/api/repair/printer/approve":
+            self.handle_printer_approve()
+        elif path == "/api/repair/printer/execute":
+            self.handle_printer_execute()
         elif path == "/api/microsoft/disconnect":
             self.handle_microsoft_disconnect()
         elif path == "/api/devices/enrolment":
@@ -1021,6 +1031,83 @@ class Handler(BaseHTTPRequestHandler):
         from windows_repair.engine import list_procedures
 
         self.send_json(200, {"procedures": list_procedures(), "live_printer_verified": False})
+
+    def _printer_flow(self):  # type: ignore[no-untyped-def]
+        return self.server.printer_flow  # type: ignore[attr-defined]
+
+    def _repair_slug(self, payload: dict, name: str) -> str | None:
+        value = payload.get(name)
+        if not isinstance(value, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,62}", value):
+            self.send_error_json(400, f"{name} must be a lowercase slug")
+            return None
+        return value
+
+    def _repair_label(self, payload: dict, name: str) -> str | None:
+        value = payload.get(name)
+        if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_@.-]{1,80}", value):
+            self.send_error_json(400, f"{name} is not valid")
+            return None
+        return value
+
+    def handle_printer_diagnose(self) -> None:
+        if self.require_key() is None:
+            return
+        payload = self.read_json_object(max_bytes=2048)
+        if payload is None:
+            return
+        fixture = payload.get("fixture")
+        if fixture is not None and not isinstance(fixture, str):
+            self.send_error_json(400, "fixture must be a string")
+            return
+        report = self._printer_flow().diagnose(fixture=fixture)
+        report.pop("evidence", None)
+        self.send_json(200, report)
+
+    def handle_printer_request(self) -> None:
+        if self.require_key() is None:
+            return
+        payload = self.read_json_object(max_bytes=2048)
+        if payload is None:
+            return
+        tenant_id = self._repair_slug(payload, "tenant_id")
+        device_id = self._repair_label(payload, "device_id")
+        requester = self._repair_label(payload, "requester")
+        if not tenant_id or not device_id or not requester:
+            return
+        self.send_json(200, self._printer_flow().request_restart(tenant_id, device_id, requester))
+
+    def handle_printer_approve(self) -> None:
+        if self.require_key() is None:
+            return
+        payload = self.read_json_object(max_bytes=2048)
+        if payload is None:
+            return
+        tenant_id = self._repair_slug(payload, "tenant_id")
+        approval_id = self._repair_label(payload, "approval_id")
+        approver = self._repair_label(payload, "approver")
+        if not tenant_id or not approval_id or not approver:
+            return
+        self.send_json(200, self._printer_flow().approve(tenant_id, approval_id, approver))
+
+    def handle_printer_execute(self) -> None:
+        if self.require_key() is None:
+            return
+        payload = self.read_json_object(max_bytes=2048)
+        if payload is None:
+            return
+        tenant_id = self._repair_slug(payload, "tenant_id")
+        device_id = self._repair_label(payload, "device_id")
+        approval_id = self._repair_label(payload, "approval_id")
+        operator = self._repair_label(payload, "operator")
+        if not tenant_id or not device_id or not approval_id or not operator:
+            return
+        fixture = payload.get("fixture")
+        if fixture is not None and not isinstance(fixture, str):
+            self.send_error_json(400, "fixture must be a string")
+            return
+        self.send_json(200, self._printer_flow().execute_restart(
+            tenant_id, device_id, approval_id, operator, fixture=fixture,
+        ))
 
     def handle_repair_live(self) -> None:
         if self.require_key() is None:
