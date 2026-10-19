@@ -23,5 +23,5 @@ Checked against GitHub `main` downloaded 2026-10-18, plus the Director files add
 | Named operator login, CSRF, roles | PARTIAL | Implemented on PR 4, not in this `main` snapshot, not deployed |
 | Microsoft mail search/read | PARTIAL | Code in `integrations/microsoft365.py` needs `Mail.Read` and `MICROSOFT_CLIENT_ID`. Not connected |
 | Teams, SharePoint, OneDrive, Azure writes | MISSING | See `docs/integrations/m365-azure-roadmap.md` |
-| Remote PC control | PARTIAL | MeshCentral boundary only. `MESHCENTRAL_URL` unset means NOT CONFIGURED. No session was opened. |
-| Windows repair catalogue and signed jobs | IMPLEMENTED AND TESTED in source | `windows_repair/`, `windows_repair/tests/test_windows_repair.py`. Fixtures are mocked. Elevated repairs are not applied to this PC. |
+| Windows repair catalogue and signed jobs | IMPLEMENTED AND TESTED in source | `windows_repair/`. Live read-only collectors exist. Elevated spooler restart is tested with a fake provider and refused on this PC. |
+| Remote PC control | PARTIAL | MeshCentral 1.2.6, Apache-2.0, is the selected boundary. No server is installed and no remote desktop session has been opened. |

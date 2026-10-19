@@ -5,6 +5,7 @@ diagnostic is not reported as a repaired fault.
 """
 from __future__ import annotations
 
+import os
 import shutil
 from typing import Any
 
@@ -260,4 +261,15 @@ def execute(
     result["status"] = "diagnosed"
     result["operator"] = operator
     result["risk"] = proc.risk
+    if fixture:
+        result["evidence_source"] = "fixture"
+        result["mocked"] = True
+    elif procedure_id == "win.storage.space" and not evidence:
+        result["evidence_source"] = "live_windows" if os.name == "nt" else "local_api"
+        result["mocked"] = False
+    elif evidence:
+        result["evidence_source"] = "supplied"
+        result["mocked"] = True
+    else:
+        result["evidence_source"] = "none"
     return result

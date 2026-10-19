@@ -1257,6 +1257,17 @@
     });
   }
 
+  document.getElementById("repair-live").addEventListener("click", function () {
+    var errorBox = document.getElementById("repair-error");
+    errorBox.hidden = true;
+    request("/api/repair/live", { method: "POST", body: { procedure_id: "print.diagnose" } }).then(function (result) {
+      document.getElementById("repair-result").textContent = JSON.stringify(result, null, 2);
+    }).catch(function (error) {
+      errorBox.hidden = false;
+      errorBox.textContent = errorMessage(error);
+    });
+  });
+
   document.getElementById("repair-form").addEventListener("submit", function (event) {
     event.preventDefault();
     var errorBox = document.getElementById("repair-error");

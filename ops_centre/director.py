@@ -83,6 +83,91 @@ def _component(
     }
 
 
+def _endpoint_fleet(verified_at: str | None) -> dict[str, Any]:
+    raw = os.environ.get("ENDPOINT_STATE_FILE", "").strip()
+    if not raw:
+        return _component(
+            "endpoint_fleet",
+            "UNKNOWN",
+            evidence=["ENDPOINT_STATE_FILE is unset"],
+            detail="Last-seen times were not collected.",
+            checked_at=verified_at,
+        )
+    try:
+        import time
+        from pathlib import Path
+        from integrations.endpoint import DeviceRegistry
+
+        registry = DeviceRegistry(Path(raw))
+        count = 0
+        newest = 0.0
+        for device in registry._devices.values():  # noqa: SLF001 — read-only status, no mutation
+            if device.status != "enrolled":
+                continue
+            count += 1
+            newest = max(newest, float(device.last_report_at or 0))
+        if count == 0 or newest <= 0:
+            return _component(
+                "endpoint_fleet",
+                "UNKNOWN",
+                evidence=[f"enrolled={count}", "no last-seen timestamp"],
+                detail="The check-in file has no recent report.",
+                checked_at=verified_at,
+            )
+        age = time.time() - newest
+        state = "DEGRADED" if age > 86400 else "HEALTHY"
+        return _component(
+            "endpoint_fleet",
+            state,
+            evidence=[f"enrolled={count}", f"last_report_unix={int(newest)}", f"age_seconds={int(age)}"],
+            detail="Last-seen comes from the check-in file. This is not remote control.",
+            checked_at=verified_at,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _component(
+            "endpoint_fleet",
+            "DEGRADED",
+            evidence=[type(exc).__name__],
+            detail="The endpoint check-in file could not be read.",
+            checked_at=verified_at,
+        )
+
+
+def _repair_jobs(verified_at: str | None) -> dict[str, Any]:
+    raw = os.environ.get("REPAIR_DEVICE_STATE", "").strip()
+    if not raw:
+        return _component(
+            "repair_jobs",
+            "NOT CONFIGURED",
+            evidence=["REPAIR_DEVICE_STATE is unset"],
+            detail="No dedicated test-device job file is configured.",
+            checked_at=verified_at,
+        )
+    try:
+        from pathlib import Path
+        from windows_repair.device_store import DeviceStore
+
+        summary = DeviceStore(Path(raw)).summary()
+        state = "DEGRADED" if summary["failed_jobs"] else "HEALTHY"
+        if summary["last_seen"] is None:
+            state = "UNKNOWN"
+        return _component(
+            "repair_jobs",
+            state,
+            evidence=[f"devices={summary['device_count']}", f"last_seen={summary['last_seen']}", f"failed_jobs={summary['failed_jobs']}"],
+            detail="Repair job file summary. A missing last-seen is not healthy.",
+            checked_at=verified_at,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _component(
+            "repair_jobs",
+            "DEGRADED",
+            evidence=[type(exc).__name__],
+            detail="The repair device file could not be read.",
+            checked_at=verified_at,
+        )
+
+
 def build_report(centre: OpsCentre, *, desk: Any | None = None) -> dict[str, Any]:
     """Return a Director status report. Side effect: one append-only audit event."""
     if desk is not None:
@@ -239,18 +324,13 @@ def build_report(centre: OpsCentre, *, desk: Any | None = None) -> dict[str, Any
             detail="The repair catalogue could not be loaded.",
             checked_at=verified_at,
         ))
-    components.append(_component(
-        "endpoint_fleet",
-        "UNKNOWN",
-        evidence=["this report did not read device check-ins"],
-        detail="Last-seen times for enrolled computers were not collected.",
-        checked_at=verified_at,
-    ))
+    components.append(_endpoint_fleet(verified_at))
+    components.append(_repair_jobs(verified_at))
 
     try:
-        from windows_repair.remote_support import status_from_env
+        from windows_repair.remote_support import check_remote
 
-        remote = status_from_env()
+        remote = check_remote()
         components.append(_component(
             "remote_support",
             str(remote.get("state") or "UNKNOWN"),

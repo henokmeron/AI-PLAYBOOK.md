@@ -592,6 +592,8 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_repair_plan()
         elif path == "/api/repair/execute":
             self.handle_repair_execute()
+        elif path == "/api/repair/live":
+            self.handle_repair_live()
         elif path == "/api/microsoft/disconnect":
             self.handle_microsoft_disconnect()
         elif path == "/api/devices/enrolment":
@@ -1019,6 +1021,20 @@ class Handler(BaseHTTPRequestHandler):
         from windows_repair.engine import list_procedures
 
         self.send_json(200, {"procedures": list_procedures(), "live_printer_verified": False})
+
+    def handle_repair_live(self) -> None:
+        if self.require_key() is None:
+            return
+        from windows_repair.providers import LIVE_PROCEDURES, LiveWindowsProvider
+
+        payload = self.read_json_object(max_bytes=2048)
+        if payload is None:
+            return
+        procedure_id = payload.get("procedure_id")
+        if not isinstance(procedure_id, str) or procedure_id not in LIVE_PROCEDURES:
+            self.send_error_json(400, "procedure_id is not a live read-only diagnostic")
+            return
+        self.send_json(200, LiveWindowsProvider().collect(procedure_id))
 
     def handle_repair_remote(self) -> None:
         if self.require_key() is None:

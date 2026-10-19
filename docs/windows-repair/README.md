@@ -2,6 +2,42 @@
 
 This is a registered-procedure framework. It is not a claim that every Windows fault can be repaired, and it has not been tested against a physical printer, a vendor driver package, or a live remote desktop.
 
+## Live diagnostics and the printer workflow
+
+Read-only collectors use fixed PowerShell scripts in `windows_repair/runner.py`. The model cannot supply a command. A result with `evidence_source` of `fixture` or `mock` did not come from this computer. `live_windows` did.
+
+From `C:\Users\kokob\src\AI-PLAYBOOK.md`:
+
+```powershell
+python -m unittest windows_repair.tests.test_windows_repair windows_repair.tests.test_live_diagnostics ops_centre.tests.test_director -v
+```
+
+The Windows integration test reads disk and printer evidence on this PC. It does not restart a service.
+
+One live disk check through a throwaway enrolled device, stored outside the source tree:
+
+```powershell
+python -m windows_repair.test_device self-test --state $env:TEMP\repair-device.json
+```
+
+Expected: `evidence_source` is `live_windows`, `problem_resolved` is false, and `repair_authority` is false.
+
+To enrol a dedicated test computer later, copy this repository there and run:
+
+```powershell
+python -m windows_repair.test_device enrol --state C:\ProgramData\AI-PLAYBOOK\repair-device.json
+```
+
+Save the printed secret outside git. Enrolment does not grant repair authority and does not install a Windows service. Do not point the state file at this source tree.
+
+The printer workflow can propose `print.spooler.restart` only when the spooler is not running. A different person must approve the exact device and service. This development computer still returns `needs_administrator` and does not restart the service. A dedicated test machine may set `WINDOWS_REPAIR_ALLOW_SERVICE_RESTART=1` and run the process as administrator. Do not set that here.
+
+Pending print jobs are not deleted.
+
+## Remote desktop
+
+MeshCentral 1.2.6 (published 2026-09-24) is the selected boundary. Its GitHub `master` LICENSE file is Apache-2.0, copyright 2017-2025 Intel Corporation. Apache-2.0 permits commercial use if you keep its notices. This repository has not installed that release. With no `MESHCENTRAL_URL`, the state is **NOT CONFIGURED**. A configured URL can be probed, and a probe is still not a remote desktop session.
+
 ## What you can run on this PC
 
 From `C:\Users\kokob\src\AI-PLAYBOOK.md`:
