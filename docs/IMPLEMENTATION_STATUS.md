@@ -1,11 +1,11 @@
 # Implementation status
 
-Checked 2026-10-19 after `git fetch`. Local `main` and GitHub `main` are both `a9d8a1cebafb6db23eda1515eb0bcdfd03b9d36c`. A row is not “working in production” unless the Deployed column has evidence.
+Checked 2026-10-19 after `git fetch`. Local `main` and GitHub `main` were both `95c6b8a6acb6545fef5775271f6dea19aaa9e88e` before this status note. A row is not “working in production” unless the Deployed column has evidence.
 
 | Capability | In code | Tested locally | Real Windows | Real external service | GitHub `main` | Deployed |
 | --- | --- | --- | --- | --- | --- | --- |
 | Loopback console, gateway, helpdesk, RAG, Operations Centre | Yes | Earlier suites passed | Not a Windows product test | No | Yes, through `46e184c` and later repair commits | **NOT VERIFIED**. Pod was not contacted for this increment. |
-| Director report | Yes. Includes `operator_auth`: missing file is NOT CONFIGURED, no active admin is DEGRADED, and password hashes are omitted. | `ops_centre.tests.test_director` passed (6) | No | No | This commit, after push | **NOT VERIFIED** |
+| Director report | Yes. Includes `operator_auth`: missing file is NOT CONFIGURED, no active admin is DEGRADED, and password hashes are omitted. | `ops_centre.tests.test_director` passed (6) | No | No | `95c6b8a6acb6545fef5775271f6dea19aaa9e88e` | **NOT VERIFIED** |
 | Windows repair catalogue and live read-only diagnostics | Yes | Yes, including `test_live_diagnostics` | Yes, 2026-10-19: disk, printers, network, and devices on this PC. `problem_resolved` false. | No | `46e184c` is on GitHub `main` | **NOT VERIFIED** |
 | Printer spooler approval practice path | Yes | `test_printer_restart_needs_a_different_approver_and_does_not_run` passed | The practice path uses a fixture. Live spooler was Running earlier. No restart was run. | No | `f1599ec` is on GitHub `main` | **NOT CONFIGURED** for an elevated test machine |
 | Remote desktop | MeshCentral 1.2.6 boundary only | Session request stays `not_established` | No | No MeshCentral server | Yes | **NOT CONFIGURED** |
