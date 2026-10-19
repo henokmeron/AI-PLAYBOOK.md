@@ -1,6 +1,6 @@
 # Implementation status
 
-Checked 2026-10-19. GitHub `main` before this operator-login commit was `d2c50767887a84568864d17cff8747f5d1787406`. A row is not “working in production” unless the Deployed column has evidence.
+Checked 2026-10-19 after `git fetch`. Local `main` and GitHub `main` are both `a9d8a1cebafb6db23eda1515eb0bcdfd03b9d36c`. A row is not “working in production” unless the Deployed column has evidence.
 
 | Capability | In code | Tested locally | Real Windows | Real external service | GitHub `main` | Deployed |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -9,10 +9,14 @@ Checked 2026-10-19. GitHub `main` before this operator-login commit was `d2c5076
 | Windows repair catalogue and live read-only diagnostics | Yes | Yes, including `test_live_diagnostics` | Yes, 2026-10-19: disk, printers, network, and devices on this PC. `problem_resolved` false. | No | `46e184c` is on GitHub `main` | **NOT VERIFIED** |
 | Printer spooler approval practice path | Yes | `test_printer_restart_needs_a_different_approver_and_does_not_run` passed | The practice path uses a fixture. Live spooler was Running earlier. No restart was run. | No | `f1599ec` is on GitHub `main` | **NOT CONFIGURED** for an elevated test machine |
 | Remote desktop | MeshCentral 1.2.6 boundary only | Session request stays `not_established` | No | No MeshCentral server | Yes | **NOT CONFIGURED** |
-| Named operator login | Yes, on local `main`: scrypt passwords, roles admin/operator/viewer, HttpOnly session cookie, CSRF, Host/Origin checks, fail-closed when no operators exist | `web.test_auth` and `web.test_server` passed (45). Repair, director, and endpoint regressions passed (36). | No | No | Pending the push of this commit | **NOT DEPLOYED**. SSH key was missing and the Pod was not contacted. |
+| Named operator login | Yes: scrypt passwords, roles admin/operator/viewer, HttpOnly session cookie, CSRF, Host/Origin checks, fail-closed when no operators exist | `web.test_auth` passed (20) after login hardening. `web.test_server` passed (45) before the two extra auth tests. Repair, director, and endpoint regressions passed (36). | No | No | `a9d8a1cebafb6db23eda1515eb0bcdfd03b9d36c` | **NOT DEPLOYED** |
 | Microsoft 365 mail | Code present | Mocked console tests | No | `MICROSOFT_CLIENT_ID` unset | Yes | **NOT CONFIGURED** |
 | RunPod Qwen | Scripts exist | Not run this increment | No | Pod was not started or stopped | Source is on GitHub | **UNKNOWN**. No health check was made. |
 
 ## Deployment blocker
 
-Console-only deploy is `CONSOLE_RESTART_APPROVED=yes bash /tmp/AI-PLAYBOOK/ops/release/deploy-console-only.sh` on the Pod, and only when Qwen and the gateway are already healthy. This increment did not SSH to the Pod, did not start paid compute, and did not restart services. Deployed commit: **not verified**.
+Console-only deploy is `CONSOLE_RESTART_APPROVED=yes bash /tmp/AI-PLAYBOOK/ops/release/deploy-console-only.sh` on the Pod, and only when Qwen and the gateway are already healthy. It also requires `operators.json` in `OPERATOR_AUTH_DIR` before it replaces the console.
+
+Exact blocker: `%USERPROFILE%\.ssh\id_ed25519` is not on this PC. The Pod was not contacted and was not started. No health check was made. Deployed commit: **not verified**.
+
+The script still defaults `PLATFORM_BRANCH` to `feature/qwen3.5-27b-integration`. A later deploy must set `PLATFORM_BRANCH=main` or it will not publish this commit.
