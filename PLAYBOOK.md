@@ -77,6 +77,7 @@ Do not buy large cloud resources until the technical design requires them.
 
 - Beginner map of the whole platform (GitHub vs volume vs Pod, ports, folders, what each piece is): **`docs/SYSTEM_MANUAL.md`**. Update it when the architecture changes.
 - Named console login (admin / operator / viewer, no default password): **`docs/security/operator-auth.md`**. First administrator: `scripts/provision_console_operator.py create-admin`. This is local operator login, not Microsoft Entra.
+- Source release and pre-shutdown checkpoint: **`docs/release/RECOVERY.md`** and **`docs/release/PRE_SHUTDOWN.md`**. The checkpoint does not stop the Pod.
 
 ### 2026-10-15 — AI IT Helpdesk
 

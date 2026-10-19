@@ -375,6 +375,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 | 2026-10-19 | Named operator login on the loopback console. Roles are admin, operator, and viewer. See `docs/security/operator-auth.md`. The first administrator is created with `scripts/provision_console_operator.py`. There is no default password. Not deployed. |
 | 2026-10-19 | Director report now includes `operator_auth`. A missing operator file is NOT CONFIGURED. The report does not include password hashes. Release scripts default to GitHub `main`. Not deployed. |
 | 2026-10-19 | Endpoint worker can submit registered read-only diagnostics. Enrolment does not grant repair authority. See `docs/windows-repair/endpoint-agent.md`. Not deployed and not run on a separate customer PC. |
+| 2026-10-19 | Source release package and pre-shutdown checkpoint. See `docs/release/RECOVERY.md`. The checkpoint does not stop the Pod. The volume copy is not verified from this PC. |
 | 2026-10-16 | AI Security & Operations Centre v1 in source (`ops_centre/`, console **Operations** page). Gap doc: `docs/ops_centre/GAP_AND_ARCHITECTURE.md`. No Pod started for this work. |
 | 2026-10-15 | First version of this manual after live IT Helpdesk verification; Pod stopped; tip `3447b79`. |
 
