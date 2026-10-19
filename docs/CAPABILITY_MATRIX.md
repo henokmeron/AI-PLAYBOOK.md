@@ -8,7 +8,7 @@ Statuses mean:
 - **MISSING** — not built.
 - **BLOCKED** — needs credentials, a running Pod, or a decision this session must not make.
 
-Checked against GitHub `main` downloaded 2026-10-18, plus the Director files added in this working copy. Operator-auth PR 4 was **not** merged into this tree.
+Checked 2026-10-19 against the local `main` working tree. Named operator login is in this tree. It is not a live Pod claim.
 
 | Capability | Status | Evidence |
 | --- | --- | --- |
@@ -20,7 +20,7 @@ Checked against GitHub `main` downloaded 2026-10-18, plus the Director files add
 | Operations Centre probes, alerts, incidents | IMPLEMENTED AND TESTED in source | `ops_centre/`, `ops_centre/tests/test_ops_centre.py` |
 | Director on-demand report | IMPLEMENTED AND TESTED in source | `ops_centre/director.py`, `ops_centre/tests/test_director.py` — tests not executed on this PC |
 | Scheduled Director reports | MISSING | No job runner. Documented in `docs/ops_centre/DIRECTOR.md` |
-| Named operator login, CSRF, roles | PARTIAL | Implemented on PR 4, not in this `main` snapshot, not deployed |
+| Named operator login, CSRF, roles | IMPLEMENTED AND TESTED in source | `web/auth/`, `scripts/provision_console_operator.py`, `web/test_auth.py`. First admin is created with the provision script. No default password. Not deployed. |
 | Microsoft mail search/read | PARTIAL | Code in `integrations/microsoft365.py` needs `Mail.Read` and `MICROSOFT_CLIENT_ID`. Not connected |
 | Teams, SharePoint, OneDrive, Azure writes | MISSING | See `docs/integrations/m365-azure-roadmap.md` |
 | Windows repair catalogue and signed jobs | IMPLEMENTED AND TESTED in source | `windows_repair/`. Live read-only collectors exist. Elevated spooler restart is tested with a fake provider and refused on this PC. |

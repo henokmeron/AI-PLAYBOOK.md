@@ -6,7 +6,7 @@
 
 | | |
 | --- | --- |
-| **Last updated** | 2026-10-16 |
+| **Last updated** | 2026-10-19 |
 | **Git tip (code)** | see `git log -1` (Operations Centre added 2026-10-16) |
 | **Live Pod** | `4lvr54b0wmkz6c` — **Stopped** (Start when you need it) |
 | **Global Volume** | `5aac0c77-6fcc-4be9-a112-dfe3890e1373` mounted at `/workspace` |
@@ -71,7 +71,7 @@ Use this when you ask “is this software, an API, a plugin…?”
 | **Qwen3.5-27B** | An open-weight **LLM** (neural network files on disk) | Not a SaaS chat subscription; you run it yourself |
 | **vLLM** | **Software** that loads the LLM onto the GPU and serves an OpenAI-like HTTP API | Not a Cursor plugin |
 | **Gateway** (`api/local_gateway.py`) | **Your** authenticated HTTP API in front of vLLM (+ RAG routes) | Not Microsoft Graph |
-| **Console** (`web/server.py` + `web/static/`) | **Your** small website (Chat, Document Q&A, IT Helpdesk, Status) | Not RunPod’s own UI |
+| **Console** (`web/server.py` + `web/static/`) | **Your** small website (Chat, Document Q&A, IT Helpdesk, Status). Named operator login is required for privileged pages. | Not RunPod’s own UI |
 | **RAG / Document Q&A** | **Your** retrieval code (`rag/`, `agents/adapters/`) that searches your files then asks Qwen | Not a separate cloud product |
 | **IT Helpdesk agent** | **Your** Python agent loop (`agents/`) with tools + approvals | Not Autopilot of the whole company network |
 | **RunPod Pod** | Rented **GPU VM** | Not permanent storage by itself |
@@ -372,6 +372,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 | 2026-10-19 | Windows repair catalogue, signed job gate, MeshCentral boundary (not connected), and console Windows repair page. No printer, driver, or remote desktop was contacted. |
 | 2026-10-19 | Live read-only Windows collectors, printer approval workflow, and a file-backed test device. Spooler restart is not run on the development PC. MeshCentral 1.2.6 is Apache-2.0 and is not installed. |
 | 2026-10-19 | Console practice path for spooler approval. It uses a fixture and does not restart the service. See `docs/IMPLEMENTATION_STATUS.md`. |
+| 2026-10-19 | Named operator login on the loopback console. Roles are admin, operator, and viewer. See `docs/security/operator-auth.md`. The first administrator is created with `scripts/provision_console_operator.py`. There is no default password. Not deployed. |
 | 2026-10-16 | AI Security & Operations Centre v1 in source (`ops_centre/`, console **Operations** page). Gap doc: `docs/ops_centre/GAP_AND_ARCHITECTURE.md`. No Pod started for this work. |
 | 2026-10-15 | First version of this manual after live IT Helpdesk verification; Pod stopped; tip `3447b79`. |
 

@@ -76,6 +76,7 @@ Do not buy large cloud resources until the technical design requires them.
 ### Operator system manual
 
 - Beginner map of the whole platform (GitHub vs volume vs Pod, ports, folders, what each piece is): **`docs/SYSTEM_MANUAL.md`**. Update it when the architecture changes.
+- Named console login (admin / operator / viewer, no default password): **`docs/security/operator-auth.md`**. First administrator: `scripts/provision_console_operator.py create-admin`. This is local operator login, not Microsoft Entra.
 
 ### 2026-10-15 — AI IT Helpdesk
 

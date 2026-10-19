@@ -33,6 +33,8 @@ _DEVICE_ID = re.compile(r"[0-9a-f]{32}\Z")
 _MAX_BYTES = 1 << 60
 _CODE_TTL = 600
 _MIN_REPORT_GAP = 15.0
+_ENROL_WINDOW_SECONDS = 15 * 60
+_ENROL_MAX_FAILURES = 20
 _FAMILIES = ("windows", "linux", "darwin", "other")
 
 _NONE = {
@@ -263,6 +265,7 @@ class DeviceRegistry:
         self._lock = threading.Lock()
         self._codes: list[_Code] = []
         self._devices: dict[str, _Device] = {}
+        self._enrol_failures: list[float] = []
         if self.path is not None and self.path.is_file():
             self._load()
 
@@ -274,6 +277,15 @@ class DeviceRegistry:
             return cls()
         return cls(Path(raw))
 
+    def _prune_enrol_failures(self, now: float) -> None:
+        window_start = now - _ENROL_WINDOW_SECONDS
+        self._enrol_failures = [stamp for stamp in self._enrol_failures if stamp >= window_start]
+
+    def _register_enrol_failure(self) -> None:
+        now = self._clock()
+        self._prune_enrol_failures(now)
+        self._enrol_failures.append(now)
+
     def create_enrolment(self, tenant_id: str) -> dict[str, Any]:
         code = secrets.token_urlsafe(18)
         with self._lock:
@@ -283,6 +295,8 @@ class DeviceRegistry:
 
     def enrol(self, code: str, display_name: str, device_secret: str) -> str:
         if not isinstance(code, str) or len(code) < 16 or len(code) > 80:
+            with self._lock:
+                self._register_enrol_failure()
             raise AuthenticationError("enrolment code is not valid")
         if not isinstance(display_name, str) or not _NAME.fullmatch(display_name.strip()):
             raise InvalidRequest("display name must be 1 to 40 letters, numbers, spaces, dots, or dashes")
@@ -292,10 +306,18 @@ class DeviceRegistry:
         digest = _digest(code)
         now = self._clock()
         with self._lock:
+            self._prune_enrol_failures(now)
+            if len(self._enrol_failures) >= _ENROL_MAX_FAILURES:
+                raise RateLimited(
+                    "too many failed enrolment attempts; try again later",
+                    retry_after=_ENROL_WINDOW_SECONDS,
+                )
             match = next((item for item in self._codes if secrets.compare_digest(item.code_hash, digest)), None)
             if match is None or match.used or match.expires_at < now:
+                self._register_enrol_failure()
                 raise AuthenticationError("enrolment code is not valid")
             match.used = True
+            self._enrol_failures.clear()
             device_id = uuid.uuid4().hex
             self._devices[device_id] = _Device(
                 tenant_id=match.tenant_id,

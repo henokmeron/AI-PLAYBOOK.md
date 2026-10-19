@@ -7,6 +7,7 @@ never written into HTML, JavaScript, logs, or API responses.
 """
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import re
@@ -16,19 +17,25 @@ import urllib.error
 import urllib.request
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+_WEB_DIR = Path(__file__).resolve().parent
+for _path in (_REPO_ROOT, _WEB_DIR):
+    _text = str(_path)
+    if _text not in sys.path:
+        sys.path.insert(0, _text)
 
 from agents.adapters.rag_library import GroundedDocumentRetriever
 from agents.it_support import looks_like_it_support
 from agents.model import OpenAICompatibleClient
 from agents.workspace import CONSOLE_TENANT, AgentDesk
+from auth import AuthService, Permission
+from auth.service import COOKIE_NAME, CSRF_HEADER, AuthError, SessionRecord
 from ops_centre import OpsCentre
 from integrations.endpoint import DeviceRegistry
 from integrations.errors import AuthenticationError, InvalidRequest, RateLimited
@@ -100,6 +107,7 @@ class Config:
     static_dir: Path = STATIC_DIR
     upstream_timeout: float = 180.0
     health_timeout: float = 5.0
+    cookie_secure: bool = False
 
     def resolve_api_key(self) -> str:
         if self.api_key_file:
@@ -111,6 +119,17 @@ class Config:
             except OSError:
                 return ""
         return self.api_key.strip()
+
+
+def _env_flag(source: Mapping[str, str], name: str, default: bool = False) -> bool:
+    raw = source.get(name, "").strip().casefold()
+    if not raw:
+        return default
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be true or false")
 
 
 @dataclass
@@ -175,6 +194,7 @@ def build_config(env: Mapping[str, str] | None = None) -> Config:
     model_id = source.get("PLATFORM_MODEL_ID", "").strip()
     if any(char in model_id for char in "\r\n\x00"):
         raise ValueError("PLATFORM_MODEL_ID must be a single line")
+    cookie_secure = _env_flag(source, "WEB_COOKIE_SECURE", default=False)
     if "PLATFORM_API_KEY_FILE" in source:
         key_file = source.get("PLATFORM_API_KEY_FILE", "").strip()
     else:
@@ -189,6 +209,7 @@ def build_config(env: Mapping[str, str] | None = None) -> Config:
         static_dir=STATIC_DIR,
         upstream_timeout=validate_timeout(source.get("WEB_UPSTREAM_TIMEOUT", ""), "WEB_UPSTREAM_TIMEOUT", 180.0),
         health_timeout=validate_timeout(source.get("WEB_HEALTH_TIMEOUT", ""), "WEB_HEALTH_TIMEOUT", 5.0),
+        cookie_secure=cookie_secure,
     )
 
 
@@ -448,6 +469,7 @@ class WebServer(ThreadingHTTPServer):
         )
         history_dir = default_agent_history_dir()
         self.ops = OpsCentre()
+        self.auth = AuthService(record_event=self.ops.record_event)
         from windows_repair.printer_flow import PrinterWorkflow
         self.printer_flow = PrinterWorkflow()
         self.desk = AgentDesk(
@@ -487,7 +509,139 @@ class Handler(BaseHTTPRequestHandler):
             body["error_id"] = error_id
         self.send_json(status, body)
 
+    @property
+    def auth(self) -> AuthService:
+        return self.server.auth  # type: ignore[attr-defined]
+
+    def _host_allowed(self) -> bool:
+        host = (self.headers.get("Host") or "").strip().lower()
+        if not host or "/" in host or "\\" in host or "@" in host:
+            return False
+        hostname = host.split(":", 1)[0]
+        return hostname in {"127.0.0.1", "localhost"}
+
+    def _request_origin_host(self) -> str | None:
+        origin = (self.headers.get("Origin") or "").strip()
+        if origin:
+            hostname = (urlsplit(origin).hostname or "").lower()
+            return hostname or None
+        referer = (self.headers.get("Referer") or "").strip()
+        if referer:
+            hostname = (urlsplit(referer).hostname or "").lower()
+            return hostname or None
+        return None
+
+    def _origin_allowed(self) -> bool:
+        hostname = self._request_origin_host()
+        if hostname is None:
+            return False
+        return hostname in {"127.0.0.1", "localhost"}
+
+    def _session_id_from_cookie(self) -> str | None:
+        raw = self.headers.get("Cookie") or ""
+        if not raw:
+            return None
+        jar = SimpleCookie()
+        try:
+            jar.load(raw)
+        except CookieError:
+            return None
+        morsel = jar.get(COOKIE_NAME)
+        if morsel is None:
+            return None
+        value = morsel.value.strip()
+        return value or None
+
+    def current_session(self) -> SessionRecord | None:
+        return self.auth.validate_session(self._session_id_from_cookie())
+
+    def _cookie_header(self, session_id: str, *, clear: bool = False) -> str:
+        parts = [f"{COOKIE_NAME}={'' if clear else session_id}", "Path=/", "HttpOnly", "SameSite=Strict"]
+        if clear:
+            parts.append("Max-Age=0")
+        else:
+            parts.append(f"Max-Age={self.auth.absolute_seconds}")
+        if self.config.cookie_secure:
+            parts.append("Secure")
+        return "; ".join(parts)
+
+    def send_json_with_cookies(
+        self,
+        status: int,
+        payload: dict[str, Any],
+        *,
+        set_session: SessionRecord | None = None,
+        clear_session: bool = False,
+    ) -> None:
+        secret = self.config.resolve_api_key()
+        encoded = scrub(json.dumps(payload, separators=(",", ":")), secret).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(encoded)))
+        for name, value in SECURITY_HEADERS:
+            self.send_header(name, value)
+        if set_session is not None:
+            self.send_header("Set-Cookie", self._cookie_header(set_session.session_id))
+        if clear_session:
+            self.send_header("Set-Cookie", self._cookie_header("", clear=True))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+    def _csrf_ok(self, session: SessionRecord) -> bool:
+        offered = (self.headers.get(CSRF_HEADER) or "").strip()
+        if not offered or not session.csrf_token:
+            return False
+        return hmac.compare_digest(offered, session.csrf_token)
+
+    def require_operator(
+        self,
+        permission: Permission | None = None,
+        *,
+        mutating: bool = False,
+    ) -> SessionRecord | None:
+        if not self.auth.configured():
+            self.send_error_json(503, "operator authentication is not configured")
+            return None
+        if mutating and not self._origin_allowed():
+            self.send_error_json(403, "origin not allowed")
+            return None
+        session = self.current_session()
+        if session is None:
+            self.send_error_json(401, "authentication required")
+            return None
+        if mutating and not self._csrf_ok(session):
+            self._ops().record_event(
+                event_type="auth.csrf_rejected",
+                component="auth",
+                outcome="denied",
+                severity="medium",
+                actor=session.username,
+                summary="CSRF token missing or invalid",
+                detail={},
+            )
+            self.send_error_json(403, "CSRF token missing or invalid")
+            return None
+        if permission is not None and not self.auth.has_permission(session, permission):
+            self._ops().record_event(
+                event_type="auth.authorization_denied",
+                component="auth",
+                outcome="denied",
+                severity="medium",
+                actor=session.username,
+                summary=f"Missing permission {permission.value}",
+                detail={"permission": permission.value, "role": session.role},
+            )
+            self.send_error_json(403, "permission denied")
+            return None
+        return session
+
+    def session_actor(self, session: SessionRecord) -> str:
+        return session.username
+
     def do_GET(self) -> None:
+        if not self._host_allowed():
+            self.send_error_json(403, "host not allowed")
+            return
         parsed = urlsplit(self.path)
         path = unquote(parsed.path)
         if path == "/favicon.ico":
@@ -495,6 +649,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/status":
             self.handle_status()
+            return
+        if path == "/api/auth/status":
+            self.handle_auth_status()
+            return
+        if path == "/api/auth/operators":
+            self.handle_auth_operators_list()
             return
         if path == "/api/ops/overview":
             self.handle_ops_overview()
@@ -561,12 +721,29 @@ class Handler(BaseHTTPRequestHandler):
         self.send_bytes(200, static_file.read_bytes(), content_type)
 
     def do_POST(self) -> None:
+        if not self._host_allowed():
+            self.send_error_json(403, "host not allowed")
+            return
         parsed = urlsplit(self.path)
         if parsed.query:
             self.send_error_json(404, "not found")
             return
         path = unquote(parsed.path)
-        if path == "/api/chat":
+        if path == "/api/auth/login":
+            self.handle_auth_login()
+        elif path == "/api/auth/logout":
+            self.handle_auth_logout()
+        elif path == "/api/auth/operators":
+            self.handle_auth_operators_create()
+        elif path == "/api/auth/operators/role":
+            self.handle_auth_operators_role()
+        elif path == "/api/auth/operators/disable":
+            self.handle_auth_operators_disable()
+        elif path == "/api/auth/operators/enable":
+            self.handle_auth_operators_enable()
+        elif path == "/api/auth/rotate":
+            self.handle_auth_rotate()
+        elif path == "/api/chat":
             self.handle_chat()
         elif path == "/api/rag":
             self.handle_rag()
@@ -618,14 +795,150 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error_json(404, "not found")
 
     def do_PUT(self) -> None:
+        if not self._host_allowed():
+            self.send_error_json(403, "host not allowed")
+            return
         self.send_error_json(405, "method not allowed")
 
     def do_DELETE(self) -> None:
+        if not self._host_allowed():
+            self.send_error_json(403, "host not allowed")
+            return
         parsed = urlsplit(self.path)
         if parsed.path != "/api/documents":
             self.send_error_json(404, "not found")
             return
         self.handle_document_delete(parsed)
+
+    def handle_auth_status(self) -> None:
+        self.send_json(200, self.auth.public_status(self.current_session()))
+
+    def handle_auth_login(self) -> None:
+        if not self._origin_allowed():
+            self.send_error_json(403, "origin not allowed")
+            return
+        if not self.auth.configured():
+            self.send_error_json(503, "operator authentication is not configured")
+            return
+        payload = self.read_json_object(max_bytes=4096)
+        if payload is None:
+            return
+        username = payload.get("username")
+        password = payload.get("password")
+        if not isinstance(username, str) or not isinstance(password, str):
+            self.send_error_json(400, "username and password are required")
+            return
+        prior = self._session_id_from_cookie()
+        if prior:
+            self.auth.logout(prior)
+        try:
+            session = self.auth.login(username, password, peer_ip=self.client_address[0])
+        except AuthError as exc:
+            self.send_error_json(exc.status, exc.message)
+            return
+        self.send_json_with_cookies(200, self.auth.public_status(session), set_session=session)
+
+    def handle_auth_logout(self) -> None:
+        if not self._origin_allowed():
+            self.send_error_json(403, "origin not allowed")
+            return
+        session = self.current_session()
+        if session is not None and not self._csrf_ok(session):
+            self.send_error_json(403, "CSRF token missing or invalid")
+            return
+        self.auth.logout(self._session_id_from_cookie())
+        self.send_json_with_cookies(200, self.auth.public_status(None), clear_session=True)
+
+    def handle_auth_rotate(self) -> None:
+        session = self.require_operator(None, mutating=True)
+        if session is None:
+            return
+        try:
+            rotated = self.auth.rotate_session(session.session_id)
+        except AuthError as exc:
+            self.send_error_json(exc.status, exc.message)
+            return
+        self.send_json_with_cookies(200, self.auth.public_status(rotated), set_session=rotated)
+
+    def handle_auth_operators_list(self) -> None:
+        if self.require_operator(Permission.ADMIN_OPERATORS) is None:
+            return
+        self.send_json(200, {"operators": self.auth.list_operators()})
+
+    def handle_auth_operators_create(self) -> None:
+        session = self.require_operator(Permission.ADMIN_OPERATORS, mutating=True)
+        if session is None:
+            return
+        payload = self.read_json_object(max_bytes=4096)
+        if payload is None:
+            return
+        username = payload.get("username")
+        password = payload.get("password")
+        role = payload.get("role")
+        if not isinstance(username, str) or not isinstance(password, str) or not isinstance(role, str):
+            self.send_error_json(400, "username, password, and role are required")
+            return
+        try:
+            record = self.auth.create_operator(username, password, role, actor=self.session_actor(session))
+        except AuthError as exc:
+            self.send_error_json(exc.status, exc.message)
+            return
+        self.send_json(201, {"operator": record.public()})
+
+    def handle_auth_operators_role(self) -> None:
+        session = self.require_operator(Permission.ADMIN_OPERATORS, mutating=True)
+        if session is None:
+            return
+        payload = self.read_json_object(max_bytes=4096)
+        if payload is None:
+            return
+        username = payload.get("username")
+        role = payload.get("role")
+        if not isinstance(username, str) or not isinstance(role, str):
+            self.send_error_json(400, "username and role are required")
+            return
+        try:
+            record = self.auth.set_role(username, role, actor=self.session_actor(session))
+        except AuthError as exc:
+            self.send_error_json(exc.status, exc.message)
+            return
+        self.send_json(200, {"operator": record.public()})
+
+    def handle_auth_operators_disable(self) -> None:
+        session = self.require_operator(Permission.ADMIN_OPERATORS, mutating=True)
+        if session is None:
+            return
+        payload = self.read_json_object(max_bytes=4096)
+        if payload is None:
+            return
+        username = payload.get("username")
+        if not isinstance(username, str):
+            self.send_error_json(400, "username is required")
+            return
+        try:
+            record = self.auth.set_disabled(username, True, actor=self.session_actor(session))
+        except AuthError as exc:
+            self.send_error_json(exc.status, exc.message)
+            return
+        self.send_json(200, {"operator": record.public()})
+
+    def handle_auth_operators_enable(self) -> None:
+        session = self.require_operator(Permission.ADMIN_OPERATORS, mutating=True)
+        if session is None:
+            return
+        payload = self.read_json_object(max_bytes=4096)
+        if payload is None:
+            return
+        username = payload.get("username")
+        if not isinstance(username, str):
+            self.send_error_json(400, "username is required")
+            return
+        try:
+            record = self.auth.set_disabled(username, False, actor=self.session_actor(session))
+        except AuthError as exc:
+            self.send_error_json(exc.status, exc.message)
+            return
+        self.send_json(200, {"operator": record.public()})
 
     def read_json_object(self, max_bytes: int = MAX_BODY_BYTES) -> dict[str, Any] | None:
         content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
@@ -662,6 +975,8 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def handle_connectors(self) -> None:
+        if self.require_operator(Permission.CONNECTORS_VIEW, mutating=False) is None:
+            return
         rows = self.server.desk.connectors()  # type: ignore[attr-defined]
         sign_in = self.server.oauth.public_status()  # type: ignore[attr-defined]
         for row in rows:
@@ -670,6 +985,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, {"connectors": rows})
 
     def handle_microsoft_start(self) -> None:
+        if self.require_operator(Permission.CONNECTORS_MANAGE, mutating=False) is None:
+            return
         account = (parse_qs(urlsplit(self.path).query).get("account") or ["any"])[0]
         try:
             target = self.server.oauth.authorization_url(account)  # type: ignore[attr-defined]
@@ -707,6 +1024,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_callback_page("connected")
 
     def handle_microsoft_disconnect(self) -> None:
+        session = self.require_operator(Permission.CONNECTORS_MANAGE, mutating=True)
+        if session is None:
+            return
         self.server.oauth.disconnect()  # type: ignore[attr-defined]
         self.server.microsoft.apply(self.server.desk.catalog, CONSOLE_TENANT)  # type: ignore[attr-defined]
         self.send_json(200, {"connected": False})
@@ -718,6 +1038,8 @@ class Handler(BaseHTTPRequestHandler):
         self.server.endpoint.apply(self.server.desk.catalog)  # type: ignore[attr-defined]
 
     def handle_device_list(self) -> None:
+        if self.require_operator(Permission.CONNECTORS_MANAGE, mutating=False) is None:
+            return
         if not self._loopback_client():
             self.send_error_json(403, "device routes are only available on the loopback console")
             return
@@ -729,6 +1051,9 @@ class Handler(BaseHTTPRequestHandler):
         })
 
     def handle_device_enrolment(self) -> None:
+        session = self.require_operator(Permission.CONNECTORS_MANAGE, mutating=True)
+        if session is None:
+            return
         if not self._loopback_client():
             self.send_error_json(403, "device routes are only available on the loopback console")
             return
@@ -755,6 +1080,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         except InvalidRequest as exc:
             self.send_error_json(400, exc.message)
+            return
+        except RateLimited as exc:
+            self.send_error_json(429, exc.message)
             return
         self._refresh_endpoint()
         self.send_json(200, {"device_id": device_id, "remote_control": False})
@@ -783,6 +1111,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, result)
 
     def handle_device_revoke(self) -> None:
+        session = self.require_operator(Permission.CONNECTORS_MANAGE, mutating=True)
+        if session is None:
+            return
         if not self._loopback_client():
             self.send_error_json(403, "device routes are only available on the loopback console")
             return
@@ -811,6 +1142,9 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def handle_agent(self) -> None:
+        session = self.require_operator(Permission.AGENT_START, mutating=True)
+        if session is None:
+            return
         if self.require_key() is None:
             return
         payload = self.read_json_object()
@@ -837,6 +1171,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, view)
 
     def handle_agent_get(self, parsed) -> None:  # type: ignore[no-untyped-def]
+        if self.require_operator(Permission.AGENT_VIEW, mutating=False) is None:
+            return
         if self.require_key() is None:
             return
         query = parse_qs(parsed.query or "")
@@ -856,6 +1192,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, view)
 
     def handle_agent_history(self, parsed) -> None:  # type: ignore[no-untyped-def]
+        if self.require_operator(Permission.AGENT_VIEW, mutating=False) is None:
+            return
         if self.require_key() is None:
             return
         query = parse_qs(parsed.query or "")
@@ -873,6 +1211,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, {"tasks": rows, "count": len(rows)})
 
     def handle_agent_decision(self) -> None:
+        session = self.require_operator(Permission.AGENT_APPROVE, mutating=True)
+        if session is None:
+            return
         if self.require_key() is None:
             return
         payload = self.read_json_object()
@@ -894,7 +1235,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             view = self.server.desk.decide(  # type: ignore[attr-defined]
-                task_id, approved, "console-operator", call_id, arguments,
+                task_id, approved, self.session_actor(session), call_id, arguments,
             )
         except KeyError:
             self.send_error_json(404, "task not found")
@@ -908,6 +1249,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, view)
 
     def handle_agent_information(self) -> None:
+        session = self.require_operator(Permission.AGENT_START, mutating=True)
+        if session is None:
+            return
         if self.require_key() is None:
             return
         payload = self.read_json_object()
@@ -932,6 +1276,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, view)
 
     def handle_agent_cancel(self) -> None:
+        session = self.require_operator(Permission.AGENT_START, mutating=True)
+        if session is None:
+            return
         if self.require_key() is None:
             return
         payload = self.read_json_object()
@@ -959,6 +1306,8 @@ class Handler(BaseHTTPRequestHandler):
         return self.server.ops  # type: ignore[attr-defined]
 
     def handle_ops_overview(self) -> None:
+        if self.require_operator(Permission.OPS_VIEW, mutating=False) is None:
+            return
         if self.require_key() is None:
             return
         ops = self._ops()
@@ -969,11 +1318,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, ops.overview())
 
     def handle_ops_health(self) -> None:
+        if self.require_operator(Permission.OPS_VIEW, mutating=False) is None:
+            return
         if self.require_key() is None:
             return
         self.send_json(200, self._ops().refresh_health())
 
     def handle_ops_events(self, parsed) -> None:  # type: ignore[no-untyped-def]
+        if self.require_operator(Permission.OPS_VIEW, mutating=False) is None:
+            return
         if self.require_key() is None:
             return
         query = parse_qs(parsed.query or "")
@@ -993,6 +1346,8 @@ class Handler(BaseHTTPRequestHandler):
         ))
 
     def handle_ops_alerts(self, parsed) -> None:  # type: ignore[no-untyped-def]
+        if self.require_operator(Permission.OPS_VIEW, mutating=False) is None:
+            return
         if self.require_key() is None:
             return
         query = parse_qs(parsed.query or "")
@@ -1001,6 +1356,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, {"alerts": [a.to_public() for a in rows]})
 
     def handle_ops_incidents(self, parsed) -> None:  # type: ignore[no-untyped-def]
+        if self.require_operator(Permission.OPS_VIEW, mutating=False) is None:
+            return
         if self.require_key() is None:
             return
         query = parse_qs(parsed.query or "")
@@ -1009,6 +1366,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, {"incidents": [i.to_public() for i in rows]})
 
     def handle_ops_integrity(self) -> None:
+        if self.require_operator(Permission.OPS_VIEW, mutating=False) is None:
+            return
         if self.require_key() is None:
             return
         self.send_json(200, {
@@ -1020,12 +1379,16 @@ class Handler(BaseHTTPRequestHandler):
         })
 
     def handle_ops_coverage(self) -> None:
+        if self.require_operator(Permission.OPS_VIEW, mutating=False) is None:
+            return
         if self.require_key() is None:
             return
         from ops_centre.detections import COVERAGE
         self.send_json(200, {"coverage": COVERAGE.strip()})
 
     def handle_repair_procedures(self) -> None:
+        if self.require_operator(Permission.OPS_VIEW, mutating=False) is None:
+            return
         if self.require_key() is None:
             return
         from windows_repair.engine import list_procedures
@@ -1050,6 +1413,8 @@ class Handler(BaseHTTPRequestHandler):
         return value
 
     def handle_printer_diagnose(self) -> None:
+        if self.require_operator(Permission.OPS_VIEW, mutating=True) is None:
+            return
         if self.require_key() is None:
             return
         payload = self.read_json_object(max_bytes=2048)
@@ -1064,6 +1429,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, report)
 
     def handle_printer_request(self) -> None:
+        if self.require_operator(Permission.AGENT_APPROVE, mutating=True) is None:
+            return
         if self.require_key() is None:
             return
         payload = self.read_json_object(max_bytes=2048)
@@ -1077,6 +1444,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, self._printer_flow().request_restart(tenant_id, device_id, requester))
 
     def handle_printer_approve(self) -> None:
+        if self.require_operator(Permission.AGENT_APPROVE, mutating=True) is None:
+            return
         if self.require_key() is None:
             return
         payload = self.read_json_object(max_bytes=2048)
@@ -1090,6 +1459,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, self._printer_flow().approve(tenant_id, approval_id, approver))
 
     def handle_printer_execute(self) -> None:
+        if self.require_operator(Permission.AGENT_APPROVE, mutating=True) is None:
+            return
         if self.require_key() is None:
             return
         payload = self.read_json_object(max_bytes=2048)
@@ -1110,6 +1481,8 @@ class Handler(BaseHTTPRequestHandler):
         ))
 
     def handle_repair_live(self) -> None:
+        if self.require_operator(Permission.OPS_VIEW, mutating=True) is None:
+            return
         if self.require_key() is None:
             return
         from windows_repair.providers import LIVE_PROCEDURES, LiveWindowsProvider
@@ -1124,6 +1497,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, LiveWindowsProvider().collect(procedure_id))
 
     def handle_repair_remote(self) -> None:
+        if self.require_operator(Permission.OPS_VIEW, mutating=False) is None:
+            return
         if self.require_key() is None:
             return
         from windows_repair.remote_support import status_from_env
@@ -1131,6 +1506,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, status_from_env())
 
     def handle_repair_plan(self) -> None:
+        if self.require_operator(Permission.OPS_VIEW, mutating=True) is None:
+            return
         if self.require_key() is None:
             return
         from windows_repair.engine import plan
@@ -1149,6 +1526,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, plan(symptom.strip(), fixture=fixture))
 
     def handle_repair_execute(self) -> None:
+        if self.require_operator(Permission.AGENT_APPROVE, mutating=True) is None:
+            return
         if self.require_key() is None:
             return
         from windows_repair.engine import RepairDenied, execute
@@ -1171,6 +1550,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, result)
 
     def handle_ops_director(self) -> None:
+        if self.require_operator(Permission.OPS_VIEW, mutating=False) is None:
+            return
         if self.require_key() is None:
             return
         from ops_centre.director import build_report
@@ -1183,6 +1564,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, report)
 
     def handle_ops_refresh(self) -> None:
+        session = self.require_operator(Permission.OPS_VIEW, mutating=True)
+        if session is None:
+            return
         if self.require_key() is None:
             return
         ops = self._ops()
@@ -1195,6 +1579,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, {"health": health, "detections": detections})
 
     def handle_ops_alert_transition(self) -> None:
+        session = self.require_operator(Permission.OPS_ALERT_WRITE, mutating=True)
+        if session is None:
+            return
         if self.require_key() is None:
             return
         payload = self.read_json_object()
@@ -1202,7 +1589,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         alert_id = payload.get("alert_id")
         status = payload.get("status")
-        actor = payload.get("actor") or "console-operator"
+        actor = self.session_actor(session)
         note = payload.get("note") or ""
         if not isinstance(alert_id, str) or not isinstance(status, str):
             self.send_error_json(400, "alert_id and status are required")
@@ -1229,13 +1616,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, alert.to_public())
 
     def handle_ops_incident_create(self) -> None:
+        session = self.require_operator(Permission.OPS_INCIDENT_WRITE, mutating=True)
+        if session is None:
+            return
         if self.require_key() is None:
             return
         payload = self.read_json_object()
         if payload is None:
             return
         alert_id = payload.get("alert_id")
-        actor = payload.get("actor") or "console-operator"
+        actor = self.session_actor(session)
         if not isinstance(alert_id, str):
             self.send_error_json(400, "alert_id is required")
             return
@@ -1260,6 +1650,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, incident.to_public())
 
     def handle_ops_incident_transition(self) -> None:
+        session = self.require_operator(Permission.OPS_INCIDENT_WRITE, mutating=True)
+        if session is None:
+            return
         if self.require_key() is None:
             return
         payload = self.read_json_object()
@@ -1267,7 +1660,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         incident_id = payload.get("incident_id")
         status = payload.get("status")
-        actor = payload.get("actor") or "console-operator"
+        actor = self.session_actor(session)
         summary = payload.get("summary") or ""
         if not isinstance(incident_id, str) or not isinstance(status, str):
             self.send_error_json(400, "incident_id and status are required")
@@ -1285,6 +1678,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, incident.to_public())
 
     def handle_ops_incident_note(self) -> None:
+        session = self.require_operator(Permission.OPS_INCIDENT_WRITE, mutating=True)
+        if session is None:
+            return
         if self.require_key() is None:
             return
         payload = self.read_json_object()
@@ -1293,7 +1689,7 @@ class Handler(BaseHTTPRequestHandler):
         incident_id = payload.get("incident_id")
         note = payload.get("note")
         kind = payload.get("kind") or "note"
-        actor = payload.get("actor") or "console-operator"
+        actor = self.session_actor(session)
         if not isinstance(incident_id, str) or not isinstance(note, str):
             self.send_error_json(400, "incident_id and note are required")
             return
@@ -1375,6 +1771,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
     def handle_document_list(self, parsed: Any) -> None:
+        if self.require_operator(Permission.DOCS, mutating=False) is None:
+            return
         from urllib.parse import parse_qs
         values = parse_qs(parsed.query, keep_blank_values=True)
         if set(values) != {"collection"} or len(values.get("collection", [])) != 1:
@@ -1393,6 +1791,9 @@ class Handler(BaseHTTPRequestHandler):
         self.forward_result(result)
 
     def handle_document_upload(self) -> None:
+        session = self.require_operator(Permission.DOCS, mutating=True)
+        if session is None:
+            return
         payload = self.read_json_object(max_bytes=MAX_UPLOAD_BODY_BYTES)
         if payload is None:
             return
@@ -1422,6 +1823,9 @@ class Handler(BaseHTTPRequestHandler):
         self.forward_result(result)
 
     def handle_document_delete(self, parsed: Any) -> None:
+        session = self.require_operator(Permission.DOCS, mutating=True)
+        if session is None:
+            return
         from urllib.parse import parse_qs, quote
         values = parse_qs(parsed.query, keep_blank_values=True)
         if set(values) != {"collection", "filename"} or any(len(values.get(k, [])) != 1 for k in ("collection", "filename")):
@@ -1444,6 +1848,8 @@ class Handler(BaseHTTPRequestHandler):
         self.forward_result(result)
 
     def handle_platform_models(self) -> None:
+        if self.require_operator(Permission.CHAT, mutating=False) is None:
+            return
         if not self.require_key():
             return
         result = call_gateway(
@@ -1466,6 +1872,9 @@ class Handler(BaseHTTPRequestHandler):
         return requested.strip()
 
     def handle_chat(self) -> None:
+        session = self.require_operator(Permission.CHAT, mutating=True)
+        if session is None:
+            return
         payload = self.read_json_object()
         if payload is None:
             return
@@ -1518,6 +1927,9 @@ class Handler(BaseHTTPRequestHandler):
         self.forward_result(result)
 
     def handle_rag(self) -> None:
+        session = self.require_operator(Permission.DOCS, mutating=True)
+        if session is None:
+            return
         payload = self.read_json_object()
         if payload is None:
             return

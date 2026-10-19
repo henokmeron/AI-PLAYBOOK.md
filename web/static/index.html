@@ -7,7 +7,29 @@
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <div class="app">
+  <div id="login-gate" class="login-gate" hidden>
+    <form id="login-form" class="login-card" autocomplete="username">
+      <div class="brand login-brand">
+        <span class="mark" aria-hidden="true">AI</span>
+        <div>
+          <strong>Business AI</strong>
+          <small>Operator sign-in</small>
+        </div>
+      </div>
+      <p class="meta">Named operator accounts are required before using the console. The gateway API key stays on the server.</p>
+      <div id="login-error" class="banner banner-error" role="alert" hidden></div>
+      <p id="login-setup" class="banner banner-warn" role="status" hidden></p>
+      <label for="login-username">Username</label>
+      <input id="login-username" name="username" type="text" autocomplete="username" maxlength="32" required>
+      <label for="login-password">Password</label>
+      <input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="128" required>
+      <div class="form-row">
+        <button type="submit" id="login-submit">Sign in</button>
+        <span id="login-loading" class="loading" role="status" hidden>Signing in…</span>
+      </div>
+    </form>
+  </div>
+  <div class="app" id="app-shell" hidden>
     <aside class="sidebar">
       <div class="brand">
         <span class="mark" aria-hidden="true">AI</span>
@@ -25,6 +47,10 @@
         <button type="button" data-view="status" id="nav-status-tab">System Status</button>
       </nav>
       <p class="nav-status" id="nav-status" role="status">Checking gateway…</p>
+      <div class="operator-bar">
+        <p id="operator-label" class="meta">Not signed in</p>
+        <button type="button" id="logout-button" class="secondary">Sign out</button>
+      </div>
     </aside>
     <main>
       <section id="chat-view" aria-labelledby="chat-title">
