@@ -11,7 +11,7 @@ bash /workspace/ai-platform-release/START.sh --check     # current status
 - Only Qwen3.5-27B starts automatically. Gemma stays on the volume and never loads unless an operator switches models.
 - Requires an 80GB-class NVIDIA GPU (A100 80GB or H100) with driver 580 or newer.
 - The runnable environment is restored to `/tmp` from `/workspace/runtime-setup/qwen-vllm/`. It is never extracted onto `/workspace`.
-- Source comes from GitHub (`feature/qwen3.5-27b-integration`). If GitHub is unreachable, the newest checksum-verified snapshot in `/workspace/ai-platform-backups/source-snapshots/` is used.
+- Source comes from GitHub `main`. If GitHub is unreachable, the newest checksum-verified snapshot in `/workspace/ai-platform-backups/source-snapshots/` is used. Set `PLATFORM_BRANCH` only to override that default.
 - `ops/` and `tree/` in this folder are legacy copies from an earlier launcher. The current `START.sh` does not use them.
 
 Console access from your laptop:

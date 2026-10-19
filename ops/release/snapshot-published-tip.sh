@@ -16,7 +16,7 @@ SNAP_DIR="$GLOBAL/ai-platform-backups/source-snapshots"
 MANIFEST_DIR="$GLOBAL/ai-platform-backups/manifests"
 WEIGHTS="$GLOBAL/models/Qwen3.5-27B/fc05daec18b0a78c049392ed2e771dde82bdf654"
 QWEN_RT="$GLOBAL/runtime-setup/qwen-vllm"
-BRANCH="${PLATFORM_BRANCH:-feature/qwen3.5-27b-integration}"
+BRANCH="${PLATFORM_BRANCH:-main}"
 REMOTE="${PLATFORM_REMOTE:-https://github.com/henokmeron/AI-PLAYBOOK.md.git}"
 
 if ! command -v findmnt >/dev/null 2>&1; then

@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from ops.release.console_deploy import DeployRefusal, decide
+
+_RELEASE = Path(__file__).resolve().parent / "release"
 
 
 class ConsoleDeployTests(unittest.TestCase):
@@ -28,6 +31,12 @@ class ConsoleDeployTests(unittest.TestCase):
             approved=True, health_8002=200, health_8010=200,
             pid_8002="11", pid_8010="22", pid_8080="33",
         ), "restart-console")
+
+    def test_release_scripts_default_to_main(self) -> None:
+        for name in ("START.sh", "deploy-console-only.sh", "snapshot-published-tip.sh"):
+            text = (_RELEASE / name).read_text(encoding="utf-8")
+            self.assertIn('BRANCH="${PLATFORM_BRANCH:-main}"', text, name)
+            self.assertNotIn("feature/qwen3.5-27b-integration", text, name)
 
     def test_missing_console_pid_does_not_become_a_restart(self) -> None:
         with self.assertRaises(DeployRefusal):

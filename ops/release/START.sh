@@ -7,7 +7,7 @@
 set -Eeuo pipefail
 
 export REPO_ROOT="${REPO_ROOT:-/tmp/AI-PLAYBOOK}"
-BRANCH="${PLATFORM_BRANCH:-feature/qwen3.5-27b-integration}"
+BRANCH="${PLATFORM_BRANCH:-main}"
 REMOTE="${PLATFORM_REMOTE:-https://github.com/henokmeron/AI-PLAYBOOK.md.git}"
 SNAP_DIR=/workspace/ai-platform-backups/source-snapshots
 MANIFEST_DIR=/workspace/ai-platform-backups/manifests

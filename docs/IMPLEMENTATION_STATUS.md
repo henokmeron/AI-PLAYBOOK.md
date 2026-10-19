@@ -19,4 +19,4 @@ Console-only deploy is `CONSOLE_RESTART_APPROVED=yes bash /tmp/AI-PLAYBOOK/ops/r
 
 Exact blocker: `%USERPROFILE%\.ssh\id_ed25519` is not on this PC. The Pod was not contacted and was not started. No health check was made. Deployed commit: **not verified**.
 
-The script still defaults `PLATFORM_BRANCH` to `feature/qwen3.5-27b-integration`. A later deploy must set `PLATFORM_BRANCH=main` or it will not publish this commit.
+`START.sh`, `deploy-console-only.sh`, and `snapshot-published-tip.sh` now default `PLATFORM_BRANCH` to `main`. GitHub `feature/qwen3.5-27b-integration` is `ec61ac5a548165914dcbf57a32928d595a86399c`, which is not this `main`. That branch was not updated.

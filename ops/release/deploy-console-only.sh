@@ -11,7 +11,7 @@
 set -Eeuo pipefail
 
 REPO_ROOT="${REPO_ROOT:-/tmp/AI-PLAYBOOK}"
-BRANCH="${PLATFORM_BRANCH:-feature/qwen3.5-27b-integration}"
+BRANCH="${PLATFORM_BRANCH:-main}"
 DIAG="${DIAG:-/tmp/platform-diagnostics}"
 KEY="${PLATFORM_API_KEY_FILE:-/tmp/platform-gateway.key}"
 APPROVED="${CONSOLE_RESTART_APPROVED:-no}"

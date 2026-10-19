@@ -44,7 +44,7 @@ bash /workspace/ai-platform-release/START.sh
 
 What `START.sh` does, in order:
 
-- Gets the source. It clones `feature/qwen3.5-27b-integration` from GitHub into `/tmp/AI-PLAYBOOK`. If a checkout is already there, it only fast-forwards it, and it leaves alone any checkout with local edits. If GitHub is unreachable, it uses the newest checksum-verified snapshot from `/workspace/ai-platform-backups/source-snapshots/`.
+- Gets the source. It clones GitHub `main` into `/tmp/AI-PLAYBOOK` unless `PLATFORM_BRANCH` is set. If a checkout is already there, it only fast-forwards it, and it leaves alone any checkout with local edits. If GitHub is unreachable, it uses the newest checksum-verified snapshot from `/workspace/ai-platform-backups/source-snapshots/`.
 - Repairs ownership. Older launchers left the checkout owned by `nobody`, which made git refuse it with "dubious ownership". `START.sh` resets ownership to the current user automatically.
 - Runs the preflight checks (listed below). If any fails, it stops before starting anything.
 - Restores the Python runtime from the volume archive into `/tmp/vllm-qwen-env`. It checks the archive first with sha256 and `zstd -t`, extracts into a staging folder, and never writes onto `/workspace`.
