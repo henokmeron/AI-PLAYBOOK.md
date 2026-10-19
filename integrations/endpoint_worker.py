@@ -16,7 +16,7 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from integrations.endpoint import assert_safe_state_path, collect_local_diagnostics
+from integrations.endpoint import _CHECK_PROCEDURES, assert_safe_state_path, collect_local_diagnostics
 from integrations.errors import InvalidRequest
 
 _DIAGNOSTIC_KEYS = (
@@ -114,24 +114,89 @@ def enrol(origin: str, code: str, display_name: str, secret_path: Path) -> str:
     return device_id
 
 
-def submit_report(origin: str, secret_path: Path) -> dict:
+def _clip(value: object, limit: int = 80) -> str:
+    text = " ".join(str(value).split())
+    return text[:limit]
+
+
+def summarise_live_check(procedure_id: str, raw: dict, collected_at: int) -> dict:
+    """Turn one collector result into the fields the console will store."""
+    source = raw.get("evidence_source")
+    ok = bool(raw.get("ok")) and source == "live_windows"
+    if not ok:
+        source = "unavailable"
+    parts = [procedure_id]
+    for key in ("spooler", "present_count", "gateway_ok", "dns_localhost_ok", "detail", "status"):
+        if key in raw and raw[key] not in (None, ""):
+            parts.append(f"{key}={_clip(raw[key], 40)}")
+    for key in ("disks", "services", "events", "problems", "printers", "addresses"):
+        rows = raw.get(key)
+        if isinstance(rows, list):
+            parts.append(f"{key}={len(rows)}")
+    return {
+        "procedure_id": procedure_id,
+        "evidence_source": source,
+        "ok": ok,
+        "collected_at_unix": collected_at,
+        "summary": _clip("; ".join(parts), 240),
+    }
+
+
+def collect_registered_checks(collect=None, clock=None) -> list[dict]:
+    """Read-only registered procedures. A missing collector is reported as unavailable."""
+    from time import time
+
+    now = int((clock or time)())
+    if collect is None and os.name == "nt":
+        from windows_repair.providers import LiveWindowsProvider
+
+        collector = LiveWindowsProvider().collect
+    else:
+        collector = collect
+    checks = []
+    for procedure_id in _CHECK_PROCEDURES:
+        if collector is None:
+            raw = {"ok": False, "evidence_source": "unavailable", "detail": "no live collector on this operating system"}
+        else:
+            try:
+                raw = collector(procedure_id)
+            except Exception as exc:  # noqa: BLE001 — one failed check must not hide the others
+                raw = {"ok": False, "evidence_source": "unavailable", "detail": type(exc).__name__}
+        if not isinstance(raw, dict):
+            raw = {"ok": False, "evidence_source": "unavailable", "detail": "unreadable collector result"}
+        checks.append(summarise_live_check(procedure_id, raw, now))
+    return checks
+
+
+def submit_report(origin: str, secret_path: Path, collect=None) -> dict:
     target = console_origin(origin)
     secret = read_secret_file(secret_path)
     diagnostic = collect_local_diagnostics()
     body = {key: diagnostic[key] for key in _DIAGNOSTIC_KEYS}
+    body["checks"] = collect_registered_checks(collect, clock=lambda: diagnostic["collected_at_unix"])
     return _post(target, "/api/devices/report", body, {"Authorization": f"Bearer {secret}"})
+
+
+def remove_secret(secret_path: Path) -> None:
+    """Delete the local device secret. This does not revoke the server record."""
+    safe = assert_safe_state_path(secret_path)
+    if safe.is_file():
+        safe.unlink()
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Send a read-only computer check-in to the local console.")
-    parser.add_argument("action", choices=("enrol", "report"))
-    parser.add_argument("--console", required=True)
+    parser.add_argument("action", choices=("enrol", "report", "remove"))
+    parser.add_argument("--console", default="")
     parser.add_argument("--token-file", required=True)
     parser.add_argument("--code", default="")
     parser.add_argument("--name", default="Office PC")
     args = parser.parse_args(argv)
     try:
         if args.action == "enrol":
+            if not args.console:
+                print("ERROR: --console is required", file=sys.stderr)
+                return 2
             if not args.code:
                 print("ERROR: an enrolment code is required", file=sys.stderr)
                 return 2
@@ -139,6 +204,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"enrolled device {device_id}")
             print("the device secret was saved and is not printed")
             return 0
+        if args.action == "remove":
+            remove_secret(Path(args.token_file))
+            print("local device secret deleted; revoke the device in the console if it should stop checking in")
+            return 0
+        if not args.console:
+            print("ERROR: --console is required", file=sys.stderr)
+            return 2
         result = submit_report(args.console, Path(args.token_file))
         print(f"stored diagnostic for {result.get('device_id', 'unknown device')}")
         return 0

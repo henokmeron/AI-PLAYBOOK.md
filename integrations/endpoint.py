@@ -36,6 +36,19 @@ _MIN_REPORT_GAP = 15.0
 _ENROL_WINDOW_SECONDS = 15 * 60
 _ENROL_MAX_FAILURES = 20
 _FAMILIES = ("windows", "linux", "darwin", "other")
+_CHECK_PROCEDURES = (
+    "win.storage.space",
+    "win.services.inspect",
+    "win.update.inspect",
+    "hw.devices.inventory",
+    "print.diagnose",
+    "net.diagnose",
+    "win.events.recurring",
+    "win.startup.inspect",
+)
+_CHECK_SOURCES = ("live_windows", "unavailable")
+_MAX_CHECKS = len(_CHECK_PROCEDURES)
+_STALE_SECONDS = 86400
 
 _NONE = {
     "type": "object",
@@ -151,7 +164,8 @@ def normalise_report(payload: dict[str, Any]) -> dict[str, Any]:
         "collected_at_unix": payload.get("collected_at_unix"),
     }
     allowed = set(_REPORT["properties"])
-    extra = set(payload) - allowed - {"status"}
+    checks = payload.get("checks", None)
+    extra = set(payload) - allowed - {"status", "checks"}
     if extra:
         raise InvalidRequest("diagnostic contains a field this connector does not accept")
     try:
@@ -159,6 +173,50 @@ def normalise_report(payload: dict[str, Any]) -> dict[str, Any]:
     except ValidationError as exc:
         raise InvalidRequest("diagnostic does not match the allowed report") from exc
     _check_report_values(cleaned)
+    if checks is not None:
+        cleaned["checks"] = normalise_checks(checks, int(cleaned["collected_at_unix"]))
+    return cleaned
+
+
+def normalise_checks(checks: Any, collected_at: int) -> list[dict[str, Any]]:
+    """Keep a bounded read-only diagnostic list. Fixtures and commands are rejected."""
+    if not isinstance(checks, list) or len(checks) > _MAX_CHECKS:
+        raise InvalidRequest("diagnostic checks are not in the allowed list")
+    seen: set[str] = set()
+    cleaned: list[dict[str, Any]] = []
+    for item in checks:
+        if not isinstance(item, dict):
+            raise InvalidRequest("diagnostic checks are not in the allowed list")
+        unknown = set(item) - {"procedure_id", "evidence_source", "ok", "collected_at_unix", "summary"}
+        if unknown:
+            raise InvalidRequest("diagnostic checks contain a field this connector does not accept")
+        procedure_id = item.get("procedure_id")
+        source = item.get("evidence_source")
+        if procedure_id not in _CHECK_PROCEDURES or procedure_id in seen:
+            raise InvalidRequest("diagnostic check is not a registered read-only procedure")
+        if source not in _CHECK_SOURCES:
+            raise InvalidRequest("diagnostic check evidence source is not accepted")
+        if not isinstance(item.get("ok"), bool):
+            raise InvalidRequest("diagnostic check success flag is missing")
+        if source != "live_windows" and item["ok"]:
+            raise InvalidRequest("an unavailable check cannot be reported as successful")
+        try:
+            stamp = int(item.get("collected_at_unix"))
+        except (TypeError, ValueError) as exc:
+            raise InvalidRequest("diagnostic check time is not valid") from exc
+        if abs(stamp - collected_at) > _STALE_SECONDS:
+            raise InvalidRequest("diagnostic check time does not match the report")
+        summary = _plain(str(item.get("summary", "")), 240)
+        if not summary:
+            raise InvalidRequest("diagnostic check summary is missing")
+        seen.add(procedure_id)
+        cleaned.append({
+            "procedure_id": procedure_id,
+            "evidence_source": source,
+            "ok": item["ok"],
+            "collected_at_unix": stamp,
+            "summary": summary,
+        })
     return cleaned
 
 
@@ -384,7 +442,36 @@ class DeviceRegistry:
             }
         newest = max(rows, key=lambda item: item.last_report_at)
         assert newest.report is not None
-        return dict(newest.report)
+        report = dict(newest.report)
+        report["repair_authority"] = False
+        report["collection_scope"] = "computer_running_the_worker"
+        return report
+
+    def fleet_snapshot(self) -> dict[str, Any]:
+        """Counts for the Director. Does not include secrets or report bodies."""
+        with self._lock:
+            enrolled = [item for item in self._devices.values() if item.status == "enrolled"]
+            revoked = sum(1 for item in self._devices.values() if item.status == "revoked")
+            newest = max((item.last_report_at for item in enrolled), default=0.0)
+            latest = max(enrolled, key=lambda item: item.last_report_at) if newest else None
+            checks = list((latest.report or {}).get("checks") or []) if latest and latest.report else []
+            has_report = bool(latest and latest.report)
+        failed = sum(1 for item in checks if not item.get("ok"))
+        if checks:
+            coverage = "registered"
+        elif has_report:
+            coverage = "basic"
+        else:
+            coverage = "none"
+        return {
+            "enrolled": len(enrolled),
+            "revoked": revoked,
+            "last_report_at": newest,
+            "repair_authority": False,
+            "check_count": len(checks),
+            "failed_checks": failed,
+            "coverage": coverage,
+        }
 
     def enrolled_count(self, tenant_id: str) -> int:
         with self._lock:
@@ -481,12 +568,26 @@ class DeviceRegistry:
 
 
 def _public_device(item: _Device) -> dict[str, Any]:
+    checks = list((item.report or {}).get("checks") or []) if item.report else []
+    if item.report is None:
+        coverage = "none"
+    elif checks:
+        coverage = "registered"
+    else:
+        coverage = "basic"
     return {
         "device_id": item.device_id,
         "display_name": item.display_name,
         "status": item.status,
         "remote_control": False,
-        "report": None if item.report is None else dict(item.report),
+        "repair_authority": False,
+        "last_report_at": item.last_report_at,
+        "diagnostic_coverage": coverage,
+        "report": None if item.report is None else {
+            **dict(item.report),
+            "repair_authority": False,
+            "collection_scope": "computer_running_the_worker",
+        },
     }
 
 

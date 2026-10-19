@@ -99,28 +99,43 @@ def _endpoint_fleet(verified_at: str | None) -> dict[str, Any]:
         from integrations.endpoint import DeviceRegistry
 
         registry = DeviceRegistry(Path(raw))
-        count = 0
-        newest = 0.0
-        for device in registry._devices.values():  # noqa: SLF001 — read-only status, no mutation
-            if device.status != "enrolled":
-                continue
-            count += 1
-            newest = max(newest, float(device.last_report_at or 0))
+        snapshot = registry.fleet_snapshot()
+        count = int(snapshot["enrolled"])
+        newest = float(snapshot["last_report_at"] or 0)
         if count == 0 or newest <= 0:
             return _component(
                 "endpoint_fleet",
                 "UNKNOWN",
-                evidence=[f"enrolled={count}", "no last-seen timestamp"],
-                detail="The check-in file has no recent report.",
+                evidence=[f"enrolled={count}", "no last-seen timestamp", "repair_authority=false"],
+                detail="The check-in file has no recent report. Enrolment does not grant repair authority.",
                 checked_at=verified_at,
             )
         age = time.time() - newest
-        state = "DEGRADED" if age > 86400 else "HEALTHY"
+        coverage = str(snapshot["coverage"])
+        if age > 86400:
+            state = "DEGRADED"
+            detail = "The newest check-in is older than one day."
+        elif coverage != "registered":
+            state = "UNKNOWN"
+            detail = "Only the short disk check-in is present. Registered diagnostics were not collected."
+        elif int(snapshot["failed_checks"]):
+            state = "DEGRADED"
+            detail = "One or more registered diagnostics failed."
+        else:
+            state = "HEALTHY"
+            detail = "Registered read-only diagnostics are fresh. This is not remote control or a repair."
         return _component(
             "endpoint_fleet",
             state,
-            evidence=[f"enrolled={count}", f"last_report_unix={int(newest)}", f"age_seconds={int(age)}"],
-            detail="Last-seen comes from the check-in file. This is not remote control.",
+            evidence=[
+                f"enrolled={count}",
+                f"last_report_unix={int(newest)}",
+                f"age_seconds={int(age)}",
+                f"coverage={coverage}",
+                f"failed_checks={snapshot['failed_checks']}",
+                "repair_authority=false",
+            ],
+            detail=detail,
             checked_at=verified_at,
         )
     except Exception as exc:  # noqa: BLE001

@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -15,7 +17,7 @@ from integrations.endpoint import (
     normalise_report,
     permissions_are_private,
 )
-from integrations.endpoint_worker import console_origin
+from integrations.endpoint_worker import collect_registered_checks, console_origin, summarise_live_check
 from integrations.errors import AuthenticationError, InvalidRequest, RateLimited
 from integrations.tenancy import TenantContext
 
@@ -166,6 +168,83 @@ class EndpointTests(unittest.TestCase):
         with self.assertRaises(InvalidRequest):
             console_origin("http://user:secret@127.0.0.1:8080")
         self.assertEqual(console_origin("http://127.0.0.1:8080"), "http://127.0.0.1:8080")
+
+    def _check(self, procedure_id: str = "win.storage.space", **overrides):
+        payload = {
+            "procedure_id": procedure_id,
+            "evidence_source": "live_windows",
+            "ok": True,
+            "collected_at_unix": 200,
+            "summary": "disks=1",
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_registered_checks_are_stored_and_fixtures_are_rejected(self) -> None:
+        registry = DeviceRegistry(clock=lambda: 1_000.0)
+        created = registry.create_enrolment("local-console")
+        secret = "d" * 32
+        device_id = registry.enrol(created["enrolment_code"], "Office PC", secret)
+        stored = registry.submit(secret, _report(checks=[self._check()]))
+        self.assertFalse(stored["remote_control"])
+        visible = registry.public_devices("local-console")[0]
+        self.assertFalse(visible["repair_authority"])
+        self.assertEqual(visible["diagnostic_coverage"], "registered")
+        self.assertEqual(visible["report"]["checks"][0]["evidence_source"], "live_windows")
+        self.assertEqual(visible["report"]["collection_scope"], "computer_running_the_worker")
+        with self.assertRaises(InvalidRequest):
+            normalise_report(_report(device_id="a" * 32, display_name="Office PC", checks=[self._check(evidence_source="fixture")]))
+        with self.assertRaises(InvalidRequest):
+            normalise_report(_report(device_id="a" * 32, display_name="Office PC", checks=[self._check(command="whoami")]))
+        registry.revoke("local-console", device_id)
+        again = registry.create_enrolment("local-console")
+        new_id = registry.enrol(again["enrolment_code"], "Office PC", "e" * 32)
+        self.assertNotEqual(new_id, device_id)
+        self.assertFalse(registry.fleet_snapshot()["repair_authority"])
+
+    def test_worker_does_not_label_a_fixture_as_live(self) -> None:
+        summarised = summarise_live_check("print.diagnose", {
+            "evidence_source": "fixture",
+            "ok": True,
+            "mocked": True,
+            "spooler": "Stopped",
+        }, 200)
+        self.assertEqual(summarised["evidence_source"], "unavailable")
+        self.assertFalse(summarised["ok"])
+        checks = collect_registered_checks(
+            collect=lambda procedure_id: {"evidence_source": "live_windows", "ok": True, "detail": procedure_id},
+            clock=lambda: 200,
+        )
+        self.assertEqual(len(checks), 8)
+        self.assertTrue(all(item["evidence_source"] == "live_windows" and item["ok"] for item in checks))
+
+    def test_director_does_not_call_a_basic_or_stale_check_in_healthy(self) -> None:
+        from ops_centre.director import _endpoint_fleet
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "devices.json"
+            now = [time.time()]
+            registry = DeviceRegistry(path, clock=lambda: now[0])
+            created = registry.create_enrolment("local-console")
+            secret = "f" * 32
+            registry.enrol(created["enrolment_code"], "Office PC", secret)
+            registry.submit(secret, _report())
+            previous = os.environ.get("ENDPOINT_STATE_FILE")
+            os.environ["ENDPOINT_STATE_FILE"] = str(path)
+            try:
+                basic = _endpoint_fleet("2026-10-19T00:00:00Z")
+                self.assertEqual(basic["state"], "UNKNOWN")
+                now[0] += 20
+                registry.submit(secret, _report(checks=[self._check(
+                    ok=False, evidence_source="unavailable", summary="collector failed", collected_at_unix=200,
+                )]))
+                failed = _endpoint_fleet("2026-10-19T00:00:00Z")
+                self.assertEqual(failed["state"], "DEGRADED")
+            finally:
+                if previous is None:
+                    os.environ.pop("ENDPOINT_STATE_FILE", None)
+                else:
+                    os.environ["ENDPOINT_STATE_FILE"] = previous
 
 
 if __name__ == "__main__":
