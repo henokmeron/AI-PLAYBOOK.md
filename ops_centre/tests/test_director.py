@@ -1,6 +1,7 @@
 """Director report tests. No GPU, no network, no Pod."""
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
@@ -35,7 +36,7 @@ class DirectorReportTests(unittest.TestCase):
                 {"name": "disk", "state": "healthy", "verified_at": "2026-10-18T22:00:00Z", "detail": "free"},
             ])
             with patch.object(centre.health, "snapshot", return_value=snapshot):
-                with patch.dict(os.environ, {"MICROSOFT_CLIENT_ID": "", "RAG_DOCS_DIR": ""}, clear=False):
+                with patch.dict(os.environ, {"OPERATOR_AUTH_DIR": tmp}, clear=False):
                     os.environ.pop("MICROSOFT_CLIENT_ID", None)
                     os.environ.pop("RAG_DOCS_DIR", None)
                     report = build_report(centre)
@@ -59,9 +60,12 @@ class DirectorReportTests(unittest.TestCase):
                 {"name": "disk", "state": "healthy", "verified_at": "2026-10-18T22:00:00Z", "detail": "ok"},
             ])
             with patch.object(centre.health, "snapshot", return_value=snapshot):
-                os.environ.pop("MICROSOFT_CLIENT_ID", None)
-                os.environ.pop("RAG_DOCS_DIR", None)
-                report = build_report(centre)
+                with patch.dict(os.environ, {"OPERATOR_AUTH_DIR": tmp}, clear=False):
+                    os.environ.pop("MICROSOFT_CLIENT_ID", None)
+                    os.environ.pop("RAG_DOCS_DIR", None)
+                    report = build_report(centre)
+            auth = next(c for c in report["components"] if c["name"] == "operator_auth")
+            self.assertEqual(auth["state"], "NOT CONFIGURED")
             graph = next(c for c in report["components"] if c["name"] == "microsoft_graph")
             rag = next(c for c in report["components"] if c["name"] == "rag")
             agents = next(c for c in report["components"] if c["name"] == "agents")
@@ -78,7 +82,8 @@ class DirectorReportTests(unittest.TestCase):
             ])
             snapshot["verified_at"] = None
             with patch.object(centre.health, "snapshot", return_value=snapshot):
-                report = build_report(centre)
+                with patch.dict(os.environ, {"OPERATOR_AUTH_DIR": tmp}, clear=False):
+                    report = build_report(centre)
             model = next(c for c in report["components"] if c["name"] == "model")
             self.assertEqual(model["state"], "UNKNOWN")
 
@@ -97,12 +102,56 @@ class DirectorReportTests(unittest.TestCase):
                 {"name": "qwen", "state": "unknown", "verified_at": "2026-10-18T22:00:00Z", "detail": "not checked"},
             ])
             with patch.object(centre.health, "snapshot", return_value=snapshot):
-                build_report(centre)
+                with patch.dict(os.environ, {"OPERATOR_AUTH_DIR": tmp}, clear=False):
+                    build_report(centre)
             rows = centre.events.list(limit=50)
             self.assertGreaterEqual(len(rows), before)
             self.assertTrue(any(e.event_type == "director.report" for e in rows))
             self.assertTrue(any(e.event_type == "unit.seed" for e in rows))
             self.assertTrue(centre.events.verify_chain()["ok"])
+
+    def test_operator_auth_hides_hashes_and_needs_an_admin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            centre = self._centre(tmp)
+            auth_dir = Path(tmp) / "auth"
+            auth_dir.mkdir()
+            secret_hash = "scrypt$16384$8$1$c2FsdA$ZGlnZXN0"
+            (auth_dir / "operators.json").write_text(
+                json.dumps({"operators": [{
+                    "operator_id": "abc",
+                    "username": "ada",
+                    "password_hash": secret_hash,
+                    "role": "viewer",
+                    "disabled": False,
+                }]}),
+                encoding="utf-8",
+            )
+            snapshot = _health([
+                {"name": "qwen", "state": "healthy", "verified_at": "2026-10-18T22:00:00Z", "http_status": 200, "detail": "ok"},
+            ])
+            with patch.object(centre.health, "snapshot", return_value=snapshot):
+                with patch.dict(os.environ, {"OPERATOR_AUTH_DIR": str(auth_dir)}, clear=False):
+                    report = build_report(centre)
+            auth = next(c for c in report["components"] if c["name"] == "operator_auth")
+            self.assertEqual(auth["state"], "DEGRADED")
+            self.assertNotIn(secret_hash, json.dumps(report))
+            (auth_dir / "operators.json").write_text(
+                json.dumps({"operators": [{
+                    "operator_id": "abc",
+                    "username": "ada",
+                    "password_hash": secret_hash,
+                    "role": "admin",
+                    "disabled": False,
+                }]}),
+                encoding="utf-8",
+            )
+            with patch.object(centre.health, "snapshot", return_value=snapshot):
+                with patch.dict(os.environ, {"OPERATOR_AUTH_DIR": str(auth_dir)}, clear=False):
+                    report = build_report(centre)
+            auth = next(c for c in report["components"] if c["name"] == "operator_auth")
+            self.assertEqual(auth["state"], "HEALTHY")
+            self.assertNotIn(secret_hash, json.dumps(report))
+            self.assertNotIn("ada", json.dumps(auth))
 
 
 if __name__ == "__main__":

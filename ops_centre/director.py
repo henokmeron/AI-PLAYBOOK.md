@@ -168,6 +168,71 @@ def _repair_jobs(verified_at: str | None) -> dict[str, Any]:
         )
 
 
+def _operator_auth(verified_at: str | None) -> dict[str, Any]:
+    """Report whether named operators are provisioned. Never copy password hashes."""
+    try:
+        from web.auth.service import default_auth_dir
+    except Exception as exc:  # noqa: BLE001
+        return _component(
+            "operator_auth",
+            "UNKNOWN",
+            evidence=[type(exc).__name__],
+            detail="Operator-auth status could not be loaded.",
+            checked_at=verified_at,
+        )
+    path = default_auth_dir() / "operators.json"
+    if not path.is_file():
+        return _component(
+            "operator_auth",
+            "NOT CONFIGURED",
+            evidence=["operators.json is missing"],
+            detail="No operator accounts are provisioned. Privileged console APIs fail closed.",
+            checked_at=verified_at,
+        )
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeError):
+        return _component(
+            "operator_auth",
+            "DEGRADED",
+            evidence=["operators.json could not be read"],
+            detail="The operator file is present but unreadable. Do not treat login as healthy.",
+            checked_at=verified_at,
+        )
+    rows = raw.get("operators") if isinstance(raw, dict) else None
+    if not isinstance(rows, list):
+        return _component(
+            "operator_auth",
+            "DEGRADED",
+            evidence=["operators.json has no operator list"],
+            detail="The operator file is not usable. Privileged console APIs fail closed.",
+            checked_at=verified_at,
+        )
+    active = 0
+    admins = 0
+    for item in rows:
+        if not isinstance(item, dict) or item.get("disabled"):
+            continue
+        active += 1
+        if item.get("role") == "admin":
+            admins += 1
+    if admins < 1:
+        return _component(
+            "operator_auth",
+            "DEGRADED",
+            evidence=[f"active_operators={active}", "active_admins=0"],
+            detail="An active administrator is required. Password hashes are not included in this report.",
+            checked_at=verified_at,
+        )
+    return _component(
+        "operator_auth",
+        "HEALTHY",
+        evidence=[f"active_operators={active}", f"active_admins={admins}"],
+        detail="At least one active administrator is provisioned. This is not a deployment check.",
+        checked_at=verified_at,
+    )
+
+
 def build_report(centre: OpsCentre, *, desk: Any | None = None) -> dict[str, Any]:
     """Return a Director status report. Side effect: one append-only audit event."""
     if desk is not None:
@@ -326,6 +391,7 @@ def build_report(centre: OpsCentre, *, desk: Any | None = None) -> dict[str, Any
         ))
     components.append(_endpoint_fleet(verified_at))
     components.append(_repair_jobs(verified_at))
+    components.append(_operator_auth(verified_at))
 
     try:
         from windows_repair.remote_support import check_remote

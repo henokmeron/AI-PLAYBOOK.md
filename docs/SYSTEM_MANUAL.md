@@ -373,6 +373,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 | 2026-10-19 | Live read-only Windows collectors, printer approval workflow, and a file-backed test device. Spooler restart is not run on the development PC. MeshCentral 1.2.6 is Apache-2.0 and is not installed. |
 | 2026-10-19 | Console practice path for spooler approval. It uses a fixture and does not restart the service. See `docs/IMPLEMENTATION_STATUS.md`. |
 | 2026-10-19 | Named operator login on the loopback console. Roles are admin, operator, and viewer. See `docs/security/operator-auth.md`. The first administrator is created with `scripts/provision_console_operator.py`. There is no default password. Not deployed. |
+| 2026-10-19 | Director report now includes `operator_auth`. A missing operator file is NOT CONFIGURED. The report does not include password hashes. Release scripts default to GitHub `main`. Not deployed. |
 | 2026-10-16 | AI Security & Operations Centre v1 in source (`ops_centre/`, console **Operations** page). Gap doc: `docs/ops_centre/GAP_AND_ARCHITECTURE.md`. No Pod started for this work. |
 | 2026-10-15 | First version of this manual after live IT Helpdesk verification; Pod stopped; tip `3447b79`. |
 

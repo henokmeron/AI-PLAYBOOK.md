@@ -31,11 +31,11 @@ python -m ops_centre.director
 
 Expected: one JSON document. On a laptop where Qwen, the gateway, and the console are not running, `model`, `gateway`, and `console` should be **DEGRADED** or **UNKNOWN**. That result is correct. Do not treat it as a live Pod check.
 
-Console route, only after the console process is running and its gateway key is configured:
+Console route, only after the console process is running and an operator is signed in:
 
 `GET /api/ops/director`
 
-The same server-side key gate as the other `/api/ops/*` routes applies. The browser still does not receive that key.
+The caller needs the `ops:view` permission. The gateway key stays on the server. The report includes `operator_auth`: **NOT CONFIGURED** when `operators.json` is missing, **DEGRADED** when no active administrator is present, and **HEALTHY** only when at least one active administrator is provisioned. The report does not include password hashes.
 
 ## Scheduling
 
