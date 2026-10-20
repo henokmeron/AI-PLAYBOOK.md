@@ -296,6 +296,8 @@ class OAuthTests(unittest.TestCase):
         oauth.complete("code-1", state)
         reloaded = MicrosoftOAuth(client_id=CLIENT, transport=transport, token_file=path, clock=lambda: 1_000.0)
         self.assertEqual(reloaded.bundle.account, "owner@example.com")
+        from integrations.state_guard import assert_private
+        assert_private(path)
         self.assertNotIn(TOKEN, json.dumps(reloaded.public_status()))
         if os.name == "posix":
             self.assertEqual(path.stat().st_mode & 0o077, 0)

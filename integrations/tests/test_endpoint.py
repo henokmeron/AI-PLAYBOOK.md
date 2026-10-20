@@ -121,6 +121,8 @@ class EndpointTests(unittest.TestCase):
             report = reloaded.public_report("local-console", device_id)
             self.assertEqual(report["status"], "ok")
             self.assertEqual(report["os_family"], "linux")
+            from integrations.state_guard import assert_private
+            assert_private(path)
 
     def test_private_mode_bits_and_unsafe_paths(self) -> None:
         self.assertTrue(permissions_are_private(0o600))

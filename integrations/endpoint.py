@@ -26,6 +26,7 @@ from agents.schema import ValidationError, validate
 
 from .catalog import Catalog, ConnectorSpec, Effect, OperationSpec
 from .errors import AuthenticationError, InvalidRequest, RateLimited
+from .state_guard import StatePermissionError, assert_private, restrict_private
 
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}\Z")
@@ -536,15 +537,23 @@ class DeviceRegistry:
         if self._enforce:
             os.chmod(temporary, 0o600)
         os.replace(temporary, self.path)
-        if self._enforce:
-            os.chmod(self.path, 0o600)
+        if os.name == "nt" or self._enforce:
+            try:
+                restrict_private(self.path)
+            except StatePermissionError as exc:
+                raise AuthenticationError("endpoint state file permissions could not be enforced") from exc
 
     def _load(self) -> None:
         assert self.path is not None
         info = self.path.lstat()
-        if not stat.S_ISREG(info.st_mode):
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
             raise AuthenticationError("endpoint state file is not a regular file")
-        if self._enforce and not permissions_are_private(info.st_mode):
+        if os.name == "nt":
+            try:
+                assert_private(self.path)
+            except StatePermissionError as exc:
+                raise AuthenticationError("endpoint state file permissions are too open") from exc
+        elif self._enforce and not permissions_are_private(info.st_mode):
             raise AuthenticationError("endpoint state file permissions are too open")
         raw = json.loads(self.path.read_text(encoding="utf-8"))
         if not isinstance(raw, dict) or raw.get("version") != 1:

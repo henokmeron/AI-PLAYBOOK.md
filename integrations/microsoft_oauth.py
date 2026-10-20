@@ -16,7 +16,6 @@ import json
 import os
 import re
 import secrets
-import stat
 import threading
 import time
 import urllib.error
@@ -35,6 +34,7 @@ from .errors import (
     RateLimited,
     TransientError,
 )
+from .state_guard import StatePermissionError, assert_private, restrict_private
 
 SCOPES = ("openid", "profile", "email", "offline_access", "User.Read", "Mail.Read")
 GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
@@ -419,8 +419,12 @@ class MicrosoftOAuth:
     def _save(self) -> None:
         if self.token_file is None or self.bundle is None:
             return
+        if self.token_file.is_symlink():
+            raise AuthenticationError("Microsoft token file must be a regular file")
         self.token_file.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.token_file.with_name(self.token_file.name + ".tmp")
+        if temporary.is_symlink():
+            raise AuthenticationError("Microsoft token file must be a regular file")
         payload = json.dumps({
             "access_token": self.bundle.access_token,
             "refresh_token": self.bundle.refresh_token,
@@ -436,16 +440,18 @@ class MicrosoftOAuth:
         if os.name == "posix":
             os.chmod(temporary, 0o600)
         os.replace(temporary, self.token_file)
-        if os.name == "posix":
-            os.chmod(self.token_file, 0o600)
+        try:
+            restrict_private(self.token_file)
+        except StatePermissionError as exc:
+            raise AuthenticationError("Microsoft token file permissions could not be enforced") from exc
 
     def _load(self) -> None:
-        if self.token_file is None or not self.token_file.is_file():
+        if self.token_file is None or not self.token_file.is_file() or self.token_file.is_symlink():
             return
-        if os.name == "posix":
-            mode = stat.S_IMODE(self.token_file.stat().st_mode)
-            if mode & 0o077:
-                return
+        try:
+            assert_private(self.token_file)
+        except StatePermissionError:
+            return
         try:
             data = json.loads(self.token_file.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
