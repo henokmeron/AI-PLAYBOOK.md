@@ -164,6 +164,12 @@ E2E helper (uses key file; does not print it):
 
 ## Session log (newest first)
 
+### 2026-10-20 — mock repair evidence is not healthy
+
+- Director `repair_jobs` is HEALTHY only when an accepted job stores `evidence_source=live_windows` and the last-seen is under one day old. A mock, fixture, or file that lost its job state is UNKNOWN. A stale or failed check-in stays DEGRADED.
+- An older state file that recorded a used nonce but no `job_states` still counts as accepted, and it is not HEALTHY until live evidence is present.
+- No repair was run. The Pod was not contacted. This entry is not a deployment.
+
 ### 2026-10-20 — repair job lifecycle and canonical checkout
 
 - Canonical checkout is `C:\Users\kokob\src\AI-PLAYBOOK.md` on `main`. Cursor global storage had no second git checkout of this repo. `C:\Users\henok\src\AI-PLAYBOOK.md` is not on this PC.

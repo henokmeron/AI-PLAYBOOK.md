@@ -176,9 +176,12 @@ def _repair_jobs(verified_at: str | None) -> dict[str, Any]:
         elif summary["failed_jobs"]:
             state = "DEGRADED"
             detail = "A device job failed. This file is not a healthy repair fleet."
+        elif int(summary.get("live_accepted_jobs") or 0) < 1:
+            state = "UNKNOWN"
+            detail = "No accepted job has live_windows evidence. A mock, fixture, or unlabelled result is not healthy."
         else:
             state = "HEALTHY"
-            detail = "A read-only device job was accepted recently. This is not a repair and not a deployment."
+            detail = "A read-only live_windows job was accepted recently. This is not a repair and not a deployment."
         return _component(
             "repair_jobs",
             state,
@@ -186,8 +189,8 @@ def _repair_jobs(verified_at: str | None) -> dict[str, Any]:
                 f"devices={summary['device_count']}",
                 f"last_seen={summary['last_seen']}",
                 f"age_seconds={age}",
-                f"open_jobs={summary['open_jobs']}",
                 f"accepted_jobs={summary['accepted_jobs']}",
+                f"live_accepted_jobs={summary.get('live_accepted_jobs')}",
                 f"expired_jobs={summary['expired_jobs']}",
                 f"failed_jobs={summary['failed_jobs']}",
                 "repair_authority=false",

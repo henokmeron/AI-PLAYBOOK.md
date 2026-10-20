@@ -283,6 +283,7 @@ Phase 7 — Advanced model customisation
 ### 2026-10-20 — Canonical checkout
 - The canonical local checkout is `C:\Users\kokob\src\AI-PLAYBOOK.md`.
 - GitHub `origin` is `https://github.com/henokmeron/AI-PLAYBOOK.md.git` on branch `main`.
+- Director `repair_jobs` is HEALTHY only for a fresh `live_windows` accept. A mock, fixture, missing, or stale check-in is not HEALTHY.
 
 ### 2026-10-07 — Project start
 - Defined the project as a commercial open-weight LLM platform.

@@ -153,8 +153,12 @@ class DeviceStore:
         last_seen = max(seen) if seen else None
         age = None if last_seen is None else self._clock() - float(last_seen)
         counts = {"issued": 0, "accepted": 0, "expired": 0}
+        live_accepted = 0
         for job in self.jobs:
-            counts[self._lifecycle_of(job)] += 1
+            lifecycle = self._lifecycle_of(job)
+            counts[lifecycle] += 1
+            if lifecycle == "accepted" and self._evidence_source(job) == "live_windows":
+                live_accepted += 1
         failed = [row for row in self.audit if row.get("outcome") in _FAILED_OUTCOMES]
         return {
             "device_count": len(self.devices),
@@ -168,6 +172,7 @@ class DeviceStore:
             "accepted_jobs": counts["accepted"],
             "expired_jobs": counts["expired"],
             "issued_jobs": len(self.jobs),
+            "live_accepted_jobs": live_accepted,
         }
 
     def _device(self, tenant_id: str, device_id: str) -> dict[str, Any]:
@@ -176,11 +181,17 @@ class DeviceStore:
             raise RepairDenied("device is not enrolled for this organisation")
         return device
 
+    def _evidence_source(self, job: dict[str, Any]) -> str:
+        job_id = str(job.get("job_id") or "")
+        recorded = self.job_states.get(job_id) or {}
+        return str(recorded.get("evidence_source") or "")
+
     def _lifecycle_of(self, job: dict[str, Any]) -> str:
         job_id = str(job.get("job_id") or "")
         recorded = self.job_states.get(job_id) or {}
         lifecycle = str(recorded.get("lifecycle") or "issued")
-        if lifecycle == "accepted":
+        nonce = str(job.get("nonce") or "")
+        if lifecycle == "accepted" or (nonce and nonce in self.nonces):
             return "accepted"
         if lifecycle == "expired":
             return "expired"

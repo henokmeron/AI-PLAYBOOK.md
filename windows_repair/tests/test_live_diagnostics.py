@@ -275,28 +275,64 @@ class DirectorGapTests(unittest.TestCase):
             self.assertEqual(failed["state"], "DEGRADED")
             self.assertNotEqual(failed["state"], "HEALTHY")
 
-    def test_a_fresh_read_only_accept_is_healthy_and_not_a_repair(self) -> None:
-        import time
+    def _director_repair(self, path: str) -> dict:
         from ops_centre.director import _repair_jobs
+
+        previous = os.environ.get("REPAIR_DEVICE_STATE")
+        os.environ["REPAIR_DEVICE_STATE"] = path
+        try:
+            return _repair_jobs("2026-10-20T00:00:00Z")
+        finally:
+            if previous is None:
+                os.environ.pop("REPAIR_DEVICE_STATE", None)
+            else:
+                os.environ["REPAIR_DEVICE_STATE"] = previous
+
+    def test_mock_accept_is_not_healthy_and_live_windows_is(self) -> None:
+        import time
 
         with tempfile.TemporaryDirectory() as tmp:
             clock = {"now": time.time()}
             store, secret, device = self._store(tmp, clock)
             envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
             provider = _Script([{"evidence_source": "mock", "mocked": True, "status": "collected", "ok": True, "problem_resolved": False}])
+            accepted = store.accept(secret, envelope, provider=provider)
+            self.assertEqual(accepted["evidence_source"], "mock")
+            self.assertFalse(accepted["problem_resolved"])
+            report = self._director_repair(str(Path(tmp) / "device.json"))
+            self.assertEqual(report["state"], "UNKNOWN")
+            self.assertNotEqual(report["state"], "HEALTHY")
+            self.assertIn("live_accepted_jobs=0", report["evidence"])
+
+            live = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            live_provider = _Script([{"evidence_source": "live_windows", "mocked": False, "status": "collected", "ok": True, "problem_resolved": False}])
+            store.accept(secret, live, provider=live_provider)
+            fresh = self._director_repair(str(Path(tmp) / "device.json"))
+            self.assertEqual(fresh["state"], "HEALTHY")
+            self.assertIn("repair_authority=false", fresh["evidence"])
+            self.assertIn("live_accepted_jobs=1", fresh["evidence"])
+            self.assertIn("not a repair", fresh["detail"])
+
+    def test_older_file_without_job_states_is_not_called_healthy(self) -> None:
+        import time
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "device.json"
+            clock = {"now": time.time()}
+            store, secret, device = self._store(tmp, clock)
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            provider = _Script([{"evidence_source": "live_windows", "mocked": False, "status": "collected", "ok": True, "problem_resolved": False}])
             store.accept(secret, envelope, provider=provider)
-            previous = os.environ.get("REPAIR_DEVICE_STATE")
-            os.environ["REPAIR_DEVICE_STATE"] = str(Path(tmp) / "device.json")
-            try:
-                report = _repair_jobs("2026-10-20T00:00:00Z")
-            finally:
-                if previous is None:
-                    os.environ.pop("REPAIR_DEVICE_STATE", None)
-                else:
-                    os.environ["REPAIR_DEVICE_STATE"] = previous
-            self.assertEqual(report["state"], "HEALTHY")
-            self.assertIn("repair_authority=false", report["evidence"])
-            self.assertIn("not a repair", report["detail"])
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            raw.pop("job_states", None)
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            reloaded = DeviceStore(path, clock=lambda: clock["now"])
+            summary = reloaded.summary()
+            self.assertEqual(summary["accepted_jobs"], 1)
+            self.assertEqual(summary["live_accepted_jobs"], 0)
+            report = self._director_repair(str(path))
+            self.assertEqual(report["state"], "UNKNOWN")
+            self.assertNotEqual(report["state"], "HEALTHY")
 
 
 if __name__ == "__main__":
