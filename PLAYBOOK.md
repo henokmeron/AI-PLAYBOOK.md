@@ -280,6 +280,12 @@ Phase 7 — Advanced model customisation
 - Treat the playbook as a reproducible blueprint for future AI-assisted automation.
 
 ## 13. Change log
+### 2026-10-20 — Device job review fixes
+- `DeviceStore.issue` accepts only read-only diagnostics. `print.spooler.restart` is rejected at issue time and is not executed. An approval id does not enable it.
+- A matching operator name is not authority. Issuance requires `grant_from_session` from a server-side session with role `admin` or `operator` and the same tenant. Viewers, missing sessions, and cross-tenant grants are refused. There is no console route that passes a request field into `issue`.
+- The signing key is stored in a sibling `*.key` file, not in the job JSON. Version 1 files are rewritten to version 2 on load without dropping jobs. Corrupt files fail closed and are not replaced. On POSIX the key and state files are mode `0600`. Windows keeps the current user's file ACL.
+- A nonce without a recorded terminal state is `rejected`, not `accepted`, and is not HEALTHY. Replay after restart does not collect.
+
 ### 2026-10-20 — Endpoint evidence and job rejection
 - Revoked or unauthorised device jobs are stored as `rejected` and are not collected. Expired jobs are not collected. A failed read-only collection is `failed`.
 - Director `repair_jobs` and `endpoint_fleet` are HEALTHY only when evidence is present, successful, and newer than one day. See `docs/IMPLEMENTATION_STATUS.md`.

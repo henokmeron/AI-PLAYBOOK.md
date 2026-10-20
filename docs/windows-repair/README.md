@@ -32,7 +32,7 @@ python -m windows_repair.test_device enrol --state C:\ProgramData\AI-PLAYBOOK\re
 
 Save the printed secret outside git. Enrolment does not grant repair authority and does not install a Windows service. Do not point the state file at this source tree.
 
-The printer workflow can propose `print.spooler.restart` only when the spooler is not running. A different person must approve the exact device and service. This development computer still returns `needs_administrator` and does not restart the service. A dedicated test machine may set `WINDOWS_REPAIR_ALLOW_SERVICE_RESTART=1` and run the process as administrator. Do not set that here.
+`DeviceStore` issues only the registered read-only diagnostics. It rejects `print.spooler.restart` at issue time, including when an approval id is supplied. The printer workflow can propose `print.spooler.restart` only when the spooler is not running. A different person must approve the exact device and service. This development computer still returns `needs_administrator` and does not restart the service. A dedicated test machine may set `WINDOWS_REPAIR_ALLOW_SERVICE_RESTART=1` and run the process as administrator. Do not set that here.
 
 Pending print jobs are not deleted.
 

@@ -12,7 +12,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from windows_repair.device_store import DeviceStore
+from types import SimpleNamespace
+
+from windows_repair.device_store import DeviceStore, grant_from_session
+
+
+def _ada(tenant_id: str = "acme"):
+    return grant_from_session(
+        SimpleNamespace(session_id="sess-ada", operator_id="op-ada", username="ada", role="operator"),
+        tenant_id,
+    )
 from windows_repair.engine import RepairDenied
 from windows_repair.printer_flow import PrinterWorkflow, classify_printer
 from windows_repair.providers import FixtureProvider, normalise_live
@@ -114,22 +123,22 @@ class DeviceAndRemoteTests(unittest.TestCase):
             device = store.enrol("acme", secret)
             other = store.enrol("otherco", "e" * 32)
             with self.assertRaises(RepairDenied):
-                store.issue(tenant_id="acme", device_id=other, procedure_id="win.storage.space", operator="ada")
-            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+                store.issue(tenant_id="acme", device_id=other, procedure_id="win.storage.space", grant=_ada())
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
             provider = _Script([{"evidence_source": "mock", "mocked": True, "status": "collected", "problem_resolved": False}])
             first = store.accept(secret, envelope, provider=provider)
             self.assertEqual(first["evidence_source"], "mock")
             self.assertFalse(first["problem_resolved"])
             with self.assertRaises(RepairDenied):
                 store.accept(secret, envelope, provider=provider)
-            expired = store.issue(tenant_id="acme", device_id=device, procedure_id="print.diagnose", operator="ada")
+            expired = store.issue(tenant_id="acme", device_id=device, procedure_id="print.diagnose", grant=_ada())
             clock["now"] += 30
             with self.assertRaises(RepairDenied):
                 store.accept(secret, expired, provider=provider)
             store.revoke("acme", device)
             clock["now"] += 1
             with self.assertRaises(RepairDenied):
-                store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+                store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
 
     def test_remote_session_is_not_established(self) -> None:
         report = status_from_env({"MESHCENTRAL_URL": ""})
@@ -183,7 +192,7 @@ class WindowsIntegrationTests(unittest.TestCase):
                 tenant_id="local-test",
                 device_id=device,
                 procedure_id="win.storage.space",
-                operator="dev-self-test",
+                grant=_ada("local-test"),
             )
             result = store.accept(secret, envelope)
             self.assertEqual(result["evidence_source"], "live_windows")
@@ -217,7 +226,7 @@ class DirectorGapTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             clock = {"now": 1_000.0}
             store, secret, device = self._store(tmp, clock)
-            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
             self.assertEqual(store.summary()["open_jobs"], 1)
             self.assertEqual(store.summary()["pending_jobs"], 1)
             provider = _Script([{"evidence_source": "mock", "mocked": True, "status": "collected", "ok": True, "problem_resolved": False}])
@@ -239,7 +248,7 @@ class DirectorGapTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             clock = {"now": 1_000.0}
             store, _secret, device = self._store(tmp, clock)
-            store.issue(tenant_id="acme", device_id=device, procedure_id="print.diagnose", operator="ada")
+            store.issue(tenant_id="acme", device_id=device, procedure_id="print.diagnose", grant=_ada())
             clock["now"] += 30
             summary = store.summary()
             self.assertEqual(summary["open_jobs"], 0)
@@ -264,7 +273,7 @@ class DirectorGapTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             stale_clock = {"now": 1_000.0}
             store, secret, device = self._store(tmp, stale_clock)
-            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
             provider = _Script([{"evidence_source": "mock", "mocked": True, "status": "collected", "ok": True, "problem_resolved": False}])
             store.accept(secret, envelope, provider=provider)
             stale_clock["now"] += 86401
@@ -287,7 +296,7 @@ class DirectorGapTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             clock = {"now": time.time()}
             store, secret, device = self._store(tmp, clock)
-            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
             provider = _Script([{"evidence_source": "mock", "mocked": True, "status": "failed", "ok": False, "problem_resolved": False}])
             store.accept(secret, envelope, provider=provider)
             previous = os.environ.get("REPAIR_DEVICE_STATE")
@@ -321,7 +330,7 @@ class DirectorGapTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             clock = {"now": time.time()}
             store, secret, device = self._store(tmp, clock)
-            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
             provider = _Script([{"evidence_source": "mock", "mocked": True, "status": "collected", "ok": True, "problem_resolved": False}])
             accepted = store.accept(secret, envelope, provider=provider)
             self.assertEqual(accepted["evidence_source"], "mock")
@@ -331,7 +340,7 @@ class DirectorGapTests(unittest.TestCase):
             self.assertNotEqual(report["state"], "HEALTHY")
             self.assertIn("live_accepted_jobs=0", report["evidence"])
 
-            live = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            live = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
             live_provider = _Script([{
                 "evidence_source": "live_windows",
                 "mocked": False,
@@ -354,7 +363,7 @@ class DirectorGapTests(unittest.TestCase):
             path = Path(tmp) / "device.json"
             clock = {"now": time.time()}
             store, secret, device = self._store(tmp, clock)
-            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
             provider = _Script([{"evidence_source": "live_windows", "mocked": False, "status": "collected", "ok": True, "problem_resolved": False}])
             store.accept(secret, envelope, provider=provider)
             raw = json.loads(path.read_text(encoding="utf-8"))
@@ -362,7 +371,8 @@ class DirectorGapTests(unittest.TestCase):
             path.write_text(json.dumps(raw), encoding="utf-8")
             reloaded = DeviceStore(path, clock=lambda: clock["now"])
             summary = reloaded.summary()
-            self.assertEqual(summary["accepted_jobs"], 1)
+            self.assertEqual(summary["accepted_jobs"], 0)
+            self.assertGreaterEqual(summary["rejected_jobs"], 1)
             self.assertEqual(summary["live_accepted_jobs"], 0)
             report = self._director_repair(str(path))
             self.assertEqual(report["state"], "UNKNOWN")
@@ -400,7 +410,7 @@ class JobRejectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             clock = {"now": 1_000.0}
             store, secret, device = self._store(tmp, clock)
-            revoked_job = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            revoked_job = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
             store.revoke("acme", device)
             with self.assertRaises(RepairDenied) as revoked:
                 store.accept(secret, revoked_job, provider=_MustNotRun())
@@ -408,7 +418,7 @@ class JobRejectionTests(unittest.TestCase):
             self.assertEqual(store.job_states[revoked_job["job_id"]]["lifecycle"], "rejected")
             self.assertEqual(store.job_states[revoked_job["job_id"]]["reason"], "revoked")
             other = store.enrol("acme", "e" * 32)
-            unauthorised = store.issue(tenant_id="acme", device_id=other, procedure_id="print.diagnose", operator="ada")
+            unauthorised = store.issue(tenant_id="acme", device_id=other, procedure_id="print.diagnose", grant=_ada())
             with self.assertRaises(RepairDenied) as denied:
                 store.accept("f" * 32, unauthorised, provider=_MustNotRun())
             self.assertIn("authentication", str(denied.exception))
@@ -434,7 +444,7 @@ class JobRejectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             clock = {"now": 2_000.0}
             store, secret, device = self._store(tmp, clock)
-            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
             clock["now"] += 30
             with self.assertRaises(RepairDenied) as expired:
                 store.accept(secret, envelope, provider=_MustNotRun())
@@ -451,7 +461,7 @@ class JobRejectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             clock = {"now": time.time()}
             store, secret, device = self._store(tmp, clock)
-            missing = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            missing = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
             provider = _Script([{
                 "evidence_source": "live_windows",
                 "mocked": True,
@@ -471,7 +481,7 @@ class JobRejectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             clock = {"now": time.time()}
             store, secret, device = self._store(tmp, clock)
-            stale = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            stale = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
             provider = _Script([{
                 "evidence_source": "live_windows",
                 "mocked": True,
@@ -499,7 +509,7 @@ class JobRejectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             clock = {"now": time.time()}
             store, secret, device = self._store(tmp, clock)
-            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
             result = store.accept(secret, envelope, provider=_Boom())
             self.assertFalse(result["ok"])
             self.assertEqual(result["evidence_source"], "unavailable")
@@ -509,6 +519,157 @@ class JobRejectionTests(unittest.TestCase):
             report = DirectorGapTests()._director_repair(str(Path(tmp) / "device.json"))
             self.assertEqual(report["state"], "DEGRADED")
             self.assertNotEqual(report["state"], "HEALTHY")
+
+    def test_spooler_restart_is_refused_at_issue(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": 3_000.0}
+            store, _secret, device = self._store(tmp, clock)
+            with self.assertRaises(RepairDenied) as denied:
+                store.issue(
+                    tenant_id="acme",
+                    device_id=device,
+                    procedure_id="print.spooler.restart",
+                    grant=_ada(),
+                )
+            self.assertIn("read-only", str(denied.exception))
+            with self.assertRaises(RepairDenied) as approved:
+                store.issue(
+                    tenant_id="acme",
+                    device_id=device,
+                    procedure_id="print.spooler.restart",
+                    grant=_ada(),
+                    approval_id="apr-1",
+                )
+            self.assertIn("approval", str(approved.exception))
+            self.assertEqual(store.summary()["issued_jobs"], 0)
+
+    def test_session_name_and_role_do_not_grant_authority_alone(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": 3_000.0}
+            store, _secret, device = self._store(tmp, clock)
+            with self.assertRaises(RepairDenied):
+                store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            with self.assertRaises(RepairDenied):
+                grant_from_session(
+                    SimpleNamespace(session_id="s", operator_id="op", username="ada", role="viewer"),
+                    "acme",
+                )
+            with self.assertRaises(RepairDenied):
+                grant_from_session("ada", "acme")
+            other = grant_from_session(
+                SimpleNamespace(session_id="s2", operator_id="op2", username="ada", role="operator"),
+                "otherco",
+            )
+            with self.assertRaises(RepairDenied) as crossed:
+                store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=other)
+            self.assertIn("organisation", str(crossed.exception))
+            self.assertEqual(store.summary()["issued_jobs"], 0)
+
+    def test_key_is_split_and_reload_verifies_signatures(self) -> None:
+        import os as _os
+        import stat
+        import threading
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "device.json"
+            clock = {"now": 4_000.0}
+            store, secret, device = self._store(tmp, clock)
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(raw["version"], 2)
+            self.assertNotIn("key", raw)
+            key_path = Path(str(path) + ".key")
+            self.assertTrue(key_path.is_file())
+            if _os.name == "posix":
+                self.assertEqual(stat.S_IMODE(key_path.stat().st_mode), 0o600)
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+            reloaded = DeviceStore(path, clock=lambda: clock["now"])
+            provider = _Script([{
+                "evidence_source": "mock",
+                "mocked": True,
+                "status": "collected",
+                "ok": True,
+                "problem_resolved": False,
+            }])
+            result = reloaded.accept(secret, envelope, provider=provider)
+            self.assertEqual(result["evidence_source"], "mock")
+            with self.assertRaises(RepairDenied):
+                reloaded.accept(secret, envelope, provider=_MustNotRun())
+            tampered = dict(envelope)
+            tampered["job_id"] = "changed"
+            with self.assertRaises(RepairDenied):
+                reloaded.accept(secret, tampered, provider=_MustNotRun())
+            moved = dict(envelope)
+            moved["device_id"] = "other-device"
+            with self.assertRaises(RepairDenied):
+                reloaded.accept(secret, moved, provider=_MustNotRun())
+            broken = Path(tmp) / "broken.json"
+            broken.write_text("{", encoding="utf-8")
+            with self.assertRaises(RepairDenied):
+                DeviceStore(broken, clock=lambda: clock["now"])
+            self.assertEqual(broken.read_text(encoding="utf-8"), "{")
+
+            clock["now"] = 5_000.0
+            second_store, second_secret, second_device = self._store(str(Path(tmp) / "race"), clock)
+            race = second_store.issue(
+                tenant_id="acme",
+                device_id=second_device,
+                procedure_id="win.storage.space",
+                grant=_ada(),
+            )
+            ran = {"n": 0}
+
+            class _Count:
+                def collect(self, procedure_id: str) -> dict:
+                    ran["n"] += 1
+                    return {"evidence_source": "mock", "mocked": True, "status": "collected", "ok": True, "problem_resolved": False}
+
+            errors: list[BaseException] = []
+
+            def _run() -> None:
+                try:
+                    second_store.accept(second_secret, race, provider=_Count())
+                except RepairDenied as exc:
+                    errors.append(exc)
+
+            first = threading.Thread(target=_run)
+            other = threading.Thread(target=_run)
+            first.start()
+            other.start()
+            first.join()
+            other.join()
+            self.assertEqual(ran["n"], 1)
+            self.assertEqual(len(errors), 1)
+
+    def test_expiry_boundary_and_version_one_migration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": 6_000.0}
+            store, secret, device = self._store(tmp, clock)
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
+            clock["now"] = float(envelope["expires_at"])
+            with self.assertRaises(RepairDenied):
+                store.accept(secret, envelope, provider=_MustNotRun())
+            self.assertEqual(store.job_states[envelope["job_id"]]["lifecycle"], "expired")
+
+            legacy = Path(tmp) / "legacy.json"
+            key = "ab" * 32
+            job_id = "job-legacy"
+            legacy.write_text(json.dumps({
+                "version": 1,
+                "key": key,
+                "devices": {"dev-1": {"device_id": "dev-1", "tenant_id": "acme", "secret_hash": "abc", "revoked": False, "repair_authority": False, "last_seen": None}},
+                "jobs": [{"job_id": job_id, "tenant_id": "acme", "device_id": "dev-1", "nonce": "n-1", "expires_at": 9_000}],
+                "job_states": {job_id: {"lifecycle": "issued"}},
+                "nonces": [],
+                "audit": [{"action": "issue", "job_id": job_id}],
+            }), encoding="utf-8")
+            loaded = DeviceStore(legacy, clock=lambda: 6_000.0)
+            self.assertEqual(loaded.jobs[0]["job_id"], job_id)
+            self.assertEqual(len(loaded.audit), 1)
+            migrated = json.loads(legacy.read_text(encoding="utf-8"))
+            self.assertEqual(migrated["version"], 2)
+            self.assertNotIn("key", migrated)
+            self.assertEqual((Path(str(legacy) + ".key")).read_text(encoding="utf-8").strip(), key)
 
 
 if __name__ == "__main__":

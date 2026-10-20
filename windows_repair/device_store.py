@@ -11,6 +11,7 @@ import json
 import os
 import re
 import secrets
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -26,11 +27,61 @@ STALE_AFTER_SECONDS = 86400
 _FUTURE_SKEW_SECONDS = 120
 _FAILED_OUTCOMES = frozenset({"failed", "approval_rejected", "needs_administrator"})
 _TERMINAL = frozenset({"accepted", "rejected", "expired", "failed"})
+_ISSUING_ROLES = frozenset({"admin", "operator"})
 _OPERATOR = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.@-]{0,63}\Z")
+_SEAL = object()
 
 
 def _canonical(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+class OperatorGrant:
+    """Authority taken from a server-side session. A username string is not a grant."""
+
+    def __init__(
+        self,
+        *,
+        operator_id: str,
+        username: str,
+        role: str,
+        tenant_id: str,
+        session_id: str,
+        seal: object,
+    ) -> None:
+        if seal is not _SEAL:
+            raise RepairDenied("operator session is required")
+        self.operator_id = operator_id
+        self.username = username
+        self.role = role
+        self.tenant_id = tenant_id
+        self.session_id = session_id
+
+
+def grant_from_session(session: Any, tenant_id: str) -> OperatorGrant:
+    """Build a grant from the authenticated session record, never from a request name."""
+    if session is None or isinstance(session, (str, bytes, dict)):
+        raise RepairDenied("operator session is required")
+    session_id = str(getattr(session, "session_id", "") or "")
+    operator_id = str(getattr(session, "operator_id", "") or "")
+    username = str(getattr(session, "username", "") or "")
+    role = str(getattr(session, "role", "") or "")
+    if not session_id or not operator_id or not username:
+        raise RepairDenied("operator session is required")
+    if role not in _ISSUING_ROLES:
+        raise RepairDenied("operator is not authorised to issue a device job")
+    if not isinstance(tenant_id, str) or not tenant_id.strip():
+        raise RepairDenied("tenant is required")
+    if not _OPERATOR.fullmatch(username):
+        raise RepairDenied("operator is not authorised to issue a device job")
+    return OperatorGrant(
+        operator_id=operator_id,
+        username=username,
+        role=role,
+        tenant_id=tenant_id.strip(),
+        session_id=session_id,
+        seal=_SEAL,
+    )
 
 
 class DeviceStore:
@@ -38,6 +89,7 @@ class DeviceStore:
         self.path = assert_safe_state_path(path)
         self._clock = clock
         self._ttl = ttl
+        self._lock = threading.RLock()
         self._key = secrets.token_bytes(32)
         self.devices: dict[str, dict[str, Any]] = {}
         self.jobs: list[dict[str, Any]] = []
@@ -48,6 +100,10 @@ class DeviceStore:
             self._load()
 
     def enrol(self, tenant_id: str, secret: str) -> str:
+        with self._lock:
+            return self._enrol(tenant_id, secret)
+
+    def _enrol(self, tenant_id: str, secret: str) -> str:
         if len(secret) < 32:
             raise RepairDenied("device secret is too short")
         device_id = uuid.uuid4().hex
@@ -64,10 +120,11 @@ class DeviceStore:
         return device_id
 
     def revoke(self, tenant_id: str, device_id: str) -> None:
-        device = self._device(tenant_id, device_id)
-        device["revoked"] = True
-        self._audit("revoke", tenant_id, device_id, "revoked", None)
-        self._save()
+        with self._lock:
+            device = self._device(tenant_id, device_id)
+            device["revoked"] = True
+            self._audit("revoke", tenant_id, device_id, "revoked", None)
+            self._save()
 
     def issue(
         self,
@@ -75,13 +132,40 @@ class DeviceStore:
         tenant_id: str,
         device_id: str,
         procedure_id: str,
-        operator: str,
+        grant: OperatorGrant | None = None,
+        operator: str | None = None,
         approval_id: str | None = None,
     ) -> dict[str, Any]:
-        if not isinstance(operator, str) or not _OPERATOR.fullmatch(operator):
+        with self._lock:
+            return self._issue(
+                tenant_id=tenant_id,
+                device_id=device_id,
+                procedure_id=procedure_id,
+                grant=grant,
+                operator=operator,
+                approval_id=approval_id,
+            )
+
+    def _issue(
+        self,
+        *,
+        tenant_id: str,
+        device_id: str,
+        procedure_id: str,
+        grant: OperatorGrant | None,
+        operator: str | None,
+        approval_id: str | None,
+    ) -> dict[str, Any]:
+        if not isinstance(grant, OperatorGrant):
+            raise RepairDenied("operator session is required")
+        if grant.tenant_id != tenant_id:
+            raise RepairDenied("operator is not authorised for this organisation")
+        if operator is not None and operator != grant.username:
             raise RepairDenied("operator is not authorised to issue a device job")
-        if procedure_id not in _READ_ONLY and procedure_id != "print.spooler.restart":
-            raise RepairDenied("procedure is not registered for a device job")
+        if approval_id:
+            raise RepairDenied("device jobs cannot carry a repair approval")
+        if procedure_id not in _READ_ONLY:
+            raise RepairDenied("procedure is not a read-only device diagnostic")
         self._device(tenant_id, device_id)
         now = self._clock()
         body = {
@@ -89,8 +173,9 @@ class DeviceStore:
             "tenant_id": tenant_id,
             "device_id": device_id,
             "procedure_id": procedure_id,
-            "operator": operator,
-            "approval_id": approval_id,
+            "operator": grant.username,
+            "operator_id": grant.operator_id,
+            "approval_id": None,
             "nonce": secrets.token_hex(16),
             "issued_at": now,
             "expires_at": now + self._ttl,
@@ -104,11 +189,15 @@ class DeviceStore:
             "issued_at": now,
             "expires_at": body["expires_at"],
         }
-        self._audit("issue", tenant_id, device_id, procedure_id, operator, job_id=body["job_id"])
+        self._audit("issue", tenant_id, device_id, procedure_id, grant.username, job_id=body["job_id"])
         self._save()
         return signed
 
     def accept(self, secret: str, envelope: dict[str, Any], *, provider: Any | None = None) -> dict[str, Any]:
+        with self._lock:
+            return self._accept(secret, envelope, provider=provider)
+
+    def _accept(self, secret: str, envelope: dict[str, Any], *, provider: Any | None) -> dict[str, Any]:
         body = {k: v for k, v in envelope.items() if k != "signature"}
         expected = hmac.new(self._key, _canonical(body), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected, str(envelope.get("signature") or "")):
@@ -136,11 +225,14 @@ class DeviceStore:
         digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
         if not hmac.compare_digest(digest, device["secret_hash"]):
             self._reject(job_id, device["tenant_id"], device["device_id"], "unauthorised")
-        if self._clock() > float(envelope["expires_at"]):
+        if self._clock() >= float(envelope["expires_at"]):
             self._set_lifecycle(job_id, "expired", expired_at=self._clock())
             raise RepairDenied("job expired")
         nonce = str(envelope["nonce"])
         if nonce in self.nonces:
+            self._set_lifecycle(job_id, "rejected", rejected_at=self._clock(), reason="replay", save=False)
+            self._audit("reject", tenant_id, device_id, "replay", None, job_id=job_id)
+            self._save()
             raise RepairDenied("job replay rejected")
         procedure_id = str(envelope["procedure_id"])
         if procedure_id not in _READ_ONLY:
@@ -286,12 +378,12 @@ class DeviceStore:
         if lifecycle in _TERMINAL:
             return lifecycle
         if nonce and nonce in self.nonces:
-            return "accepted"
+            return "rejected"
         try:
             expires = float(job["expires_at"])
         except (KeyError, TypeError, ValueError):
             return "expired"
-        if self._clock() > expires:
+        if self._clock() >= expires:
             return "expired"
         return "issued"
 
@@ -328,10 +420,27 @@ class DeviceStore:
             row["job_id"] = job_id
         self.audit.append(row)
 
+    def _key_path(self) -> Path:
+        return self.path.with_name(self.path.name + ".key")
+
+    def _restrict(self, path: Path) -> None:
+        if os.name != "posix" or not path.is_file():
+            return
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+
+    def _write_atomic(self, path: Path, text: str) -> None:
+        temporary = path.with_name(path.name + ".tmp")
+        temporary.write_text(text, encoding="utf-8")
+        self._restrict(temporary)
+        os.replace(temporary, path)
+        self._restrict(path)
+
     def _save(self) -> None:
         payload = {
-            "version": 1,
-            "key": self._key.hex(),
+            "version": 2,
             "devices": self.devices,
             "jobs": self.jobs,
             "job_states": self.job_states,
@@ -339,29 +448,72 @@ class DeviceStore:
             "audit": self.audit[-200:],
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
-        temporary.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
-        os.replace(temporary, self.path)
+        self._write_atomic(self._key_path(), self._key.hex() + "\n")
+        self._write_atomic(self.path, json.dumps(payload, sort_keys=True) + "\n")
+
+    def _parse_key(self, text: str) -> bytes:
+        try:
+            key = bytes.fromhex(text.strip())
+        except ValueError as exc:
+            raise RepairDenied("device state file is not usable") from exc
+        if len(key) != 32:
+            raise RepairDenied("device state file is not usable")
+        return key
 
     def _load(self) -> None:
-        raw = json.loads(self.path.read_text(encoding="utf-8"))
-        if not isinstance(raw, dict) or raw.get("version") != 1:
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RepairDenied("device state file is not usable") from exc
+        if not isinstance(raw, dict) or raw.get("version") not in (1, 2):
             raise RepairDenied("device state file is not usable")
-        self._key = bytes.fromhex(str(raw["key"]))
-        self.devices = dict(raw.get("devices") or {})
-        self.jobs = list(raw.get("jobs") or [])
+        sidecar = self._key_path()
+        file_key = self._parse_key(sidecar.read_text(encoding="utf-8")) if sidecar.is_file() else None
+        embedded = raw.get("key")
+        embedded_key = self._parse_key(str(embedded)) if isinstance(embedded, str) else None
+        if file_key is not None and embedded_key is not None and file_key != embedded_key:
+            raise RepairDenied("device state file is not usable")
+        key = file_key or embedded_key
+        if key is None:
+            raise RepairDenied("device state file is not usable")
+        devices = raw.get("devices") or {}
+        jobs = raw.get("jobs") or []
         states = raw.get("job_states") or {}
+        nonces = raw.get("nonces") or []
+        audit = raw.get("audit") or []
+        if not isinstance(devices, dict) or not isinstance(jobs, list) or not isinstance(nonces, list):
+            raise RepairDenied("device state file is not usable")
+        if "job_states" in raw and not isinstance(states, dict):
+            raise RepairDenied("device state file is not usable")
+        if "audit" in raw and not isinstance(audit, list):
+            raise RepairDenied("device state file is not usable")
+        self._key = key
+        self.devices = dict(devices)
+        self.jobs = list(jobs)
         self.job_states = dict(states) if isinstance(states, dict) else {}
-        self.nonces = list(raw.get("nonces") or [])
-        self.audit = list(raw.get("audit") or [])
+        self.nonces = [str(item) for item in nonces]
+        self.audit = list(audit) if isinstance(audit, list) else []
+        if raw.get("version") != 2 or "key" in raw or not sidecar.is_file():
+            self._save()
 
 
 def dev_self_test(path: Path) -> dict[str, Any]:
     """Enrol a throwaway device and run one live read-only job. Does not install a service."""
+    from types import SimpleNamespace
+
     secret = secrets.token_urlsafe(32)
     store = DeviceStore(path)
     device_id = store.enrol("local-test", secret)
-    envelope = store.issue(tenant_id="local-test", device_id=device_id, procedure_id="win.storage.space", operator="dev-self-test")
+    grant = grant_from_session(
+        SimpleNamespace(
+            session_id="dev-self-test",
+            operator_id="dev-self-test",
+            username="dev-self-test",
+            role="operator",
+        ),
+        "local-test",
+    )
+    envelope = store.issue(tenant_id="local-test", device_id=device_id, procedure_id="win.storage.space", grant=grant)
     result = store.accept(secret, envelope)
     result["repair_authority"] = False
     return result
