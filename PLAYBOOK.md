@@ -265,6 +265,7 @@ Phase 7 — Advanced model customisation
 - potentially continued pretraining if justified
 
 ## 12. Current decisions
+- Canonical local checkout on this PC: `C:\Users\kokob\src\AI-PLAYBOOK.md`. Remote `origin`: `https://github.com/henokmeron/AI-PLAYBOOK.md.git`. The working branch is `main`.
 - Primary objective: build a commercial AI platform, not merely a standalone LLM.
 - Start from open-weight models.
 - Keep the platform model-independent.
@@ -279,6 +280,10 @@ Phase 7 — Advanced model customisation
 - Treat the playbook as a reproducible blueprint for future AI-assisted automation.
 
 ## 13. Change log
+### 2026-10-20 — Canonical checkout
+- The canonical local checkout is `C:\Users\kokob\src\AI-PLAYBOOK.md`.
+- GitHub `origin` is `https://github.com/henokmeron/AI-PLAYBOOK.md.git` on branch `main`.
+
 ### 2026-10-07 — Project start
 - Defined the project as a commercial open-weight LLM platform.
 - Established model-independent architecture.

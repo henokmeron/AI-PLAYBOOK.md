@@ -21,6 +21,8 @@ from .engine import RepairDenied
 from .providers import LIVE_PROCEDURES, LiveWindowsProvider
 
 _READ_ONLY = tuple(LIVE_PROCEDURES)
+STALE_AFTER_SECONDS = 86400
+_FAILED_OUTCOMES = frozenset({"failed", "approval_rejected", "needs_administrator"})
 
 
 def _canonical(payload: dict[str, Any]) -> bytes:
@@ -35,6 +37,7 @@ class DeviceStore:
         self._key = secrets.token_bytes(32)
         self.devices: dict[str, dict[str, Any]] = {}
         self.jobs: list[dict[str, Any]] = []
+        self.job_states: dict[str, dict[str, Any]] = {}
         self.nonces: list[str] = []
         self.audit: list[dict[str, Any]] = []
         if self.path.is_file():
@@ -89,7 +92,13 @@ class DeviceStore:
         signed = dict(body)
         signed["signature"] = hmac.new(self._key, _canonical(body), hashlib.sha256).hexdigest()
         self.jobs.append(signed)
-        self._audit("issue", tenant_id, device_id, procedure_id, operator)
+        self.job_states[body["job_id"]] = {
+            "lifecycle": "issued",
+            "procedure_id": procedure_id,
+            "issued_at": now,
+            "expires_at": body["expires_at"],
+        }
+        self._audit("issue", tenant_id, device_id, procedure_id, operator, job_id=body["job_id"])
         self._save()
         return signed
 
@@ -98,7 +107,9 @@ class DeviceStore:
         expected = hmac.new(self._key, _canonical(body), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected, str(envelope.get("signature") or "")):
             raise RepairDenied("job signature is invalid")
+        job_id = str(envelope.get("job_id") or "")
         if self._clock() > float(envelope["expires_at"]):
+            self._set_lifecycle(job_id, "expired", expired_at=self._clock())
             raise RepairDenied("job expired")
         nonce = str(envelope["nonce"])
         if nonce in self.nonces:
@@ -122,19 +133,41 @@ class DeviceStore:
         result["operator"] = envelope.get("operator")
         if "problem_resolved" not in result:
             result["problem_resolved"] = False
-        self._audit("accept", device["tenant_id"], device["device_id"], result.get("status") or "done", envelope.get("operator"))
+        status = str(result.get("status") or "done")
+        self._set_lifecycle(
+            job_id,
+            "accepted",
+            accepted_at=device["last_seen"],
+            status=status[:40],
+            ok=bool(result.get("ok")) if "ok" in result else status == "collected",
+            problem_resolved=bool(result.get("problem_resolved")),
+            evidence_source=str(result.get("evidence_source") or "")[:40],
+            save=False,
+        )
+        self._audit("accept", device["tenant_id"], device["device_id"], status, envelope.get("operator"), job_id=job_id)
         self._save()
         return result
 
     def summary(self) -> dict[str, Any]:
-        seen = [item["last_seen"] for item in self.devices.values() if item.get("last_seen")]
-        failed = [row for row in self.audit if row.get("outcome") in {"failed", "approval_rejected", "needs_administrator"}]
+        seen = [item["last_seen"] for item in self.devices.values() if isinstance(item.get("last_seen"), (int, float))]
+        last_seen = max(seen) if seen else None
+        age = None if last_seen is None else self._clock() - float(last_seen)
+        counts = {"issued": 0, "accepted": 0, "expired": 0}
+        for job in self.jobs:
+            counts[self._lifecycle_of(job)] += 1
+        failed = [row for row in self.audit if row.get("outcome") in _FAILED_OUTCOMES]
         return {
             "device_count": len(self.devices),
             "revoked": sum(1 for item in self.devices.values() if item["revoked"]),
-            "last_seen": max(seen) if seen else None,
+            "last_seen": last_seen,
+            "last_seen_age_seconds": None if age is None else int(age),
+            "stale": age is not None and age > STALE_AFTER_SECONDS,
             "failed_jobs": len(failed),
-            "pending_jobs": len(self.jobs),
+            "pending_jobs": counts["issued"],
+            "open_jobs": counts["issued"],
+            "accepted_jobs": counts["accepted"],
+            "expired_jobs": counts["expired"],
+            "issued_jobs": len(self.jobs),
         }
 
     def _device(self, tenant_id: str, device_id: str) -> dict[str, Any]:
@@ -143,15 +176,54 @@ class DeviceStore:
             raise RepairDenied("device is not enrolled for this organisation")
         return device
 
-    def _audit(self, action: str, tenant_id: str, device_id: str, outcome: str, operator: str | None) -> None:
-        self.audit.append({
+    def _lifecycle_of(self, job: dict[str, Any]) -> str:
+        job_id = str(job.get("job_id") or "")
+        recorded = self.job_states.get(job_id) or {}
+        lifecycle = str(recorded.get("lifecycle") or "issued")
+        if lifecycle == "accepted":
+            return "accepted"
+        if lifecycle == "expired":
+            return "expired"
+        try:
+            expires = float(job["expires_at"])
+        except (KeyError, TypeError, ValueError):
+            return "expired"
+        if self._clock() > expires:
+            return "expired"
+        return "issued"
+
+    def _set_lifecycle(self, job_id: str, lifecycle: str, *, save: bool = True, **extra: Any) -> None:
+        if not job_id or not any(str(job.get("job_id")) == job_id for job in self.jobs):
+            return
+        current = dict(self.job_states.get(job_id) or {})
+        if current.get("lifecycle") == "accepted" and lifecycle != "accepted":
+            return
+        current["lifecycle"] = lifecycle
+        current.update(extra)
+        self.job_states[job_id] = current
+        if save:
+            self._save()
+
+    def _audit(
+        self,
+        action: str,
+        tenant_id: str,
+        device_id: str,
+        outcome: str,
+        operator: str | None,
+        job_id: str | None = None,
+    ) -> None:
+        row = {
             "action": action,
             "tenant_id": tenant_id,
             "device_id": device_id,
             "outcome": outcome,
             "operator": operator,
             "at": self._clock(),
-        })
+        }
+        if job_id:
+            row["job_id"] = job_id
+        self.audit.append(row)
 
     def _save(self) -> None:
         payload = {
@@ -159,6 +231,7 @@ class DeviceStore:
             "key": self._key.hex(),
             "devices": self.devices,
             "jobs": self.jobs,
+            "job_states": self.job_states,
             "nonces": self.nonces,
             "audit": self.audit[-200:],
         }
@@ -174,6 +247,8 @@ class DeviceStore:
         self._key = bytes.fromhex(str(raw["key"]))
         self.devices = dict(raw.get("devices") or {})
         self.jobs = list(raw.get("jobs") or [])
+        states = raw.get("job_states") or {}
+        self.job_states = dict(states) if isinstance(states, dict) else {}
         self.nonces = list(raw.get("nonces") or [])
         self.audit = list(raw.get("audit") or [])
 

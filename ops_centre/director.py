@@ -163,14 +163,36 @@ def _repair_jobs(verified_at: str | None) -> dict[str, Any]:
         from windows_repair.device_store import DeviceStore
 
         summary = DeviceStore(Path(raw)).summary()
-        state = "DEGRADED" if summary["failed_jobs"] else "HEALTHY"
-        if summary["last_seen"] is None:
+        age = summary.get("last_seen_age_seconds")
+        if summary["device_count"] == 0 or summary["last_seen"] is None or age is None:
             state = "UNKNOWN"
+            detail = "No completed device check-in is recorded. A missing last-seen is not healthy."
+        elif age < 0:
+            state = "UNKNOWN"
+            detail = "The last-seen time is ahead of this clock. That is not a healthy check-in."
+        elif summary.get("stale"):
+            state = "DEGRADED"
+            detail = "The newest device check-in is older than one day. Stale evidence is not healthy."
+        elif summary["failed_jobs"]:
+            state = "DEGRADED"
+            detail = "A device job failed. This file is not a healthy repair fleet."
+        else:
+            state = "HEALTHY"
+            detail = "A read-only device job was accepted recently. This is not a repair and not a deployment."
         return _component(
             "repair_jobs",
             state,
-            evidence=[f"devices={summary['device_count']}", f"last_seen={summary['last_seen']}", f"failed_jobs={summary['failed_jobs']}"],
-            detail="Repair job file summary. A missing last-seen is not healthy.",
+            evidence=[
+                f"devices={summary['device_count']}",
+                f"last_seen={summary['last_seen']}",
+                f"age_seconds={age}",
+                f"open_jobs={summary['open_jobs']}",
+                f"accepted_jobs={summary['accepted_jobs']}",
+                f"expired_jobs={summary['expired_jobs']}",
+                f"failed_jobs={summary['failed_jobs']}",
+                "repair_authority=false",
+            ],
+            detail=detail,
             checked_at=verified_at,
         )
     except Exception as exc:  # noqa: BLE001

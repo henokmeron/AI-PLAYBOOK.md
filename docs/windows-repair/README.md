@@ -14,6 +14,8 @@ python -m unittest windows_repair.tests.test_windows_repair windows_repair.tests
 
 The Windows integration test reads disk and printer evidence on this PC. It does not restart a service.
 
+A device job is `issued`, then `accepted` when the read-only check finishes, or `expired` when its time limit passes. The Director report treats a missing last-seen as UNKNOWN and a last-seen older than one day as DEGRADED. Neither is HEALTHY. Acceptance of a read-only check is not a repair.
+
 One live disk check through a throwaway enrolled device, stored outside the source tree:
 
 ```powershell

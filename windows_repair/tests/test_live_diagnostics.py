@@ -5,6 +5,7 @@ tests run only on Windows and do not restart any service.
 """
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
@@ -178,6 +179,124 @@ class DirectorGapTests(unittest.TestCase):
             os.environ.pop("REPAIR_DEVICE_STATE", None)
             self.assertEqual(_endpoint_fleet("2026-10-19T00:00:00Z")["state"], "UNKNOWN")
             self.assertEqual(_repair_jobs("2026-10-19T00:00:00Z")["state"], "NOT CONFIGURED")
+
+    def _store(self, tmp: str, clock: dict) -> tuple[DeviceStore, str, str]:
+        store = DeviceStore(Path(tmp) / "device.json", clock=lambda: clock["now"], ttl=10)
+        secret = "d" * 32
+        device = store.enrol("acme", secret)
+        return store, secret, device
+
+    def test_job_moves_from_issued_to_accepted_and_reloads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": 1_000.0}
+            store, secret, device = self._store(tmp, clock)
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            self.assertEqual(store.summary()["open_jobs"], 1)
+            self.assertEqual(store.summary()["pending_jobs"], 1)
+            provider = _Script([{"evidence_source": "mock", "mocked": True, "status": "collected", "ok": True, "problem_resolved": False}])
+            accepted = store.accept(secret, envelope, provider=provider)
+            self.assertFalse(accepted["problem_resolved"])
+            summary = store.summary()
+            self.assertEqual(summary["open_jobs"], 0)
+            self.assertEqual(summary["accepted_jobs"], 1)
+            self.assertEqual(summary["expired_jobs"], 0)
+            self.assertFalse(summary["stale"])
+            reloaded = DeviceStore(Path(tmp) / "device.json", clock=lambda: clock["now"])
+            self.assertEqual(reloaded.job_states[envelope["job_id"]]["lifecycle"], "accepted")
+            self.assertEqual(reloaded.summary()["accepted_jobs"], 1)
+            self.assertNotIn("key", json.dumps(reloaded.summary()))
+
+    def test_unaccepted_job_expires_without_becoming_healthy(self) -> None:
+        from ops_centre.director import _repair_jobs
+
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": 1_000.0}
+            store, _secret, device = self._store(tmp, clock)
+            store.issue(tenant_id="acme", device_id=device, procedure_id="print.diagnose", operator="ada")
+            clock["now"] += 30
+            summary = store.summary()
+            self.assertEqual(summary["open_jobs"], 0)
+            self.assertEqual(summary["expired_jobs"], 1)
+            self.assertIsNone(summary["last_seen"])
+            previous = os.environ.get("REPAIR_DEVICE_STATE")
+            os.environ["REPAIR_DEVICE_STATE"] = str(Path(tmp) / "device.json")
+            try:
+                report = _repair_jobs("2026-10-20T00:00:00Z")
+            finally:
+                if previous is None:
+                    os.environ.pop("REPAIR_DEVICE_STATE", None)
+                else:
+                    os.environ["REPAIR_DEVICE_STATE"] = previous
+            self.assertEqual(report["state"], "UNKNOWN")
+            self.assertNotEqual(report["state"], "HEALTHY")
+
+    def test_stale_and_failed_checkins_are_not_healthy(self) -> None:
+        import time
+        from ops_centre.director import _repair_jobs
+
+        with tempfile.TemporaryDirectory() as tmp:
+            stale_clock = {"now": 1_000.0}
+            store, secret, device = self._store(tmp, stale_clock)
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            provider = _Script([{"evidence_source": "mock", "mocked": True, "status": "collected", "ok": True, "problem_resolved": False}])
+            store.accept(secret, envelope, provider=provider)
+            stale_clock["now"] += 86401
+            self.assertTrue(store.summary()["stale"])
+            self.assertNotEqual(store.summary()["last_seen"], None)
+            path = str(Path(tmp) / "device.json")
+            previous = os.environ.get("REPAIR_DEVICE_STATE")
+            os.environ["REPAIR_DEVICE_STATE"] = path
+            try:
+                stale = _repair_jobs("2026-10-20T00:00:00Z")
+                self.assertEqual(stale["state"], "DEGRADED")
+                self.assertNotEqual(stale["state"], "HEALTHY")
+                self.assertTrue(any(item.startswith("age_seconds=") for item in stale["evidence"]))
+            finally:
+                if previous is None:
+                    os.environ.pop("REPAIR_DEVICE_STATE", None)
+                else:
+                    os.environ["REPAIR_DEVICE_STATE"] = previous
+
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": time.time()}
+            store, secret, device = self._store(tmp, clock)
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            provider = _Script([{"evidence_source": "mock", "mocked": True, "status": "failed", "ok": False, "problem_resolved": False}])
+            store.accept(secret, envelope, provider=provider)
+            previous = os.environ.get("REPAIR_DEVICE_STATE")
+            os.environ["REPAIR_DEVICE_STATE"] = str(Path(tmp) / "device.json")
+            try:
+                failed = _repair_jobs("2026-10-20T00:00:00Z")
+            finally:
+                if previous is None:
+                    os.environ.pop("REPAIR_DEVICE_STATE", None)
+                else:
+                    os.environ["REPAIR_DEVICE_STATE"] = previous
+            self.assertEqual(failed["state"], "DEGRADED")
+            self.assertNotEqual(failed["state"], "HEALTHY")
+
+    def test_a_fresh_read_only_accept_is_healthy_and_not_a_repair(self) -> None:
+        import time
+        from ops_centre.director import _repair_jobs
+
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": time.time()}
+            store, secret, device = self._store(tmp, clock)
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            provider = _Script([{"evidence_source": "mock", "mocked": True, "status": "collected", "ok": True, "problem_resolved": False}])
+            store.accept(secret, envelope, provider=provider)
+            previous = os.environ.get("REPAIR_DEVICE_STATE")
+            os.environ["REPAIR_DEVICE_STATE"] = str(Path(tmp) / "device.json")
+            try:
+                report = _repair_jobs("2026-10-20T00:00:00Z")
+            finally:
+                if previous is None:
+                    os.environ.pop("REPAIR_DEVICE_STATE", None)
+                else:
+                    os.environ["REPAIR_DEVICE_STATE"] = previous
+            self.assertEqual(report["state"], "HEALTHY")
+            self.assertIn("repair_authority=false", report["evidence"])
+            self.assertIn("not a repair", report["detail"])
 
 
 if __name__ == "__main__":

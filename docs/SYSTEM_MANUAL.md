@@ -6,12 +6,12 @@
 
 | | |
 | --- | --- |
-| **Last updated** | 2026-10-19 |
+| **Last updated** | 2026-10-20 |
 | **Git tip (code)** | see `git log -1` (Operations Centre added 2026-10-16) |
 | **Live Pod** | `4lvr54b0wmkz6c` — **Stopped** (Start when you need it) |
 | **Global Volume** | `5aac0c77-6fcc-4be9-a112-dfe3890e1373` mounted at `/workspace` |
 | **GitHub** | `https://github.com/henokmeron/AI-PLAYBOOK.md.git` |
-| **Your PC copy** | `C:\Users\henok\src\AI-PLAYBOOK.md` |
+| **Your PC copy** | `C:\Users\kokob\src\AI-PLAYBOOK.md` |
 
 Related deep docs (do not duplicate everything here):
 
@@ -368,6 +368,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 
 | Date | Change |
 | --- | --- |
+| 2026-10-20 | Canonical PC checkout is `C:\Users\kokob\src\AI-PLAYBOOK.md`. Repair jobs now record issued, accepted, and expired. A missing or stale device check-in is not HEALTHY in the Director report. Not deployed. |
 | 2026-10-18 | On-demand Operations Director report (`ops_centre/director.py`, `GET /api/ops/director`). No scheduler. Pod was not started or stopped for this change. See `docs/ops_centre/DIRECTOR.md`. |
 | 2026-10-19 | Windows repair catalogue, signed job gate, MeshCentral boundary (not connected), and console Windows repair page. No printer, driver, or remote desktop was contacted. |
 | 2026-10-19 | Live read-only Windows collectors, printer approval workflow, and a file-backed test device. Spooler restart is not run on the development PC. MeshCentral 1.2.6 is Apache-2.0 and is not installed. |

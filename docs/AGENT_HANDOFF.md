@@ -12,10 +12,10 @@ Do not create a new project, a new GitHub repo, or a new folder. All work stays 
 
 | | |
 | --- | --- |
-| Local folder | `C:\Users\henok\src\AI-PLAYBOOK.md` |
+| Local folder | `C:\Users\kokob\src\AI-PLAYBOOK.md` |
 | GitHub | `https://github.com/henokmeron/AI-PLAYBOOK.md.git` (remote name `origin`) |
-| Work branch | `feature/qwen-a100-start-hardening` (same commits as `feature/qwen3.5-27b-integration`) |
-| `main` | Fast-forward it to the feature tip and push it. Never force-push. |
+| Work branch | `main` only. Do not open a feature branch. |
+| `main` | Commit and push this branch. Never force-push. |
 | Pod | RunPod only. Do not start a different app or a second paid Pod. |
 
 `git` on the Windows PATH often fails (the `git.exe` that is found is a launcher without the real binary). Use this binary:
@@ -163,6 +163,12 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-20 — repair job lifecycle and canonical checkout
+
+- Canonical checkout is `C:\Users\kokob\src\AI-PLAYBOOK.md` on `main`. Cursor global storage had no second git checkout of this repo. `C:\Users\henok\src\AI-PLAYBOOK.md` is not on this PC.
+- Device jobs now persist `issued`, `accepted`, and `expired`. The Director calls a missing last-seen UNKNOWN and a last-seen older than one day DEGRADED.
+- Pod `enxl57cz45zy1i` was not stopped, started, or contacted. No repair was run on this PC. Volume copy was not attempted.
 
 ### 2026-10-18 — task history no longer lands in the git tree
 
