@@ -14,7 +14,7 @@ python -m unittest windows_repair.tests.test_windows_repair windows_repair.tests
 
 The Windows integration test reads disk and printer evidence on this PC. It does not restart a service.
 
-A device job is `issued`, then `accepted` when the read-only check finishes, or `expired` when its time limit passes. The Director report treats a missing last-seen as UNKNOWN and a last-seen older than one day as DEGRADED. A mock, fixture, or unlabelled accept is also UNKNOWN. HEALTHY requires a fresh accepted job whose evidence source is `live_windows`. That is still not a repair.
+A device job is `issued`, then `accepted` when a read-only check finishes, `expired` when its time limit passes, or `rejected` when the device is revoked or the secret does not match. A failed collection stays `failed`. The Director report treats a missing last-seen as UNKNOWN and a last-seen older than one day as DEGRADED. A mock, fixture, unlabelled, or stale accept is not HEALTHY. HEALTHY requires an accepted job whose evidence source is `live_windows`, whose check succeeded, and whose collection time is under one day old. That is still not a repair.
 
 One live disk check through a throwaway enrolled device, stored outside the source tree:
 

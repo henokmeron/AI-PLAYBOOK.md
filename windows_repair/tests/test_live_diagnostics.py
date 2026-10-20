@@ -157,6 +157,7 @@ class DeviceAndRemoteTests(unittest.TestCase):
 @unittest.skipUnless(os.name == "nt", "Windows integration test")
 class WindowsIntegrationTests(unittest.TestCase):
     def test_live_storage_and_printer_are_not_fixtures(self) -> None:
+        import time
         from windows_repair.providers import LiveWindowsProvider
 
         storage = LiveWindowsProvider().collect("win.storage.space")
@@ -168,6 +169,32 @@ class WindowsIntegrationTests(unittest.TestCase):
         self.assertNotEqual(printers["evidence_source"], "fixture")
         self.assertFalse(printers.get("mocked", False))
         self.assertFalse(printers.get("problem_resolved", False))
+        self.assertGreater(int(storage["collected_at_unix"]), int(time.time()) - 180)
+
+    def test_enrolled_device_runs_one_live_read_only_job(self) -> None:
+        """Local live check on this PC through an enrolled job. Not a customer endpoint."""
+        import time
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = DeviceStore(Path(tmp) / "device.json")
+            secret = "d" * 32
+            device = store.enrol("local-test", secret)
+            envelope = store.issue(
+                tenant_id="local-test",
+                device_id=device,
+                procedure_id="win.storage.space",
+                operator="dev-self-test",
+            )
+            result = store.accept(secret, envelope)
+            self.assertEqual(result["evidence_source"], "live_windows")
+            self.assertFalse(result["mocked"])
+            self.assertFalse(result["problem_resolved"])
+            self.assertTrue(result["evidence_fresh"])
+            self.assertFalse(result.get("repair_authority", False))
+            self.assertGreater(int(result["collected_at_unix"]), int(time.time()) - 180)
+            self.assertEqual(store.job_states[envelope["job_id"]]["lifecycle"], "accepted")
+            self.assertGreaterEqual(store.summary()["live_accepted_jobs"], 1)
+            self.assertNotIn(secret, json.dumps(store.summary()))
 
 
 class DirectorGapTests(unittest.TestCase):
@@ -305,7 +332,14 @@ class DirectorGapTests(unittest.TestCase):
             self.assertIn("live_accepted_jobs=0", report["evidence"])
 
             live = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
-            live_provider = _Script([{"evidence_source": "live_windows", "mocked": False, "status": "collected", "ok": True, "problem_resolved": False}])
+            live_provider = _Script([{
+                "evidence_source": "live_windows",
+                "mocked": False,
+                "status": "collected",
+                "ok": True,
+                "problem_resolved": False,
+                "collected_at_unix": int(clock["now"]),
+            }])
             store.accept(secret, live, provider=live_provider)
             fresh = self._director_repair(str(Path(tmp) / "device.json"))
             self.assertEqual(fresh["state"], "HEALTHY")
@@ -332,6 +366,148 @@ class DirectorGapTests(unittest.TestCase):
             self.assertEqual(summary["live_accepted_jobs"], 0)
             report = self._director_repair(str(path))
             self.assertEqual(report["state"], "UNKNOWN")
+            self.assertNotEqual(report["state"], "HEALTHY")
+
+
+class _MustNotRun:
+    """Fixture double. A rejected or expired job must not collect."""
+
+    def collect(self, procedure_id: str) -> dict:
+        raise AssertionError(f"collector ran for {procedure_id}")
+
+
+class JobRejectionTests(unittest.TestCase):
+    """Fixture and mock tests. They do not touch this PC."""
+
+    def _store(self, tmp: str, clock: dict) -> tuple[DeviceStore, str, str]:
+        store = DeviceStore(Path(tmp) / "device.json", clock=lambda: clock["now"], ttl=10)
+        secret = "d" * 32
+        device = store.enrol("acme", secret)
+        return store, secret, device
+
+    def test_blank_or_hostile_operator_cannot_issue(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": 1_000.0}
+            store, _secret, device = self._store(tmp, clock)
+            for operator in ("", "ada;whoami", "operator name"):
+                with self.assertRaises(RepairDenied):
+                    store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator=operator)
+            self.assertEqual(store.summary()["issued_jobs"], 0)
+
+    def test_revoked_and_unauthorised_jobs_are_persisted_rejections(self) -> None:
+        from ops_centre.director import _repair_jobs
+
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": 1_000.0}
+            store, secret, device = self._store(tmp, clock)
+            revoked_job = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            store.revoke("acme", device)
+            with self.assertRaises(RepairDenied) as revoked:
+                store.accept(secret, revoked_job, provider=_MustNotRun())
+            self.assertIn("revoked", str(revoked.exception))
+            self.assertEqual(store.job_states[revoked_job["job_id"]]["lifecycle"], "rejected")
+            self.assertEqual(store.job_states[revoked_job["job_id"]]["reason"], "revoked")
+            other = store.enrol("acme", "e" * 32)
+            unauthorised = store.issue(tenant_id="acme", device_id=other, procedure_id="print.diagnose", operator="ada")
+            with self.assertRaises(RepairDenied) as denied:
+                store.accept("f" * 32, unauthorised, provider=_MustNotRun())
+            self.assertIn("authentication", str(denied.exception))
+            with self.assertRaises(RepairDenied):
+                store.accept("e" * 32, unauthorised, provider=_MustNotRun())
+            self.assertEqual(store.job_states[unauthorised["job_id"]]["reason"], "unauthorised")
+            reloaded = DeviceStore(Path(tmp) / "device.json", clock=lambda: clock["now"])
+            self.assertEqual(reloaded.summary()["rejected_jobs"], 2)
+            self.assertIsNone(reloaded.summary()["last_seen"])
+            previous = os.environ.get("REPAIR_DEVICE_STATE")
+            os.environ["REPAIR_DEVICE_STATE"] = str(Path(tmp) / "device.json")
+            try:
+                report = _repair_jobs("2026-10-20T00:00:00Z")
+            finally:
+                if previous is None:
+                    os.environ.pop("REPAIR_DEVICE_STATE", None)
+                else:
+                    os.environ["REPAIR_DEVICE_STATE"] = previous
+            self.assertNotEqual(report["state"], "HEALTHY")
+            self.assertIn("rejected_jobs=2", report["evidence"])
+
+    def test_expired_accept_does_not_collect(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": 2_000.0}
+            store, secret, device = self._store(tmp, clock)
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            clock["now"] += 30
+            with self.assertRaises(RepairDenied) as expired:
+                store.accept(secret, envelope, provider=_MustNotRun())
+            self.assertIn("expired", str(expired.exception))
+            self.assertEqual(store.job_states[envelope["job_id"]]["lifecycle"], "expired")
+            reloaded = DeviceStore(Path(tmp) / "device.json", clock=lambda: clock["now"])
+            self.assertEqual(reloaded.summary()["expired_jobs"], 1)
+            self.assertEqual(reloaded.summary()["accepted_jobs"], 0)
+
+    def test_stale_or_missing_live_evidence_is_not_healthy(self) -> None:
+        """Mock payloads. A live_windows label without a fresh timestamp is not HEALTHY."""
+        import time
+
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": time.time()}
+            store, secret, device = self._store(tmp, clock)
+            missing = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            provider = _Script([{
+                "evidence_source": "live_windows",
+                "mocked": True,
+                "status": "collected",
+                "ok": True,
+                "problem_resolved": False,
+            }])
+            accepted = store.accept(secret, missing, provider=provider)
+            self.assertFalse(accepted["evidence_fresh"])
+            self.assertEqual(store.summary()["stale_evidence_jobs"], 1)
+            self.assertEqual(store.summary()["live_accepted_jobs"], 0)
+            report = DirectorGapTests()._director_repair(str(Path(tmp) / "device.json"))
+            self.assertEqual(report["state"], "DEGRADED")
+            self.assertNotEqual(report["state"], "HEALTHY")
+            self.assertIn("stale_evidence_jobs=1", report["evidence"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": time.time()}
+            store, secret, device = self._store(tmp, clock)
+            stale = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            provider = _Script([{
+                "evidence_source": "live_windows",
+                "mocked": True,
+                "status": "collected",
+                "ok": True,
+                "problem_resolved": False,
+                "collected_at_unix": int(clock["now"]) - 90_000,
+            }])
+            store.accept(secret, stale, provider=provider)
+            report = DirectorGapTests()._director_repair(str(Path(tmp) / "device.json"))
+            self.assertEqual(report["state"], "DEGRADED")
+            self.assertNotEqual(report["state"], "HEALTHY")
+            ages = [item.split("=", 1)[1] for item in report["evidence"] if item.startswith("evidence_age_seconds=")]
+            self.assertTrue(ages)
+            self.assertGreater(int(ages[0]), 86400)
+
+    def test_failed_collector_is_not_healthy(self) -> None:
+        """Mock collector. The exception is caught and is not a repair."""
+        import time
+
+        class _Boom:
+            def collect(self, procedure_id: str) -> dict:
+                raise OSError("collector failed")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": time.time()}
+            store, secret, device = self._store(tmp, clock)
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
+            result = store.accept(secret, envelope, provider=_Boom())
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["evidence_source"], "unavailable")
+            self.assertFalse(result["problem_resolved"])
+            self.assertEqual(result["detail"], "OSError")
+            self.assertEqual(store.job_states[envelope["job_id"]]["lifecycle"], "failed")
+            report = DirectorGapTests()._director_repair(str(Path(tmp) / "device.json"))
+            self.assertEqual(report["state"], "DEGRADED")
             self.assertNotEqual(report["state"], "HEALTHY")
 
 

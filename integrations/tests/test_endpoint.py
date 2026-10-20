@@ -240,11 +240,69 @@ class EndpointTests(unittest.TestCase):
                 )]))
                 failed = _endpoint_fleet("2026-10-19T00:00:00Z")
                 self.assertEqual(failed["state"], "DEGRADED")
+                self.assertIn("failed_checks=1", failed["evidence"])
             finally:
                 if previous is None:
                     os.environ.pop("ENDPOINT_STATE_FILE", None)
                 else:
                     os.environ["ENDPOINT_STATE_FILE"] = previous
+
+    def test_stale_registered_evidence_is_not_healthy_and_fresh_evidence_is(self) -> None:
+        """Fixture reports. A fresh receipt does not make an old collection time healthy."""
+        from ops_centre.director import _endpoint_fleet
+
+        def fleet(path: Path) -> dict:
+            previous = os.environ.get("ENDPOINT_STATE_FILE")
+            os.environ["ENDPOINT_STATE_FILE"] = str(path)
+            try:
+                return _endpoint_fleet("2026-10-20T00:00:00Z")
+            finally:
+                if previous is None:
+                    os.environ.pop("ENDPOINT_STATE_FILE", None)
+                else:
+                    os.environ["ENDPOINT_STATE_FILE"] = previous
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "devices.json"
+            now = time.time()
+            registry = DeviceRegistry(path, clock=lambda: now)
+            created = registry.create_enrolment("local-console")
+            secret = "a" * 32
+            registry.enrol(created["enrolment_code"], "Office PC", secret)
+            registry.submit(secret, _report(collected_at_unix=1000, checks=[self._check(collected_at_unix=1000)]))
+            stale = fleet(path)
+            self.assertEqual(stale["state"], "DEGRADED")
+            self.assertNotEqual(stale["state"], "HEALTHY")
+            self.assertIn("evidence_stale=true", stale["evidence"])
+            visible = registry.public_devices("local-console")[0]
+            self.assertTrue(visible["evidence_stale"])
+            self.assertGreater(visible["evidence_age_seconds"], 86400)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "devices.json"
+            now = time.time()
+            stamp = int(now)
+            registry = DeviceRegistry(path, clock=lambda: now)
+            created = registry.create_enrolment("local-console")
+            secret = "b" * 32
+            registry.enrol(created["enrolment_code"], "Office PC", secret)
+            registry.submit(secret, _report(
+                collected_at_unix=stamp,
+                checks=[self._check(collected_at_unix=stamp, summary="disks=1")],
+            ))
+            fresh = fleet(path)
+            self.assertEqual(fresh["state"], "HEALTHY")
+            self.assertIn("evidence_stale=false", fresh["evidence"])
+            self.assertIn("repair_authority=false", fresh["evidence"])
+            self.assertFalse(registry.public_report("local-console", None)["evidence_stale"])
+
+        with self.assertRaises(InvalidRequest):
+            normalise_report(_report(
+                device_id="a" * 32,
+                display_name="Office PC",
+                collected_at_unix=1_000,
+                checks=[self._check(collected_at_unix=1_000 + 301)],
+            ))
 
 
 if __name__ == "__main__":

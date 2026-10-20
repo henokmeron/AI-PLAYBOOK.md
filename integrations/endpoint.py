@@ -49,6 +49,8 @@ _CHECK_PROCEDURES = (
 _CHECK_SOURCES = ("live_windows", "unavailable")
 _MAX_CHECKS = len(_CHECK_PROCEDURES)
 _STALE_SECONDS = 86400
+_FUTURE_SKEW_SECONDS = 120
+_CHECK_SKEW_SECONDS = 300
 
 _NONE = {
     "type": "object",
@@ -204,7 +206,7 @@ def normalise_checks(checks: Any, collected_at: int) -> list[dict[str, Any]]:
             stamp = int(item.get("collected_at_unix"))
         except (TypeError, ValueError) as exc:
             raise InvalidRequest("diagnostic check time is not valid") from exc
-        if abs(stamp - collected_at) > _STALE_SECONDS:
+        if abs(stamp - collected_at) > _CHECK_SKEW_SECONDS:
             raise InvalidRequest("diagnostic check time does not match the report")
         summary = _plain(str(item.get("summary", "")), 240)
         if not summary:
@@ -425,7 +427,8 @@ class DeviceRegistry:
         with self._lock:
             rows = [item for item in self._devices.values() if item.tenant_id == tenant_id]
         rows.sort(key=lambda item: item.created_at)
-        return [_public_device(item) for item in rows]
+        now = self._clock()
+        return [_public_device(item, now) for item in rows]
 
     def public_report(self, tenant_id: str, device_id: str | None) -> dict[str, Any]:
         with self._lock:
@@ -445,6 +448,9 @@ class DeviceRegistry:
         report = dict(newest.report)
         report["repair_authority"] = False
         report["collection_scope"] = "computer_running_the_worker"
+        stamp = report.get("collected_at_unix")
+        collected = stamp if isinstance(stamp, int) and not isinstance(stamp, bool) else None
+        report.update(evidence_timing(collected, self._clock(), has_report=True))
         return report
 
     def fleet_snapshot(self) -> dict[str, Any]:
@@ -456,13 +462,22 @@ class DeviceRegistry:
             latest = max(enrolled, key=lambda item: item.last_report_at) if newest else None
             checks = list((latest.report or {}).get("checks") or []) if latest and latest.report else []
             has_report = bool(latest and latest.report)
+            raw_stamp = (latest.report or {}).get("collected_at_unix") if latest and latest.report else None
+            now = self._clock()
         failed = sum(1 for item in checks if not item.get("ok"))
+        failed_procedures = [
+            str(item.get("procedure_id"))
+            for item in checks
+            if isinstance(item, dict) and not item.get("ok") and item.get("procedure_id")
+        ]
         if checks:
             coverage = "registered"
         elif has_report:
             coverage = "basic"
         else:
             coverage = "none"
+        collected = raw_stamp if isinstance(raw_stamp, int) and not isinstance(raw_stamp, bool) else None
+        timing = evidence_timing(collected, now, has_report=has_report)
         return {
             "enrolled": len(enrolled),
             "revoked": revoked,
@@ -470,7 +485,9 @@ class DeviceRegistry:
             "repair_authority": False,
             "check_count": len(checks),
             "failed_checks": failed,
+            "failed_procedures": failed_procedures[:8],
             "coverage": coverage,
+            **timing,
         }
 
     def enrolled_count(self, tenant_id: str) -> int:
@@ -567,7 +584,23 @@ class DeviceRegistry:
             self._devices[device.device_id] = device
 
 
-def _public_device(item: _Device) -> dict[str, Any]:
+def evidence_timing(collected_at: int | None, now: float, *, has_report: bool) -> dict[str, Any]:
+    """Age of a stored diagnostic. Missing or old evidence is stale, never fresh."""
+    if not has_report or collected_at is None:
+        return {
+            "evidence_collected_at": collected_at if has_report else None,
+            "evidence_age_seconds": None,
+            "evidence_stale": bool(has_report),
+        }
+    age = int(now - collected_at)
+    return {
+        "evidence_collected_at": collected_at,
+        "evidence_age_seconds": age,
+        "evidence_stale": age > _STALE_SECONDS or age < -_FUTURE_SKEW_SECONDS,
+    }
+
+
+def _public_device(item: _Device, now: float) -> dict[str, Any]:
     checks = list((item.report or {}).get("checks") or []) if item.report else []
     if item.report is None:
         coverage = "none"
@@ -575,6 +608,17 @@ def _public_device(item: _Device) -> dict[str, Any]:
         coverage = "registered"
     else:
         coverage = "basic"
+    raw_stamp = item.report.get("collected_at_unix") if item.report else None
+    collected = raw_stamp if isinstance(raw_stamp, int) and not isinstance(raw_stamp, bool) else None
+    timing = evidence_timing(collected, now, has_report=item.report is not None)
+    report = None
+    if item.report is not None:
+        report = {
+            **dict(item.report),
+            "repair_authority": False,
+            "collection_scope": "computer_running_the_worker",
+            **timing,
+        }
     return {
         "device_id": item.device_id,
         "display_name": item.display_name,
@@ -583,11 +627,8 @@ def _public_device(item: _Device) -> dict[str, Any]:
         "repair_authority": False,
         "last_report_at": item.last_report_at,
         "diagnostic_coverage": coverage,
-        "report": None if item.report is None else {
-            **dict(item.report),
-            "repair_authority": False,
-            "collection_scope": "computer_running_the_worker",
-        },
+        **timing,
+        "report": report,
     }
 
 

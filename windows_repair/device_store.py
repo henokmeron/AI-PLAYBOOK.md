@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import time
 import uuid
@@ -22,7 +23,10 @@ from .providers import LIVE_PROCEDURES, LiveWindowsProvider
 
 _READ_ONLY = tuple(LIVE_PROCEDURES)
 STALE_AFTER_SECONDS = 86400
+_FUTURE_SKEW_SECONDS = 120
 _FAILED_OUTCOMES = frozenset({"failed", "approval_rejected", "needs_administrator"})
+_TERMINAL = frozenset({"accepted", "rejected", "expired", "failed"})
+_OPERATOR = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.@-]{0,63}\Z")
 
 
 def _canonical(payload: dict[str, Any]) -> bytes:
@@ -74,6 +78,8 @@ class DeviceStore:
         operator: str,
         approval_id: str | None = None,
     ) -> dict[str, Any]:
+        if not isinstance(operator, str) or not _OPERATOR.fullmatch(operator):
+            raise RepairDenied("operator is not authorised to issue a device job")
         if procedure_id not in _READ_ONLY and procedure_id != "print.spooler.restart":
             raise RepairDenied("procedure is not registered for a device job")
         self._device(tenant_id, device_id)
@@ -108,43 +114,94 @@ class DeviceStore:
         if not hmac.compare_digest(expected, str(envelope.get("signature") or "")):
             raise RepairDenied("job signature is invalid")
         job_id = str(envelope.get("job_id") or "")
+        if not any(str(job.get("job_id")) == job_id for job in self.jobs):
+            raise RepairDenied("job is not authorised")
+        current = str((self.job_states.get(job_id) or {}).get("lifecycle") or "issued")
+        if current == "accepted":
+            raise RepairDenied("job replay rejected")
+        if current == "rejected":
+            raise RepairDenied("job was rejected")
+        if current == "expired":
+            raise RepairDenied("job expired")
+        if current == "failed":
+            raise RepairDenied("job already failed")
+        device_id = str(envelope.get("device_id") or "")
+        tenant_id = str(envelope.get("tenant_id") or "")
+        device = self.devices.get(device_id)
+        if device is None or device["tenant_id"] != tenant_id:
+            self._reject(job_id, tenant_id, device_id, "unauthorised")
+        assert device is not None
+        if device["revoked"]:
+            self._reject(job_id, device["tenant_id"], device["device_id"], "revoked")
+        digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+        if not hmac.compare_digest(digest, device["secret_hash"]):
+            self._reject(job_id, device["tenant_id"], device["device_id"], "unauthorised")
         if self._clock() > float(envelope["expires_at"]):
             self._set_lifecycle(job_id, "expired", expired_at=self._clock())
             raise RepairDenied("job expired")
         nonce = str(envelope["nonce"])
         if nonce in self.nonces:
             raise RepairDenied("job replay rejected")
-        device = self.devices.get(str(envelope["device_id"]))
-        if device is None or device["revoked"] or device["tenant_id"] != envelope["tenant_id"]:
-            raise RepairDenied("device is not enrolled")
-        digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
-        if not hmac.compare_digest(digest, device["secret_hash"]):
-            raise RepairDenied("device authentication failed")
         procedure_id = str(envelope["procedure_id"])
         if procedure_id not in _READ_ONLY:
             raise RepairDenied("this device job is not a read-only diagnostic")
         self.nonces.append(nonce)
         device["last_seen"] = self._clock()
         collector = provider or LiveWindowsProvider()
-        result = collector.collect(procedure_id)
+        try:
+            result = collector.collect(procedure_id)
+        except Exception as exc:  # noqa: BLE001 — a failed read must not look like a healthy accept
+            result = {
+                "evidence_source": "unavailable",
+                "ok": False,
+                "status": "failed",
+                "problem_resolved": False,
+                "detail": type(exc).__name__,
+            }
+        if not isinstance(result, dict):
+            result = {
+                "evidence_source": "unavailable",
+                "ok": False,
+                "status": "failed",
+                "problem_resolved": False,
+                "detail": "unreadable collector result",
+            }
+        result = dict(result)
+        fresh, stamp, age = self._evidence_clock(result)
         result["job_id"] = envelope["job_id"]
         result["device_id"] = device["device_id"]
         result["tenant_id"] = device["tenant_id"]
         result["operator"] = envelope.get("operator")
+        result["evidence_fresh"] = fresh
+        if stamp is not None:
+            result["collected_at_unix"] = stamp
         if "problem_resolved" not in result:
             result["problem_resolved"] = False
         status = str(result.get("status") or "done")
+        ok = bool(result.get("ok")) if "ok" in result else status == "collected"
+        failed = (not ok) or status in _FAILED_OUTCOMES
+        outcome = "failed" if failed else status
         self._set_lifecycle(
             job_id,
-            "accepted",
+            "failed" if failed else "accepted",
             accepted_at=device["last_seen"],
-            status=status[:40],
-            ok=bool(result.get("ok")) if "ok" in result else status == "collected",
+            status=outcome[:40],
+            ok=ok,
             problem_resolved=bool(result.get("problem_resolved")),
             evidence_source=str(result.get("evidence_source") or "")[:40],
+            evidence_fresh=fresh,
+            collected_at_unix=stamp,
+            evidence_age_seconds=age,
             save=False,
         )
-        self._audit("accept", device["tenant_id"], device["device_id"], status, envelope.get("operator"), job_id=job_id)
+        self._audit(
+            "accept",
+            device["tenant_id"],
+            device["device_id"],
+            outcome[:40],
+            envelope.get("operator"),
+            job_id=job_id,
+        )
         self._save()
         return result
 
@@ -152,13 +209,26 @@ class DeviceStore:
         seen = [item["last_seen"] for item in self.devices.values() if isinstance(item.get("last_seen"), (int, float))]
         last_seen = max(seen) if seen else None
         age = None if last_seen is None else self._clock() - float(last_seen)
-        counts = {"issued": 0, "accepted": 0, "expired": 0}
+        counts = {"issued": 0, "accepted": 0, "expired": 0, "rejected": 0, "failed": 0}
         live_accepted = 0
+        stale_evidence = 0
+        stamps: list[int] = []
         for job in self.jobs:
             lifecycle = self._lifecycle_of(job)
-            counts[lifecycle] += 1
-            if lifecycle == "accepted" and self._evidence_source(job) == "live_windows":
+            counts[lifecycle] = counts.get(lifecycle, 0) + 1
+            recorded = self.job_states.get(str(job.get("job_id") or "")) or {}
+            source = self._evidence_source(job)
+            fresh = recorded.get("evidence_fresh") is True
+            ok = recorded.get("ok") is True
+            stamp = recorded.get("collected_at_unix")
+            if isinstance(stamp, int) and not isinstance(stamp, bool):
+                stamps.append(stamp)
+            if lifecycle == "accepted" and source == "live_windows" and ok and fresh:
                 live_accepted += 1
+            elif lifecycle == "accepted" and source == "live_windows" and not fresh:
+                stale_evidence += 1
+        newest_stamp = max(stamps) if stamps else None
+        evidence_age = None if newest_stamp is None else int(self._clock() - newest_stamp)
         failed = [row for row in self.audit if row.get("outcome") in _FAILED_OUTCOMES]
         return {
             "device_count": len(self.devices),
@@ -167,13 +237,35 @@ class DeviceStore:
             "last_seen_age_seconds": None if age is None else int(age),
             "stale": age is not None and age > STALE_AFTER_SECONDS,
             "failed_jobs": len(failed),
+            "failed_evidence_jobs": counts["failed"],
             "pending_jobs": counts["issued"],
             "open_jobs": counts["issued"],
             "accepted_jobs": counts["accepted"],
             "expired_jobs": counts["expired"],
+            "rejected_jobs": counts["rejected"],
             "issued_jobs": len(self.jobs),
             "live_accepted_jobs": live_accepted,
+            "stale_evidence_jobs": stale_evidence,
+            "evidence_collected_at": newest_stamp,
+            "evidence_age_seconds": evidence_age,
         }
+
+    def _reject(self, job_id: str, tenant_id: str, device_id: str, reason: str) -> None:
+        self._set_lifecycle(job_id, "rejected", rejected_at=self._clock(), reason=reason, save=False)
+        self._audit("reject", tenant_id, device_id, reason, None, job_id=job_id)
+        self._save()
+        if reason == "revoked":
+            raise RepairDenied("device credential is revoked")
+        raise RepairDenied("device authentication failed")
+
+    def _evidence_clock(self, result: dict[str, Any]) -> tuple[bool, int | None, int | None]:
+        raw = result.get("collected_at_unix")
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+            return False, None, None
+        stamp = int(raw)
+        age = int(self._clock() - stamp)
+        fresh = -_FUTURE_SKEW_SECONDS <= age <= STALE_AFTER_SECONDS
+        return fresh, stamp, age
 
     def _device(self, tenant_id: str, device_id: str) -> dict[str, Any]:
         device = self.devices.get(device_id)
@@ -191,10 +283,10 @@ class DeviceStore:
         recorded = self.job_states.get(job_id) or {}
         lifecycle = str(recorded.get("lifecycle") or "issued")
         nonce = str(job.get("nonce") or "")
-        if lifecycle == "accepted" or (nonce and nonce in self.nonces):
+        if lifecycle in _TERMINAL:
+            return lifecycle
+        if nonce and nonce in self.nonces:
             return "accepted"
-        if lifecycle == "expired":
-            return "expired"
         try:
             expires = float(job["expires_at"])
         except (KeyError, TypeError, ValueError):
@@ -207,7 +299,7 @@ class DeviceStore:
         if not job_id or not any(str(job.get("job_id")) == job_id for job in self.jobs):
             return
         current = dict(self.job_states.get(job_id) or {})
-        if current.get("lifecycle") == "accepted" and lifecycle != "accepted":
+        if current.get("lifecycle") in _TERMINAL and lifecycle != current.get("lifecycle"):
             return
         current["lifecycle"] = lifecycle
         current.update(extra)

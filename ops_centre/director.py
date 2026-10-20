@@ -78,7 +78,7 @@ def _component(
         "state": state,
         "checked_at": checked_at,
         "detail": detail[:400],
-        "evidence": evidence[:8],
+        "evidence": evidence[:12],
         "kind": "verified_fact",
     }
 
@@ -112,6 +112,7 @@ def _endpoint_fleet(verified_at: str | None) -> dict[str, Any]:
             )
         age = time.time() - newest
         coverage = str(snapshot["coverage"])
+        evidence_stale = bool(snapshot.get("evidence_stale"))
         if age > 86400:
             state = "DEGRADED"
             detail = "The newest check-in is older than one day."
@@ -121,20 +122,30 @@ def _endpoint_fleet(verified_at: str | None) -> dict[str, Any]:
         elif int(snapshot["failed_checks"]):
             state = "DEGRADED"
             detail = "One or more registered diagnostics failed."
+        elif evidence_stale:
+            state = "DEGRADED"
+            detail = "Registered diagnostics are present, but the collection time is missing or older than one day. Stale evidence is not healthy."
         else:
             state = "HEALTHY"
             detail = "Registered read-only diagnostics are fresh. This is not remote control or a repair."
+        evidence = [
+            f"enrolled={count}",
+            f"last_report_unix={int(newest)}",
+            f"age_seconds={int(age)}",
+            f"coverage={coverage}",
+            f"failed_checks={snapshot['failed_checks']}",
+            f"evidence_collected_at={snapshot.get('evidence_collected_at')}",
+            f"evidence_age_seconds={snapshot.get('evidence_age_seconds')}",
+            f"evidence_stale={str(evidence_stale).lower()}",
+            "repair_authority=false",
+        ]
+        failed_names = snapshot.get("failed_procedures") or []
+        if failed_names:
+            evidence.append("failed_procedures=" + ",".join(str(item) for item in failed_names)[:160])
         return _component(
             "endpoint_fleet",
             state,
-            evidence=[
-                f"enrolled={count}",
-                f"last_report_unix={int(newest)}",
-                f"age_seconds={int(age)}",
-                f"coverage={coverage}",
-                f"failed_checks={snapshot['failed_checks']}",
-                "repair_authority=false",
-            ],
+            evidence=evidence,
             detail=detail,
             checked_at=verified_at,
         )
@@ -164,24 +175,33 @@ def _repair_jobs(verified_at: str | None) -> dict[str, Any]:
 
         summary = DeviceStore(Path(raw)).summary()
         age = summary.get("last_seen_age_seconds")
+        live = int(summary.get("live_accepted_jobs") or 0)
+        stale_evidence = int(summary.get("stale_evidence_jobs") or 0)
+        rejected = int(summary.get("rejected_jobs") or 0)
         if summary["device_count"] == 0 or summary["last_seen"] is None or age is None:
             state = "UNKNOWN"
-            detail = "No completed device check-in is recorded. A missing last-seen is not healthy."
+            if rejected:
+                detail = "A job was rejected for a revoked or unauthorised device. No completed check-in is recorded."
+            else:
+                detail = "No completed device check-in is recorded. A missing last-seen is not healthy."
         elif age < 0:
             state = "UNKNOWN"
             detail = "The last-seen time is ahead of this clock. That is not a healthy check-in."
         elif summary.get("stale"):
             state = "DEGRADED"
             detail = "The newest device check-in is older than one day. Stale evidence is not healthy."
-        elif summary["failed_jobs"]:
+        elif summary["failed_jobs"] or int(summary.get("failed_evidence_jobs") or 0):
             state = "DEGRADED"
-            detail = "A device job failed. This file is not a healthy repair fleet."
-        elif int(summary.get("live_accepted_jobs") or 0) < 1:
+            detail = "A device job failed or diagnostic collection failed. This file is not a healthy repair fleet."
+        elif stale_evidence and live < 1:
+            state = "DEGRADED"
+            detail = "Live evidence is missing a collection time or is older than one day. Stale evidence is not healthy."
+        elif live < 1:
             state = "UNKNOWN"
-            detail = "No accepted job has live_windows evidence. A mock, fixture, or unlabelled result is not healthy."
+            detail = "No accepted job has fresh live_windows evidence. A mock, fixture, or unlabelled result is not healthy."
         else:
             state = "HEALTHY"
-            detail = "A read-only live_windows job was accepted recently. This is not a repair and not a deployment."
+            detail = "A read-only live_windows job with a fresh collection time was accepted. This is not a repair and not a deployment."
         return _component(
             "repair_jobs",
             state,
@@ -192,7 +212,10 @@ def _repair_jobs(verified_at: str | None) -> dict[str, Any]:
                 f"accepted_jobs={summary['accepted_jobs']}",
                 f"live_accepted_jobs={summary.get('live_accepted_jobs')}",
                 f"expired_jobs={summary['expired_jobs']}",
+                f"rejected_jobs={rejected}",
                 f"failed_jobs={summary['failed_jobs']}",
+                f"stale_evidence_jobs={stale_evidence}",
+                f"evidence_age_seconds={summary.get('evidence_age_seconds')}",
                 "repair_authority=false",
             ],
             detail=detail,

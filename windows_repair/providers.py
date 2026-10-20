@@ -5,6 +5,7 @@ labelled fixture and are not described as a live computer.
 """
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from .catalogue import FIXTURES
@@ -137,6 +138,7 @@ class LiveWindowsProvider:
     """Collects one registered read-only procedure from this Windows computer."""
 
     def collect(self, procedure_id: str) -> dict[str, Any]:
+        collected_at = int(time.time())
         script_id = LIVE_PROCEDURES.get(procedure_id)
         if script_id is None:
             return {
@@ -145,6 +147,7 @@ class LiveWindowsProvider:
                 "mocked": False,
                 "ok": False,
                 "status": "not_registered",
+                "collected_at_unix": collected_at,
                 "detail": "This procedure has no live read-only collector.",
             }
         raw = run_script(script_id)
@@ -156,6 +159,7 @@ class LiveWindowsProvider:
                 "ok": False,
                 "status": raw.get("status") or "failed",
                 "timed_out": bool(raw.get("timed_out")),
+                "collected_at_unix": collected_at,
                 "detail": str(raw.get("detail") or raw.get("stderr") or "The live diagnostic failed.")[:300],
             }
         try:
@@ -167,9 +171,11 @@ class LiveWindowsProvider:
                 "mocked": False,
                 "ok": False,
                 "status": "unreadable",
+                "collected_at_unix": collected_at,
                 "detail": type(exc).__name__,
             }
         evidence["ok"] = True
         evidence["status"] = "collected"
         evidence["problem_resolved"] = False
+        evidence["collected_at_unix"] = collected_at
         return evidence

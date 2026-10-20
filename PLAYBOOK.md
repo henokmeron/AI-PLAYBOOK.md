@@ -280,6 +280,10 @@ Phase 7 — Advanced model customisation
 - Treat the playbook as a reproducible blueprint for future AI-assisted automation.
 
 ## 13. Change log
+### 2026-10-20 — Endpoint evidence and job rejection
+- Revoked or unauthorised device jobs are stored as `rejected` and are not collected. Expired jobs are not collected. A failed read-only collection is `failed`.
+- Director `repair_jobs` and `endpoint_fleet` are HEALTHY only when evidence is present, successful, and newer than one day. See `docs/IMPLEMENTATION_STATUS.md`.
+
 ### 2026-10-20 — Canonical checkout
 - The canonical local checkout is `C:\Users\kokob\src\AI-PLAYBOOK.md`.
 - GitHub `origin` is `https://github.com/henokmeron/AI-PLAYBOOK.md.git` on branch `main`.
