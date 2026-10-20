@@ -176,9 +176,18 @@ class PrinterWorkflow:
         after = self._collect(fixture)
         before_running = str(before.get("spooler") or "").casefold() in {"running", "4"}
         after_running = str(after.get("spooler") or "").casefold() in {"running", "4"}
-        if action.get("executed") and not before_running and after_running:
+        independent = (
+            str(before.get("evidence_source") or "") == "live_windows"
+            and str(after.get("evidence_source") or "") == "live_windows"
+            and before.get("mocked") is not True
+            and after.get("mocked") is not True
+        )
+        if action.get("executed") and not before_running and after_running and independent:
             verification = "resolved"
             resolved = True
+        elif action.get("executed") and not before_running and after_running:
+            verification = "not_independent"
+            resolved = False
         elif not action.get("executed"):
             verification = "could_not_verify"
             resolved = False
@@ -192,6 +201,7 @@ class PrinterWorkflow:
             "changed_device": bool(action.get("changed_device")),
             "problem_resolved": resolved,
             "verification": verification,
+            "independent_verification": resolved,
             "status": action.get("status"),
             "detail": action.get("detail"),
             "before_spooler": before.get("spooler"),

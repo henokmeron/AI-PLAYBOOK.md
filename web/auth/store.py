@@ -1,9 +1,12 @@
-"""File-backed operator and session persistence (mode 0600 on POSIX)."""
+"""File-backed operator and session persistence.
+
+POSIX mode 0700/0600 and a Windows protected ACL are required. A failed
+permission change is not ignored. See integrations.state_guard for what
+Windows can and cannot guarantee.
+"""
 from __future__ import annotations
 
 import json
-import os
-import stat
 import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -65,20 +68,16 @@ class AuthStore:
         self._load_sessions()
 
     def _harden_dir(self) -> None:
-        if os.name != "posix":
-            return
-        try:
-            self.directory.chmod(stat.S_IRWXU)
-        except OSError:
-            pass
+        from integrations.state_guard import restrict_private
+
+        restrict_private(self.directory)
 
     def _harden_file(self, path: Path) -> None:
-        if os.name != "posix" or not path.is_file():
+        if not path.is_file() or path.is_symlink():
             return
-        try:
-            path.chmod(stat.S_IRUSR | stat.S_IWUSR)
-        except OSError:
-            pass
+        from integrations.state_guard import restrict_private
+
+        restrict_private(path)
 
     def _load_operators(self) -> None:
         if not self.operators_path.is_file():

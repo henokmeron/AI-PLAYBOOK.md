@@ -8,25 +8,39 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from types import SimpleNamespace
-
+from web.auth.store import SessionRecord
 from windows_repair.device_store import DeviceStore, grant_from_session
-
-
-def _ada(tenant_id: str = "acme"):
-    return grant_from_session(
-        SimpleNamespace(session_id="sess-ada", operator_id="op-ada", username="ada", role="operator"),
-        tenant_id,
-    )
 from windows_repair.engine import RepairDenied
 from windows_repair.printer_flow import PrinterWorkflow, classify_printer
 from windows_repair.providers import FixtureProvider, normalise_live
 from windows_repair.remote_support import request_session, revoke_session, status_from_env
 from windows_repair.runner import powershell_exe, run_argv
+
+
+def _session(role: str = "operator", username: str = "ada", *, expired: bool = False) -> SessionRecord:
+    now = time.time()
+    end = now - 10 if expired else now + 3600
+    return SessionRecord(
+        session_id="sess-" + username,
+        operator_id="op-" + username,
+        username=username,
+        role=role,
+        csrf_token="csrf-" + username,
+        created_at=now,
+        last_seen=now,
+        expires_at=end,
+        absolute_expires_at=end,
+    )
+
+
+def _ada(tenant_id: str = "acme"):
+    return grant_from_session(_session(), tenant_id)
 
 
 class ParseTests(unittest.TestCase):
@@ -89,8 +103,9 @@ class PrinterWorkflowTests(unittest.TestCase):
         mismatched = flow.execute_restart("acme", "device-2", requested["approval_id"], "operator@example.com")
         self.assertEqual(mismatched["status"], "approval_rejected")
         result = flow.execute_restart("acme", "device-1", requested["approval_id"], "operator@example.com")
-        self.assertEqual(result["verification"], "resolved")
-        self.assertTrue(result["problem_resolved"])
+        self.assertEqual(result["verification"], "not_independent")
+        self.assertFalse(result["problem_resolved"])
+        self.assertFalse(result["independent_verification"])
         self.assertEqual(result["evidence_source"], "mock")
         self.assertTrue(result["mocked"] if "mocked" in result else True)
         again = flow.execute_restart("acme", "device-1", requested["approval_id"], "operator@example.com")
@@ -550,16 +565,20 @@ class JobRejectionTests(unittest.TestCase):
             with self.assertRaises(RepairDenied):
                 store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", operator="ada")
             with self.assertRaises(RepairDenied):
+                grant_from_session(_session(role="viewer"), "acme")
+            with self.assertRaises(RepairDenied):
+                grant_from_session("ada", "acme")
+            with self.assertRaises(RepairDenied):
                 grant_from_session(
-                    SimpleNamespace(session_id="s", operator_id="op", username="ada", role="viewer"),
+                    SimpleNamespace(
+                        session_id="s", operator_id="op", username="ada", role="operator",
+                        csrf_token="csrf", expires_at=9_999_999_999, absolute_expires_at=9_999_999_999,
+                    ),
                     "acme",
                 )
             with self.assertRaises(RepairDenied):
-                grant_from_session("ada", "acme")
-            other = grant_from_session(
-                SimpleNamespace(session_id="s2", operator_id="op2", username="ada", role="operator"),
-                "otherco",
-            )
+                grant_from_session(_session(expired=True), "acme")
+            other = grant_from_session(_session(), "otherco")
             with self.assertRaises(RepairDenied) as crossed:
                 store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=other)
             self.assertIn("organisation", str(crossed.exception))
@@ -670,6 +689,247 @@ class JobRejectionTests(unittest.TestCase):
             self.assertEqual(migrated["version"], 2)
             self.assertNotIn("key", migrated)
             self.assertEqual((Path(str(legacy) + ".key")).read_text(encoding="utf-8").strip(), key)
+
+
+def _cross_process_accept(path: str, secret: str, envelope: dict, marker: str, now: float, queue) -> None:
+    """Child process used to prove two processes cannot both collect one job."""
+    import time as _time
+
+    from windows_repair.device_store import DeviceStore as _Store
+    from windows_repair.engine import RepairDenied as _Denied
+
+    class _Slow:
+        def collect(self, procedure_id: str) -> dict:
+            with open(marker, "a", encoding="utf-8") as handle:
+                handle.write("x")
+                handle.flush()
+            _time.sleep(0.4)
+            return {
+                "evidence_source": "mock",
+                "mocked": True,
+                "status": "collected",
+                "ok": True,
+                "problem_resolved": True,
+            }
+
+    try:
+        store = _Store(Path(path), clock=lambda: now, ttl=30)
+        store.accept(secret, envelope, provider=_Slow())
+        queue.put("accepted")
+    except _Denied as exc:
+        queue.put("denied:" + str(exc))
+    except Exception as exc:
+        queue.put("error:" + type(exc).__name__ + ":" + str(exc))
+
+
+class DeviceStoreGuardTests(unittest.TestCase):
+    """File permissions, crash safety, and diagnostic-only acceptance. Mock collectors are labelled."""
+
+    def _store(self, tmp: str, clock: dict) -> tuple[DeviceStore, str, str]:
+        store = DeviceStore(Path(tmp) / "device.json", clock=lambda: clock["now"], ttl=30)
+        secret = "d" * 32
+        device = store.enrol("acme", secret)
+        return store, secret, device
+
+    def test_private_acl_is_checked_and_permission_failure_keeps_the_previous_file(self) -> None:
+        from integrations.state_guard import StatePermissionError, assert_private
+
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": 8_000.0}
+            root = Path(tmp) / "fresh"
+            store = DeviceStore(root / "device.json", clock=lambda: clock["now"], ttl=30)
+            secret = "d" * 32
+            device = store.enrol("acme", secret)
+            assert_private(root)
+            assert_private(root / "device.json")
+            assert_private(root / "device.json.key")
+            assert_private(root / "device.json.lock")
+            before = (root / "device.json").read_text(encoding="utf-8")
+            with patch("windows_repair.device_store.restrict_private", side_effect=StatePermissionError("denied")):
+                with self.assertRaises(RepairDenied) as denied:
+                    store.enrol("acme", "e" * 32)
+            self.assertIn("permissions", str(denied.exception))
+            self.assertEqual((root / "device.json").read_text(encoding="utf-8"), before)
+            reloaded = DeviceStore(root / "device.json", clock=lambda: clock["now"])
+            self.assertIn(device, reloaded.devices)
+            self.assertEqual(reloaded.summary()["device_count"], 1)
+            self.assertNotIn(secret, before)
+
+    def test_interrupted_replace_preserves_the_previous_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": 8_100.0}
+            store, _secret, device = self._store(tmp, clock)
+            path = Path(tmp) / "device.json"
+            before = path.read_text(encoding="utf-8")
+            with patch("windows_repair.device_store.os.replace", side_effect=OSError("interrupted")):
+                with self.assertRaises(RepairDenied):
+                    store.enrol("acme", "e" * 32)
+            self.assertEqual(path.read_text(encoding="utf-8"), before)
+            self.assertFalse(path.with_name("device.json.tmp").exists())
+            reloaded = DeviceStore(path, clock=lambda: clock["now"])
+            self.assertIn(device, reloaded.devices)
+            self.assertEqual(reloaded.summary()["device_count"], 1)
+
+    def test_symlink_and_bad_keys_fail_closed_without_dropping_records(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": 8_200.0}
+            store, _secret, device = self._store(tmp, clock)
+            path = Path(tmp) / "device.json"
+            before = path.read_text(encoding="utf-8")
+            link = Path(tmp) / "linked.json"
+            try:
+                os.symlink(path, link)
+            except OSError:
+                self.skipTest("symlinks unavailable")
+            with self.assertRaises(RepairDenied):
+                DeviceStore(link, clock=lambda: clock["now"])
+            self.assertEqual(path.read_text(encoding="utf-8"), before)
+            key_path = Path(str(path) + ".key")
+            key_text = key_path.read_text(encoding="utf-8")
+            key_path.unlink()
+            os.symlink(path, key_path)
+            with self.assertRaises(RepairDenied):
+                DeviceStore(path, clock=lambda: clock["now"])
+            self.assertEqual(path.read_text(encoding="utf-8"), before)
+            key_path.unlink()
+            key_path.write_text(key_text, encoding="utf-8")
+            reloaded = DeviceStore(path, clock=lambda: clock["now"])
+            self.assertEqual(reloaded.devices[device]["device_id"], device)
+
+            missing = Path(tmp) / "missing-key.json"
+            missing.write_text(json.dumps({"version": 2, "devices": {"keep": {}}, "jobs": [], "nonces": []}), encoding="utf-8")
+            missing_before = missing.read_text(encoding="utf-8")
+            with self.assertRaises(RepairDenied):
+                DeviceStore(missing, clock=lambda: clock["now"])
+            self.assertEqual(missing.read_text(encoding="utf-8"), missing_before)
+
+            broken_key = Path(tmp) / "bad-key.json"
+            broken_key.write_text(before, encoding="utf-8")
+            (Path(str(broken_key) + ".key")).write_text("not-a-key\n", encoding="utf-8")
+            with self.assertRaises(RepairDenied):
+                DeviceStore(broken_key, clock=lambda: clock["now"])
+            self.assertEqual(broken_key.read_text(encoding="utf-8"), before)
+
+            mismatched = Path(tmp) / "mismatch.json"
+            payload = json.loads(before)
+            payload["version"] = 1
+            payload["key"] = "cd" * 32
+            mismatched.write_text(json.dumps(payload), encoding="utf-8")
+            (Path(str(mismatched) + ".key")).write_text(key_text, encoding="utf-8")
+            mismatch_before = mismatched.read_text(encoding="utf-8")
+            with self.assertRaises(RepairDenied):
+                DeviceStore(mismatched, clock=lambda: clock["now"])
+            self.assertEqual(mismatched.read_text(encoding="utf-8"), mismatch_before)
+
+    def test_reported_symlink_is_refused(self) -> None:
+        """Path.is_symlink is patched. This PC could not create a real symlink."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "device.json"
+            path.write_text("{}\n", encoding="utf-8")
+            real = Path.is_symlink
+
+            def fake(self: Path) -> bool:
+                if self.name == "device.json":
+                    return True
+                return real(self)
+
+            with patch.object(Path, "is_symlink", fake):
+                with self.assertRaises(RepairDenied):
+                    DeviceStore(path, clock=lambda: 8_200.0)
+            self.assertEqual(path.read_text(encoding="utf-8"), "{}\n")
+
+    def test_payload_fields_cannot_widen_a_diagnostic_job(self) -> None:
+        import hashlib
+        import hmac
+
+        from windows_repair.device_store import _canonical
+
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": 8_300.0}
+            store, secret, device = self._store(tmp, clock)
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
+            for field, value in (
+                ("procedure_id", "print.spooler.restart"),
+                ("approval_id", "apr-1"),
+                ("lifecycle", "accepted"),
+            ):
+                mutated = dict(envelope)
+                mutated[field] = value
+                with self.assertRaises(RepairDenied) as denied:
+                    store.accept(secret, mutated, provider=_MustNotRun())
+                self.assertIn("signature", str(denied.exception))
+            key = bytes.fromhex((Path(tmp) / "device.json.key").read_text(encoding="utf-8").strip())
+            resigned = dict(envelope)
+            resigned["procedure_id"] = "print.spooler.restart"
+            resigned["approval_id"] = "apr-1"
+            resigned["lifecycle"] = "accepted"
+            body = {key_name: value for key_name, value in resigned.items() if key_name != "signature"}
+            resigned["signature"] = hmac.new(key, _canonical(body), hashlib.sha256).hexdigest()
+            with self.assertRaises(RepairDenied) as mismatched:
+                store.accept(secret, resigned, provider=_MustNotRun())
+            self.assertIn("does not match", str(mismatched.exception))
+
+    def test_collector_cannot_declare_a_repair_successful(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": 8_400.0}
+            store, secret, device = self._store(tmp, clock)
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
+
+            class _Lie:
+                def collect(self, procedure_id: str) -> dict:
+                    return {
+                        "evidence_source": "mock",
+                        "mocked": True,
+                        "status": "collected",
+                        "ok": True,
+                        "problem_resolved": True,
+                    }
+
+            result = store.accept(secret, envelope, provider=_Lie())
+            self.assertFalse(result["problem_resolved"])
+            self.assertTrue(result["mocked"])
+            self.assertFalse(store.job_states[envelope["job_id"]]["problem_resolved"])
+
+    def test_two_processes_cannot_both_collect(self) -> None:
+        import multiprocessing
+
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": 10_000.0}
+            store, secret, device = self._store(tmp, clock)
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
+            marker = Path(tmp) / "collects.txt"
+            marker.write_text("", encoding="utf-8")
+            ctx = multiprocessing.get_context("spawn")
+            queue = ctx.Queue()
+            procs = [
+                ctx.Process(
+                    target=_cross_process_accept,
+                    args=(str(Path(tmp) / "device.json"), secret, envelope, str(marker), clock["now"], queue),
+                )
+                for _ in range(2)
+            ]
+            for proc in procs:
+                proc.start()
+            results = []
+            for proc in procs:
+                proc.join(20)
+                if proc.is_alive():
+                    proc.terminate()
+                    proc.join(5)
+                    self.fail("cross-process accept did not finish")
+                self.assertEqual(proc.exitcode, 0)
+                results.append(queue.get(timeout=5))
+            self.assertEqual(sorted(item.split(":", 1)[0] for item in results), ["accepted", "denied"])
+            self.assertEqual(marker.read_text(encoding="utf-8"), "x")
+            reloaded = DeviceStore(Path(tmp) / "device.json", clock=lambda: clock["now"])
+            self.assertEqual(reloaded.job_states[envelope["job_id"]]["lifecycle"], "accepted")
+            self.assertFalse(reloaded.job_states[envelope["job_id"]]["problem_resolved"])
+            self.assertEqual(reloaded.nonces.count(envelope["nonce"]), 1)
+
+    def test_http_surface_does_not_issue_device_jobs(self) -> None:
+        source = (Path(__file__).resolve().parents[2] / "web" / "server.py").read_text(encoding="utf-8")
+        self.assertNotIn("DeviceStore", source)
+        self.assertNotIn("grant_from_session", source)
 
 
 if __name__ == "__main__":

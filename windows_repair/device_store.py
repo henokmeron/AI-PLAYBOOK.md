@@ -2,6 +2,16 @@
 
 This is not a Windows service. Enrolment does not grant repair authority.
 The state file must stay outside the source tree.
+
+The in-process lock is not enough when two processes open the same file.
+Each public operation also holds a lock file, reloads, and writes back before
+releasing it. Collectors must not call back into the store: the lock is not
+re-entrant. The intended deployment is one loopback process; the file lock is
+the backstop that stops a second process collecting the same job.
+
+Permission failures raise. They are not ignored. On Windows the ACL is set and
+read back. That ACL does not stop an administrator with take-ownership or
+backup privilege, and creating the file is not itself proof of a private ACL.
 """
 from __future__ import annotations
 
@@ -18,6 +28,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from integrations.endpoint import assert_safe_state_path
+from integrations.state_guard import CrossProcessLock, StateLockError, StatePermissionError, restrict_private
+from web.auth.store import SessionRecord
 
 from .engine import RepairDenied
 from .providers import LIVE_PROCEDURES, LiveWindowsProvider
@@ -59,14 +71,23 @@ class OperatorGrant:
 
 
 def grant_from_session(session: Any, tenant_id: str) -> OperatorGrant:
-    """Build a grant from the authenticated session record, never from a request name."""
-    if session is None or isinstance(session, (str, bytes, dict)):
+    """Build a grant from the authenticated session record, never from a request name.
+
+    An object that merely has the same attributes is not a session. There is no
+    HTTP route that calls DeviceStore.issue; a future route must pass the
+    SessionRecord returned by the server-side auth store after the cookie and
+    CSRF checks, and must not read the operator name from the request body.
+    """
+    if not isinstance(session, SessionRecord):
         raise RepairDenied("operator session is required")
-    session_id = str(getattr(session, "session_id", "") or "")
-    operator_id = str(getattr(session, "operator_id", "") or "")
-    username = str(getattr(session, "username", "") or "")
-    role = str(getattr(session, "role", "") or "")
-    if not session_id or not operator_id or not username:
+    session_id = str(session.session_id or "")
+    operator_id = str(session.operator_id or "")
+    username = str(session.username or "")
+    role = str(session.role or "")
+    if not session_id or not operator_id or not username or not str(session.csrf_token or ""):
+        raise RepairDenied("operator session is required")
+    now = time.time()
+    if float(session.expires_at) <= now or float(session.absolute_expires_at) <= now:
         raise RepairDenied("operator session is required")
     if role not in _ISSUING_ROLES:
         raise RepairDenied("operator is not authorised to issue a device job")
@@ -84,6 +105,42 @@ def grant_from_session(session: Any, tenant_id: str) -> OperatorGrant:
     )
 
 
+class _Exclusive:
+    """Hold the cross-process lock, then the in-process lock, and reload first."""
+
+    def __init__(self, store: "DeviceStore", *, reload: bool) -> None:
+        self.store = store
+        self.reload = reload
+        self._locked = False
+
+    def __enter__(self) -> "DeviceStore":
+        self.store._ensure_parent()
+        try:
+            self.store._process_lock.__enter__()
+        except StateLockError as exc:
+            raise RepairDenied("device state file is not usable") from exc
+        try:
+            self.store._lock.acquire()
+            self._locked = True
+            if self.reload:
+                self.store._reload()
+        except Exception:
+            self._unlock()
+            raise
+        return self.store
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        self._unlock()
+
+    def _unlock(self) -> None:
+        try:
+            if self._locked:
+                self.store._lock.release()
+                self._locked = False
+        finally:
+            self.store._process_lock.__exit__(None, None, None)
+
+
 class DeviceStore:
     def __init__(self, path: Path, *, clock: Callable[[], float] = time.time, ttl: float = 300) -> None:
         self.path = assert_safe_state_path(path)
@@ -96,11 +153,21 @@ class DeviceStore:
         self.job_states: dict[str, dict[str, Any]] = {}
         self.nonces: list[str] = []
         self.audit: list[dict[str, Any]] = []
-        if self.path.is_file():
-            self._load()
+        self._ensure_parent()
+        self._process_lock = CrossProcessLock(self.path.with_name(self.path.name + ".lock"))
+        try:
+            with self._process_lock:
+                with self._lock:
+                    if self.path.is_symlink() or self.path.is_file():
+                        self._load()
+        except StateLockError as exc:
+            raise RepairDenied("device state file is not usable") from exc
+
+    def _exclusive(self, reload: bool = True):
+        return _Exclusive(self, reload=reload)
 
     def enrol(self, tenant_id: str, secret: str) -> str:
-        with self._lock:
+        with self._exclusive():
             return self._enrol(tenant_id, secret)
 
     def _enrol(self, tenant_id: str, secret: str) -> str:
@@ -120,7 +187,7 @@ class DeviceStore:
         return device_id
 
     def revoke(self, tenant_id: str, device_id: str) -> None:
-        with self._lock:
+        with self._exclusive():
             device = self._device(tenant_id, device_id)
             device["revoked"] = True
             self._audit("revoke", tenant_id, device_id, "revoked", None)
@@ -136,7 +203,7 @@ class DeviceStore:
         operator: str | None = None,
         approval_id: str | None = None,
     ) -> dict[str, Any]:
-        with self._lock:
+        with self._exclusive():
             return self._issue(
                 tenant_id=tenant_id,
                 device_id=device_id,
@@ -194,7 +261,7 @@ class DeviceStore:
         return signed
 
     def accept(self, secret: str, envelope: dict[str, Any], *, provider: Any | None = None) -> dict[str, Any]:
-        with self._lock:
+        with self._exclusive():
             return self._accept(secret, envelope, provider=provider)
 
     def _accept(self, secret: str, envelope: dict[str, Any], *, provider: Any | None) -> dict[str, Any]:
@@ -203,8 +270,18 @@ class DeviceStore:
         if not hmac.compare_digest(expected, str(envelope.get("signature") or "")):
             raise RepairDenied("job signature is invalid")
         job_id = str(envelope.get("job_id") or "")
-        if not any(str(job.get("job_id")) == job_id for job in self.jobs):
+        stored = next((job for job in self.jobs if str(job.get("job_id")) == job_id), None)
+        if stored is None:
             raise RepairDenied("job is not authorised")
+        stored_body = {key: value for key, value in stored.items() if key != "signature"}
+        if _canonical(stored_body) != _canonical(body):
+            raise RepairDenied("job does not match the issued job")
+        if "lifecycle" in body:
+            raise RepairDenied("device job lifecycle is not taken from the payload")
+        if body.get("approval_id") is not None:
+            raise RepairDenied("device jobs cannot carry a repair approval")
+        if str(body.get("procedure_id") or "") not in _READ_ONLY:
+            raise RepairDenied("this device job is not a read-only diagnostic")
         current = str((self.job_states.get(job_id) or {}).get("lifecycle") or "issued")
         if current == "accepted":
             raise RepairDenied("job replay rejected")
@@ -267,8 +344,7 @@ class DeviceStore:
         result["evidence_fresh"] = fresh
         if stamp is not None:
             result["collected_at_unix"] = stamp
-        if "problem_resolved" not in result:
-            result["problem_resolved"] = False
+        result["problem_resolved"] = False
         status = str(result.get("status") or "done")
         ok = bool(result.get("ok")) if "ok" in result else status == "collected"
         failed = (not ok) or status in _FAILED_OUTCOMES
@@ -298,6 +374,10 @@ class DeviceStore:
         return result
 
     def summary(self) -> dict[str, Any]:
+        with self._exclusive():
+            return self._summary()
+
+    def _summary(self) -> dict[str, Any]:
         seen = [item["last_seen"] for item in self.devices.values() if isinstance(item.get("last_seen"), (int, float))]
         last_seen = max(seen) if seen else None
         age = None if last_seen is None else self._clock() - float(last_seen)
@@ -423,20 +503,72 @@ class DeviceStore:
     def _key_path(self) -> Path:
         return self.path.with_name(self.path.name + ".key")
 
-    def _restrict(self, path: Path) -> None:
-        if os.name != "posix" or not path.is_file():
+    def _reload(self) -> None:
+        if self.path.is_symlink() or self.path.is_file():
+            self._load()
+
+    def _ensure_parent(self) -> None:
+        parent = self.path.parent
+        if parent.is_symlink():
+            raise RepairDenied("device state directory must not be a link")
+        missing: list[Path] = []
+        cursor = parent
+        while not cursor.exists():
+            missing.append(cursor)
+            if cursor.parent == cursor:
+                break
+            cursor = cursor.parent
+        parent.mkdir(parents=True, exist_ok=True)
+        for directory in reversed(missing):
+            if directory.is_symlink() or not directory.is_dir():
+                raise RepairDenied("device state directory must not be a link")
+            try:
+                restrict_private(directory)
+            except StatePermissionError as exc:
+                raise RepairDenied("device state permissions could not be enforced") from exc
+
+    def _discard_temp(self, temporary: Path) -> None:
+        if temporary.is_symlink() or not temporary.is_file():
             return
         try:
-            os.chmod(path, 0o600)
+            temporary.unlink()
         except OSError:
             pass
 
     def _write_atomic(self, path: Path, text: str) -> None:
+        if path.is_symlink():
+            raise RepairDenied("device state file must be a regular file")
+        if path.parent.is_symlink():
+            raise RepairDenied("device state directory must not be a link")
         temporary = path.with_name(path.name + ".tmp")
-        temporary.write_text(text, encoding="utf-8")
-        self._restrict(temporary)
-        os.replace(temporary, path)
-        self._restrict(path)
+        if temporary.is_symlink() or (temporary.exists() and not temporary.is_file()):
+            raise RepairDenied("device state temporary file must be a regular file")
+        if temporary.is_file():
+            self._discard_temp(temporary)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        if os.name == "posix" and hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor = os.open(str(temporary), flags, 0o600)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(text)
+                handle.flush()
+                os.fsync(handle.fileno())
+            try:
+                restrict_private(temporary)
+            except StatePermissionError as exc:
+                raise RepairDenied("device state permissions could not be enforced") from exc
+            os.replace(str(temporary), str(path))
+        except RepairDenied:
+            self._discard_temp(temporary)
+            raise
+        except OSError as exc:
+            self._discard_temp(temporary)
+            raise RepairDenied("device state file is not usable") from exc
+        try:
+            restrict_private(path)
+        except StatePermissionError as exc:
+            raise RepairDenied("device state permissions could not be enforced") from exc
 
     def _save(self) -> None:
         payload = {
@@ -447,7 +579,7 @@ class DeviceStore:
             "nonces": self.nonces,
             "audit": self.audit[-200:],
         }
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._ensure_parent()
         self._write_atomic(self._key_path(), self._key.hex() + "\n")
         self._write_atomic(self.path, json.dumps(payload, sort_keys=True) + "\n")
 
@@ -461,6 +593,8 @@ class DeviceStore:
         return key
 
     def _load(self) -> None:
+        if self.path.is_symlink() or not self.path.is_file():
+            raise RepairDenied("device state file is not usable")
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
@@ -468,7 +602,15 @@ class DeviceStore:
         if not isinstance(raw, dict) or raw.get("version") not in (1, 2):
             raise RepairDenied("device state file is not usable")
         sidecar = self._key_path()
-        file_key = self._parse_key(sidecar.read_text(encoding="utf-8")) if sidecar.is_file() else None
+        file_key: bytes | None = None
+        if sidecar.exists() or sidecar.is_symlink():
+            if sidecar.is_symlink() or not sidecar.is_file():
+                raise RepairDenied("device state file is not usable")
+            try:
+                key_text = sidecar.read_text(encoding="utf-8")
+            except OSError as exc:
+                raise RepairDenied("device state file is not usable") from exc
+            file_key = self._parse_key(key_text)
         embedded = raw.get("key")
         embedded_key = self._parse_key(str(embedded)) if isinstance(embedded, str) else None
         if file_key is not None and embedded_key is not None and file_key != embedded_key:
@@ -499,17 +641,21 @@ class DeviceStore:
 
 def dev_self_test(path: Path) -> dict[str, Any]:
     """Enrol a throwaway device and run one live read-only job. Does not install a service."""
-    from types import SimpleNamespace
-
     secret = secrets.token_urlsafe(32)
     store = DeviceStore(path)
     device_id = store.enrol("local-test", secret)
+    now = time.time()
     grant = grant_from_session(
-        SimpleNamespace(
+        SessionRecord(
             session_id="dev-self-test",
             operator_id="dev-self-test",
             username="dev-self-test",
             role="operator",
+            csrf_token="dev-self-test-csrf",
+            created_at=now,
+            last_seen=now,
+            expires_at=now + 600,
+            absolute_expires_at=now + 600,
         ),
         "local-test",
     )
