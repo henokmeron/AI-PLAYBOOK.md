@@ -10,6 +10,8 @@ Statuses mean:
 
 Checked 2026-10-19 against the local `main` working tree. Named operator login is in this tree. It is not a live Pod claim.
 
+The machine-readable registry is `windows_repair/capabilities.py`. Its statuses are PASS, PARTIAL, FAIL, NOT IMPLEMENTED, BLOCKED, and NOT VERIFIED. Windows read-only diagnostics are not Mac, Android, iPhone, or web-device support. There is no macOS, Android, or iOS agent in this repository. Web control is the loopback console only.
+
 | Capability | Status | Evidence |
 | --- | --- | --- |
 | Loopback console (chat, documents, status) | IMPLEMENTED BUT NOT LIVE-VERIFIED | `web/server.py`, `web/test_server.py` |
