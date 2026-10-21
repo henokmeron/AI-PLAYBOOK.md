@@ -119,7 +119,7 @@ candidates:
         driver host with the same Global Volume; do not expect the cu130 archives
         alone to fix a 570 host. The saved A100 archive is torch 2.13.0+cu126 and
         does not include compute capability 12.0. RTX PRO 6000 Blackwell uses
-        runtime profile qwen-vllm-blackwell-cu130 and must not replace this archive.
+        runtime profile qwen-vllm-blackwell-cu129 and must not replace this archive.
 
   - id: mistral-large-4
     family: mistral-large-4
@@ -173,23 +173,28 @@ runtime_profiles:
       /tmp/vllm-qwen-env is absent. Needs LD_LIBRARY_PATH for nvidia cu13 libs at serve time.
       Do not replace Gemma env. This archive does not support compute capability 12.0.
 
-  qwen-vllm-blackwell-cu130:
+  qwen-vllm-blackwell-cu129:
     description: >
       Separate Qwen runtime for compute capability 12.0 (RTX PRO 6000 Blackwell).
       Never installs into the A100 or Gemma environments.
     python_env: /tmp/vllm-qwen-blackwell-env
     install_hint: >
       bash ops/install-qwen-blackwell-env.sh
-    torch: "2.13.0+cu130"
-    torch_backend: cu130
+    lock: ops/blackwell-runtime.lock
+    vllm: "0.32.0+cu129"
+    torch: "2.13.0+cu129"
+    torch_backend: cu129
     minimum_compute_capability: "12.0"
-    minimum_driver_major: 580
+    minimum_driver_major: 575
     serve: bash ops/start-qwen-blackwell.sh
     notes: >
-      Official vLLM GPU install selects this with --torch-backend=cu130, then
-      vllm download-kernels. The saved /workspace/runtime-setup/qwen-vllm archive
-      stays the A100 runtime. Live Blackwell inference is not recorded until
-      start-qwen-blackwell.sh --serve and --infer succeed on that GPU.
+      vLLM 0.32.0 publishes a CUDA 12.9 wheel (sha256 in the lockfile) and
+      requires torch==2.13.0. CUDA 12.9 covers compute capability 12.0.
+      torch 2.13.0+cu126 does not. The vLLM 0.32.0 CUDA 13.0 wheel returned
+      HTTP 404 on 2026-10-21, so this profile does not install torch +cu130
+      under that vLLM binary. The saved /workspace/runtime-setup/qwen-vllm
+      archive stays the A100 runtime. Live Blackwell inference is not recorded
+      until start-qwen-blackwell.sh --serve and --infer succeed on that GPU.
 
 selection_policy:
   prefer:

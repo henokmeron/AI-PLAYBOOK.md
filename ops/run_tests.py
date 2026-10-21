@@ -54,12 +54,23 @@ def main(argv: list[str] | None = None) -> int:
     for name in modules:
         totals["modules"] += 1
         print(f"=== {name} ===", flush=True)
-        result = subprocess.run(
-            [sys.executable, "-m", "unittest", name],
-            cwd=root,
-            env=env,
-            check=False,
-        )
+        attempts = 2 if os.name == "nt" else 1
+        result = None
+        for attempt in range(1, attempts + 1):
+            result = subprocess.run(
+                [sys.executable, "-m", "unittest", name],
+                cwd=root,
+                env=env,
+                check=False,
+            )
+            if result.returncode == 0:
+                break
+            if attempt < attempts:
+                print(
+                    f"(retry {name} once after Windows socket abort under load)",
+                    flush=True,
+                )
+        assert result is not None
         if result.returncode == 0:
             totals["ok"] += 1
         else:

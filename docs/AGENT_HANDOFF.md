@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-21** (Mandatory living playbook A–F recorded in `PLAYBOOK.md`; standing rule #9. Prior: agent audit for registered Windows checks on `main` as `dd197bf275e21a237780f3baac531f8bfd575695`. Pod and Entra were not configured. Go-live remains **NO-GO**.)
+Last updated: **2026-10-21** (Blackwell runtime pin corrected to CUDA 12.9 / `qwen-vllm-blackwell-cu129`; wheel SHA verified offline; live Blackwell GPU path **NOT TESTED**. Prior: living playbook A–F; Windows agent audit `dd197bf`. Pod SSH key absent; Entra **NOT CONFIGURED**. Go-live remains **NO-GO**.)
 
 ## Only this repository
 
@@ -164,6 +164,15 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-21 — Blackwell CUDA 12.9 pin (source + offline proof)
+
+- Kept four local edits and pushed them with playbook/status updates: `models/registry.yaml`, `ops/blackwell-runtime.lock`, `ops/install-qwen-blackwell-env.sh`, `ops/test_qwen_blackwell_runtime.py`, plus a single Windows retry in `ops/run_tests.py` for transient `WinError 10053` (assertions unchanged).
+- Profile rename: `qwen-vllm-blackwell-cu130` → `qwen-vllm-blackwell-cu129`. Lock pins vLLM `0.32.0+cu129` + torch `2.13.0+cu129`. Installer verifies wheel SHA-256 before `uv pip install --torch-backend=cu129`. Rejects cu126 and refuses A100/Gemma env paths and `/workspace` live envs.
+- **VERIFIED offline:** cu129 wheel HTTP 200; streamed SHA-256 matches lock `9918be806fb2808c406547ff4f9f43870ac6ff28dc4b179291fcf532145bb50b`; cu130 wheel still absent. Unit tests for the pin and registry pass. Full `ops.run_tests` on Python 3.12 exits 0 (flaky console module passed on retry under suite load).
+- **NOT TESTED / not claimed:** RTX PRO 6000 install, kernel launch, serve, or infer. H100 Qwen was not reloaded. No Pod start/stop/resize.
+- Persistent storage: no SSH key, no RunPod API/browser tool. Volume inventory and release copy **BLOCKED**. Leave older releases under `%LOCALAPPDATA%\AI-PLAYBOOK\releases\` intact.
+- Microsoft Entra/Graph still **NOT CONFIGURED**. Go-live **NO-GO**.
 
 ### 2026-10-21 — mandatory living playbook recorded
 

@@ -9,10 +9,10 @@ torch=2.13.0+cu129
 torch_backend=cu129
 torchaudio=2.11.0
 torchvision=0.28.0
-python_spec=>=3.11,<3.15
+python_spec=">=3.11,<3.15"
 minimum_cuda=12.9
 minimum_driver_major=575
-minimum_compute_capability=12.0
+minimum_compute_capability=12
 rejected_torch=2.13.0+cu126
 cu130_vllm_wheel=absent
-cu130_vllm_wheel_note=vllm-0.32.0+cu130-cp38-abi3-manylinux_2_28_x86_64.whl returned HTTP 404 on 2026-10-21
+cu130_vllm_wheel_note="vllm-0.32.0+cu130 wheel returned HTTP 404 on 2026-10-21"
