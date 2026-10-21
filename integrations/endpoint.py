@@ -118,7 +118,12 @@ def assert_safe_state_path(value: Path) -> Path:
     """Device state stays off the git tree and off the shared model volume."""
     if not value.is_absolute():
         raise InvalidRequest("endpoint state file must be an absolute path")
+    # Reject link leaves before resolve(); resolve() would follow them and hide the attack.
+    if value.is_symlink() or value.parent.is_symlink():
+        raise InvalidRequest("endpoint state file must be a regular path")
     resolved = value.resolve()
+    if resolved.is_symlink():
+        raise InvalidRequest("endpoint state file must be a regular path")
     repo = Path(__file__).resolve().parents[1]
     forbidden = [repo]
     if os.name == "posix":

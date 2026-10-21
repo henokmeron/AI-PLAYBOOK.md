@@ -15,6 +15,15 @@ GATEWAY_PORT = 8010
 CONSOLE_PORT = 8080
 
 
+def _is_absolute_state_path(value: str) -> bool:
+    """True for POSIX absolutes and Windows drive/UNC paths on any host OS."""
+    if Path(value).is_absolute():
+        return True
+    if len(value) >= 3 and value[0].isalpha() and value[1] == ":" and value[2] in "\\/":
+        return True
+    return value.startswith("\\\\") or value.startswith("//")
+
+
 def probe_port(port: int, timeout: float = 0.2) -> bool:
     """Return whether something is already listening. This does not bind the port."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -83,7 +92,7 @@ def run_preflight(
     repair = str(env.get("REPAIR_DEVICE_STATE", "")).strip()
     if not repair:
         checks.append(_check("repair_state", "not_configured", "REPAIR_DEVICE_STATE is unset"))
-    elif not Path(repair).is_absolute():
+    elif not _is_absolute_state_path(repair):
         checks.append(_check("repair_state", "fail", "REPAIR_DEVICE_STATE must be an absolute path"))
     else:
         checks.append(_check("repair_state", "pass", "REPAIR_DEVICE_STATE is an absolute path"))

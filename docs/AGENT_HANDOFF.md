@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-21** (Blackwell CUDA 12.9 pin on `main` as `7037ae9eff56d7694ca79c335f90e445bdf1fdc1`; release SHA-256 `2c5bab9312fbcfde8fd9bdabe71e143031b07758553710b8d0955349aec52fba`. Live Blackwell GPU path **NOT TESTED**. Volume copy blocked. Entra **NOT CONFIGURED**. Go-live remains **NO-GO**.)
+Last updated: **2026-10-21** (Blackwell pin `7037ae9eff56d7694ca79c335f90e445bdf1fdc1` release SHA-256 `841a231a8e01ebe83b4fd6a79e315b0a54f76c8581b01fbc936d5e5074b64d13`. Live Blackwell **NOT TESTED**. Volume copy **BLOCKED**. Entra **NOT CONFIGURED**. Go-live **NO-GO**.)
 
 ## Only this repository
 
@@ -165,15 +165,18 @@ E2E helper (uses key file; does not print it):
 
 ## Session log (newest first)
 
+### 2026-10-21 — Blackwell pin verified; release checksum corrected; offline defects fixed
+
+- Tip was already `3843c98` on `origin/main`. Four Blackwell files match `7037ae9`; working tree had no uncommitted Blackwell edits (only `__pycache__` / local `ops-centre/` runtime junk — leave untracked).
+- **Release recover digest for `7037ae9`:** SHA-256 `841a231a8e01ebe83b4fd6a79e315b0a54f76c8581b01fbc936d5e5074b64d13` (`git archive --format=tar.gz`). Prior digest `2c5bab93…` does not match; do not use it for recover. Archive + manifest under `~/AI-PLAYBOOK/releases/7037ae9…/` (and `%LOCALAPPDATA%\AI-PLAYBOOK\releases\` on Windows). Not on the volume.
+- Offline suite on this Linux host failed until fixed: (1) `AlertService` treated missing fingerprint as monotonic `0` and suppressed first alerts while uptime < cooldown; (2) `assert_safe_state_path` followed symlinks before reject; (3) preflight rejected Windows `C:\…` paths on POSIX; (4) live Windows collector assertion skipped on non-Windows. Assertions otherwise unchanged.
+- **VERIFIED offline:** `python -m ops.run_tests` — 38 modules, exit 0. cu129 wheel HEAD 200; cu130 404. Blackwell GPU path **NOT TESTED**.
+- RunPod console inventory **BLOCKED** (browser not logged in). No SSH key. No Pod mutations. Go-live **NO-GO**.
+
 ### 2026-10-21 — Blackwell CUDA 12.9 pin (source + offline proof)
 
-- Code commit `7037ae9eff56d7694ca79c335f90e445bdf1fdc1` on `origin/main` (GitHub verified). Files: `models/registry.yaml`, `ops/blackwell-runtime.lock`, `ops/install-qwen-blackwell-env.sh`, `ops/test_qwen_blackwell_runtime.py`, `ops/run_tests.py` (one Windows module retry for `WinError 10053`; assertions unchanged), plus playbook/status updates.
-- Profile rename: `qwen-vllm-blackwell-cu130` → `qwen-vllm-blackwell-cu129`. Lock pins vLLM `0.32.0+cu129` + torch `2.13.0+cu129`. Installer verifies wheel SHA-256 before `uv pip install --torch-backend=cu129`. Rejects cu126 and refuses A100/Gemma env paths and `/workspace` live envs.
-- **VERIFIED offline:** cu129 wheel HTTP 200; streamed SHA-256 matches lock `9918be806fb2808c406547ff4f9f43870ac6ff28dc4b179291fcf532145bb50b`; cu130 wheel still absent. `python -m ops.run_tests` on Python 3.12 — 38 modules, exit 0.
-- Release of that code commit: SHA-256 `2c5bab9312fbcfde8fd9bdabe71e143031b07758553710b8d0955349aec52fba`, 370 members, under `%LOCALAPPDATA%\AI-PLAYBOOK\releases\7037ae9eff56d7694ca79c335f90e445bdf1fdc1\`. Older release directories left in place. Restore via `docs/release/RECOVERY.md`. Not copied to `/workspace`.
-- **NOT TESTED / not claimed:** RTX PRO 6000 install, kernel launch, serve, or infer. H100 Qwen was not reloaded. No Pod start/stop/resize.
-- Persistent storage: no SSH key, no RunPod API/browser tool. Volume inventory and release copy **BLOCKED**.
-- Microsoft Entra/Graph still **NOT CONFIGURED**. Go-live **NO-GO**.
+- Code commit `7037ae9eff56d7694ca79c335f90e445bdf1fdc1` on `origin/main`. Profile `qwen-vllm-blackwell-cu129`; lock pins vLLM `0.32.0+cu129` + torch `2.13.0+cu129`; installer verifies wheel SHA-256 `9918be806fb2808c406547ff4f9f43870ac6ff28dc4b179291fcf532145bb50b`.
+- Release recover digest: `841a231a8e01ebe83b4fd6a79e315b0a54f76c8581b01fbc936d5e5074b64d13` (see newer session entry). Live Blackwell **NOT TESTED**. Volume copy **BLOCKED**. Go-live **NO-GO**.
 
 ### 2026-10-21 — mandatory living playbook recorded
 

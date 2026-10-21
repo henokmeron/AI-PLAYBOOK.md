@@ -1158,29 +1158,30 @@ class ConsoleTests(unittest.TestCase):
                 def console_must_not_collect(self, procedure_id):  # noqa: ANN001
                     raise AssertionError("console host collected " + procedure_id)
 
-                issued_live, issued_live_body = self.request(base, "POST", "/api/repair/device/issue", {
-                    "device_id": device_id,
-                    "procedure_id": "win.storage.space",
-                })
-                self.assertEqual(issued_live, 200, issued_live_body.decode("utf-8", errors="replace"))
-                with patch.object(LiveWindowsProvider, "collect", console_must_not_collect):
-                    live = subprocess.run(
-                        [sys.executable, "-m", "integrations.endpoint_worker", "jobs",
-                         "--console", base, "--credential", str(credential_path)],
-                        cwd=str(Path(__file__).resolve().parents[1]),
-                        env=os.environ.copy(),
-                        capture_output=True,
-                        text=True,
-                        timeout=40,
-                        check=False,
-                    )
-                self.assertEqual(live.returncode, 0, live.stderr)
-                summary_status, summary_body = self.request(base, "GET", "/api/repair/device")
-                live_job = json.loads(summary_body)["jobs"][-1]
-                self.assertEqual(live_job["evidence_source"], "live_windows")
-                self.assertEqual(live_job["collected_by"], "endpoint_worker")
-                self.assertFalse(live_job["problem_resolved"])
-                self.assertNotIn(secret, summary_body.decode("utf-8"))
+                if os.name == "nt":
+                    issued_live, issued_live_body = self.request(base, "POST", "/api/repair/device/issue", {
+                        "device_id": device_id,
+                        "procedure_id": "win.storage.space",
+                    })
+                    self.assertEqual(issued_live, 200, issued_live_body.decode("utf-8", errors="replace"))
+                    with patch.object(LiveWindowsProvider, "collect", console_must_not_collect):
+                        live = subprocess.run(
+                            [sys.executable, "-m", "integrations.endpoint_worker", "jobs",
+                             "--console", base, "--credential", str(credential_path)],
+                            cwd=str(Path(__file__).resolve().parents[1]),
+                            env=os.environ.copy(),
+                            capture_output=True,
+                            text=True,
+                            timeout=40,
+                            check=False,
+                        )
+                    self.assertEqual(live.returncode, 0, live.stderr)
+                    summary_status, summary_body = self.request(base, "GET", "/api/repair/device")
+                    live_job = json.loads(summary_body)["jobs"][-1]
+                    self.assertEqual(live_job["evidence_source"], "live_windows")
+                    self.assertEqual(live_job["collected_by"], "endpoint_worker")
+                    self.assertFalse(live_job["problem_resolved"])
+                    self.assertNotIn(secret, summary_body.decode("utf-8"))
                 revoked, _revoked = self.request(base, "POST", "/api/repair/device/revoke", {"device_id": device_id})
                 self.assertEqual(revoked, 200)
                 denied_device, denied_body = self.request(

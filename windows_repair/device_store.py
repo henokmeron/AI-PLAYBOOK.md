@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from integrations.endpoint import assert_safe_state_path
+from integrations.errors import InvalidRequest
 from integrations.state_guard import CrossProcessLock, StateLockError, StatePermissionError, restrict_private
 from web.auth.store import SessionRecord
 
@@ -206,7 +207,10 @@ class _Exclusive:
 
 class DeviceStore:
     def __init__(self, path: Path, *, clock: Callable[[], float] = time.time, ttl: float = 300) -> None:
-        self.path = assert_safe_state_path(path)
+        try:
+            self.path = assert_safe_state_path(path)
+        except InvalidRequest as exc:
+            raise RepairDenied("device state file is not usable") from exc
         self._clock = clock
         self._ttl = ttl
         self._lock = threading.RLock()

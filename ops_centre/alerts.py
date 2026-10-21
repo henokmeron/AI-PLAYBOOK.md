@@ -57,7 +57,7 @@ class AlertService:
         created: list[Alert] = []
         with self._lock:
             for hit in hits:
-                last = self._last_fire.get(hit.fingerprint, 0.0)
+                last = self._last_fire.get(hit.fingerprint)
                 open_existing = next(
                     (
                         a for a in self._alerts.values()
@@ -72,7 +72,9 @@ class AlertService:
                     open_existing.event_ids = hit.event_ids
                     open_existing.updated_at = self._clock()
                     continue
-                if mono - last < self._cooldown:
+                # Missing fingerprints must not use monotonic 0 — that suppresses
+                # every first alert while process uptime is still inside cooldown.
+                if last is not None and mono - last < self._cooldown:
                     continue
                 alert = Alert(
                     alert_id=uuid.uuid4().hex,
