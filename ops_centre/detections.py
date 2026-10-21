@@ -41,7 +41,20 @@ RuleFn = Callable[[list[OpsEvent]], list[DetectionHit]]
 
 
 def rule_repeated_agent_failures(events: list[OpsEvent]) -> list[DetectionHit]:
-    fails = [e for e in events if e.event_type == "agent.task_failed"]
+    from datetime import datetime, timezone
+
+    from .health_window import failure_window_seconds, within_window
+
+    now = datetime.now(timezone.utc)
+    window = failure_window_seconds()
+    fails = []
+    for event in events:
+        if event.event_type != "agent.task_failed":
+            continue
+        current = within_window(event.at, now=now, window_seconds=window)
+        if current is False:
+            continue
+        fails.append(event)
     if len(fails) < 3:
         return []
     recent = fails[-5:]

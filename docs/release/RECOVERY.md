@@ -24,8 +24,34 @@ Human steps after that:
 
 1. Keep Qwen weights on the RunPod volume at `/workspace/models/Qwen3.5-27B/fc05daec18b0a78c049392ed2e771dde82bdf654`. This package does not download them.
 2. Restore the Pod Python runtime from `/workspace/runtime-setup/qwen-vllm/`. There is no pip lock file in Git for that runtime.
-3. Create a console administrator with `scripts/provision_console_operator.py` before starting the new console. There is no default password.
+3. Create a console administrator with `scripts/provision_console_operator.py` before starting the new console. There is no default password. The live file is `/tmp/console-operators/operators.json` (mode 0700 directory, 0600 file). A Pod stop deletes `/tmp`.
 4. Start or replace services only with `ops/release/START.sh` or `ops/release/deploy-console-only.sh` on an already healthy Pod. Those scripts are not run by `recover`.
+
+## Operator recovery after a Pod stop
+
+| Store | Path | Survives Pod stop | Permission model |
+| --- | --- | --- | --- |
+| Live operators | `/tmp/console-operators` | No | POSIX 0700/0600 enforced. The console reads this directory. |
+| Operator backup | `/workspace/platform-state/operator-backups/<stamp>/` | Yes, when `/workspace` is `fuse.geesefs` | Checksummed `operators.json` plus `SHA256SUMS`. Scrypt hashes only. The volume may reject `chmod`, so this copy is not treated as a private POSIX file. |
+| Sessions | `/tmp/console-operators/sessions.json` | No | Not backed up. People sign in again. |
+| Gateway key | `/tmp/platform-gateway.key` | No | Recreated on start if missing. Not copied to the volume. |
+| Microsoft token | `/tmp/microsoft-365-token.json` | No | Not copied to the volume. Sign-in is required again. |
+| Ops events | `/workspace/ops-centre` | Yes | Audit log. A health window does not delete it. |
+| Weights | `/workspace/models/Qwen3.5-27B/...` | Yes | Not part of the source archive. |
+| Runtime archive | `/workspace/runtime-setup/qwen-vllm/` | Yes | Restored into `/tmp/vllm-qwen-env`, never onto the volume. |
+| Source checkout | `/tmp/AI-PLAYBOOK` | No | `START.sh` clones `main` or restores a checksummed snapshot. |
+
+Before a console start, `ops/platform_state.py` backs up a private live administrator file, or restores the newest backup whose checksum matches when the live file is absent. It refuses a symlink, a plaintext password, a file that is not private, and a backup whose checksum does not match. It does not replace an existing live file. Five checksummed backups are kept.
+
+```bash
+PYTHONPATH=/tmp/AI-PLAYBOOK /usr/bin/python3 -m ops.platform_state --check \
+  --live-dir /tmp/console-operators \
+  --backup-dir /workspace/platform-state/operator-backups
+```
+
+`--check` does not write. Omit `--check` to back up or restore. The command prints one JSON object and does not print passwords, hashes, or tokens.
+
+Qwen and the gateway are left running if operator recovery fails. Provision an administrator, then start the console again. `deploy-console-only.sh` runs the same recovery before it stops the console, and only when `CONSOLE_RESTART_APPROVED=yes`. A dry run does not write the backup.
 
 ## Persistent copy
 

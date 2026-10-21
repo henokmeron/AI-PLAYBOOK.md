@@ -39,8 +39,12 @@ The caller needs the `ops:view` permission. The gateway key stays on the server.
 
 ## Scheduling
 
-There is no cron or job runner in this repository. Do not assume a report runs by itself. The missing piece is a separate scheduled runner that calls `build_report` and stores the JSON. Until that exists, run the command above when you want a report.
+`ops_centre.director_schedule` can run `build_report` from a file schedule. The schedule does not start the model or a paid Pod. If that file is missing, the report says the schedule is not enabled. Run `python -m ops_centre.director` when you want a report immediately.
+
+## Agent failures
+
+`agent.task_failed` events stay in the audit log. Current health counts a failure only when its timestamp is inside `DIRECTOR_AGENT_FAILURE_WINDOW_SECONDS` (default 24 hours, minimum 60, maximum 30 days). An unreadable timestamp stays current. Older failures make the agents row **UNKNOWN**, not **HEALTHY**, and they are not deleted. The same task id is recorded once; a later snapshot does not append a second copy. An open high alert whose evidence timestamps are all outside the window stays open and does not by itself force the overview to degraded.
 
 ## Operator sign-in
 
-Named operator login is **not in this `main` snapshot**. It is on GitHub pull request 4 (`cursor/operator-auth-phase0-787e`) and was not merged or deployed from this session. Until that code is running, anyone who can reach the console port can call ops routes, including this report.
+Named operator login is on `main`. The report's `operator_auth` row is **NOT CONFIGURED** when `operators.json` is missing, **DEGRADED** when no active administrator is present, and **HEALTHY** only for a complete enabled administrator row with a scrypt hash. Password hashes are omitted.

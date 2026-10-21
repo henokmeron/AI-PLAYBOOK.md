@@ -27,6 +27,17 @@ class QwenLaunchPathTest(unittest.TestCase):
                 "Qwen launch must prefix PATH with the restored environment bin",
             )
 
+    def test_console_start_prepares_a_private_operator_store(self) -> None:
+        text = LAUNCH.read_text(encoding="utf-8")
+        prepare = text.index("operator_status || fail")
+        console = text.index('OPERATOR_AUTH_DIR="$OPERATOR_AUTH_DIR"')
+        self.assertLess(prepare, console)
+        self.assertIn("operators-ready", text)
+        self.assertIn("There is no default password.", text)
+        deploy = Path(__file__).resolve().parent / "release" / "deploy-console-only.sh"
+        deploy_text = deploy.read_text(encoding="utf-8")
+        self.assertLess(deploy_text.index("ops.platform_state"), deploy_text.index('kill "$P8080"'))
+
 
 if __name__ == "__main__":
     unittest.main()

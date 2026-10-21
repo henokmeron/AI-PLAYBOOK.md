@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -112,9 +113,24 @@ class OpsCentre:
         failed_tasks = [
             e for e in self.events.list(limit=50, event_type="agent.task_failed")
         ]
+        from .health_window import evidence_is_current, failure_window_seconds, within_window
+
+        now = datetime.now(timezone.utc)
+        window = failure_window_seconds()
+        recent_failed = []
+        for event in failed_tasks:
+            current = within_window(event.at, now=now, window_seconds=window)
+            if current is not False:
+                recent_failed.append(event)
+        current_alerts = [
+            alert for alert in unresolved
+            if evidence_is_current(list(alert.evidence or []), now=now, window_seconds=window)
+        ]
+        historical_alerts = [alert for alert in unresolved if alert not in current_alerts]
         overall = health.get("overall") or "unknown"
-        if unresolved and any(a.severity in {"critical", "high"} for a in unresolved):
-            # Never stay "healthy" when critical/high alerts are open
+        if any(a.severity in {"critical", "high"} for a in current_alerts):
+            # A high alert whose evidence is still inside the health window
+            # keeps the overview out of healthy. Older open alerts stay open.
             if overall == "healthy":
                 overall = "degraded"
         return {
@@ -126,7 +142,9 @@ class OpsCentre:
             "open_alerts": [a.to_public() for a in unresolved[:10]],
             "open_incidents": [i.to_public() for i in open_incidents[:10]],
             "pending_approvals": len(pending_approvals),
-            "recent_failed_tasks": len(failed_tasks),
+            "recent_failed_tasks": len(recent_failed),
+            "retained_failed_audit_rows": len(failed_tasks),
+            "open_alerts_outside_health_window": len(historical_alerts),
             "detections": {
                 "hits": detection.get("hits"),
                 "alerts_created": detection.get("alerts_created"),
@@ -134,7 +152,8 @@ class OpsCentre:
             "integrity": self.events.verify_chain(),
             "coverage_note": (
                 "Green/healthy only means probes succeeded just now. "
-                "Open critical/high alerts force overall away from healthy."
+                "Open critical/high alerts whose evidence is inside the health window "
+                "force overall away from healthy. Older alerts stay open and are not deleted."
             ),
             "data_dir": str(self.data_dir),
         }
@@ -154,32 +173,47 @@ class OpsCentre:
             history = desk.history_list(limit=20)
         except Exception:  # noqa: BLE001 — collector must not break console
             history = []
+        seen = {
+            (event.event_type, event.correlation_id)
+            for event in self.events.list(limit=500, component="agent")
+            if event.correlation_id
+        }
         for row in history or []:
             if not isinstance(row, dict):
                 continue
             execution = row.get("execution")
-            task_id = row.get("task_id")
+            task_id = str(row.get("task_id") or "").strip()
+            if not task_id:
+                continue
             if execution == "failed":
+                event_type = "agent.task_failed"
+                if (event_type, task_id) in seen:
+                    continue
                 self.events.append(
-                    event_type="agent.task_failed",
+                    event_type=event_type,
                     component="agent",
                     outcome="failed",
                     severity="high",
-                    correlation_id=str(task_id) if task_id else None,
+                    correlation_id=task_id,
                     summary=(row.get("failure") or row.get("goal") or "agent task failed")[:400],
                     detail={"goal": (row.get("goal") or "")[:200]},
                 )
+                seen.add((event_type, task_id))
                 recorded += 1
             elif execution == "awaiting_approval":
+                event_type = "agent.approval_pending"
+                if (event_type, task_id) in seen:
+                    continue
                 pending = row.get("pending_approval") or {}
                 self.events.append(
-                    event_type="agent.approval_pending",
+                    event_type=event_type,
                     component="agent",
                     outcome="pending",
                     severity="medium",
-                    correlation_id=str(task_id) if task_id else None,
+                    correlation_id=task_id,
                     summary=f"Approval pending for {pending.get('tool') or 'tool'}",
                     detail={"tool": pending.get("tool"), "call_id": pending.get("call_id")},
                 )
+                seen.add((event_type, task_id))
                 recorded += 1
-        return {"recorded": recorded}
+        return {"recorded": recorded, "audit_preserved": True}

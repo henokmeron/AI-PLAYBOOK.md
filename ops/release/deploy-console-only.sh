@@ -49,7 +49,14 @@ P8080="$(pids_for 8080)"
 # Provision the first admin BEFORE approving a restart:
 #   OPERATOR_AUTH_DIR=/tmp/console-operators \
 #     python3 "$REPO_ROOT/scripts/provision_console_operator.py" create-admin --username <name>
+# Live accounts stay on local disk. The volume holds a checksummed hash backup.
 OPERATOR_AUTH_DIR="${OPERATOR_AUTH_DIR:-/tmp/console-operators}"
+OPERATOR_BACKUP_DIR="${OPERATOR_BACKUP_DIR:-/workspace/platform-state/operator-backups}"
+if [[ "$APPROVED" == "yes" ]]; then
+  PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m ops.platform_state \
+    --live-dir "$OPERATOR_AUTH_DIR" --backup-dir "$OPERATOR_BACKUP_DIR" \
+    || fail "operator store is not ready. The console was not stopped."
+fi
 OPS_READY="$(
   python3 "$REPO_ROOT/ops/release/console_deploy.py" \
     --operators-file "$OPERATOR_AUTH_DIR/operators.json" || true

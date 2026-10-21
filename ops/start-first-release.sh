@@ -26,6 +26,8 @@ RAG_MANAGED="${RAG_MANAGED_DOCS_DIR:-$VOL/rag-managed-docs}"
 QWEN_MAX_MODEL_LEN="${QWEN_MAX_MODEL_LEN:-8192}"
 QWEN_MAX_NUM_SEQS="${QWEN_MAX_NUM_SEQS:-256}"
 QWEN_READY_TIMEOUT_S="${QWEN_READY_TIMEOUT_S:-2700}"
+CONSOLE_PYTHON="${CONSOLE_PYTHON:-/usr/bin/python3}"
+OPERATOR_AUTH_DIR="${OPERATOR_AUTH_DIR:-/tmp/console-operators}"
 MIN_GPU_TOTAL_MIB=79000      # A100 80GB reports 81920 MiB; H100 NVL ~95830 MiB
 MAX_GPU_USED_BEFORE_START_MIB=2048
 MIN_DRIVER_MAJOR=580
@@ -68,6 +70,21 @@ PREFLIGHT_FAILS=()
 rc() { "$@" >/dev/null 2>&1 && echo 0 || echo 1; }
 check() { # name, ok(0/1), detail
   if [[ "$2" == 0 ]]; then printf '  PASS  %-28s %s\n' "$1" "$3"; else printf '  FAIL  %-28s %s\n' "$1" "$3"; PREFLIGHT_FAILS+=("$1: $3"); fi
+}
+
+operator_status() {
+  # $1 is "--check" or empty. Stdout is one JSON object and contains no secrets.
+  local backup=()
+  local mode=()
+  if [[ -n "${1:-}" ]]; then
+    mode=("$1")
+  fi
+  if [[ -n "${OPERATOR_BACKUP_DIR:-}" ]]; then
+    backup=(--backup-dir "$OPERATOR_BACKUP_DIR")
+  elif findmnt -n -o FSTYPE /workspace 2>/dev/null | grep -qx fuse.geesefs; then
+    backup=(--backup-dir /workspace/platform-state/operator-backups)
+  fi
+  PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$CONSOLE_PYTHON" -m ops.platform_state "${mode[@]}" --live-dir "$OPERATOR_AUTH_DIR" "${backup[@]}"
 }
 
 run_preflight() {
@@ -121,6 +138,12 @@ run_preflight() {
     else check "local-disk-for-restore" 1 "need >=12 GiB free under $(dirname "$QWEN_ENV") to restore the runtime"; fi
   else
     check "qwen-runtime-present" 0 "$QWEN_ENV"
+  fi
+
+  if operator_status --check >/dev/null; then
+    check "operators-ready" 0 "a private administrator can be loaded or restored. There is no default password."
+  else
+    check "operators-ready" 1 "operator store is missing or not private. Provision with scripts/provision_console_operator.py into $OPERATOR_AUTH_DIR. There is no default password."
   fi
 }
 
@@ -277,6 +300,8 @@ fi
 if healthy "$CONSOLE_URL"; then
   log "Reusing healthy console on :$CONSOLE_PORT"
 else
+  log "Preparing the private operator store before the console starts"
+  operator_status || fail "Operator store is not ready. Qwen and the gateway were not stopped. Provision an administrator with scripts/provision_console_operator.py. There is no default password."
   log "Starting console on :$CONSOLE_PORT"
   nohup env \
     WEB_HOST=127.0.0.1 \
@@ -284,6 +309,7 @@ else
     PLATFORM_GATEWAY_URL="http://127.0.0.1:${GATEWAY_PORT}" \
     PLATFORM_API_KEY_FILE="$KEY" \
     PLATFORM_MODEL_ID=qwen3.5-27b \
+    OPERATOR_AUTH_DIR="$OPERATOR_AUTH_DIR" \
     MICROSOFT_CLIENT_ID="${MICROSOFT_CLIENT_ID:-}" \
     MICROSOFT_TENANT="${MICROSOFT_TENANT:-common}" \
     MICROSOFT_REDIRECT_URI="${MICROSOFT_REDIRECT_URI:-http://127.0.0.1:18080/api/microsoft/callback}" \

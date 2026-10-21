@@ -1,5 +1,9 @@
 # Microsoft 365 read-only sign-in
 
+Checked again on 2026-10-21 from this workstation. No browser Microsoft
+session was available to the agent, `MICROSOFT_CLIENT_ID` was unset, and no
+Graph call was made. The connectors stay **NOT CONFIGURED**.
+
 This is the first real Microsoft connection. It is not connected. No Entra
 application was created, no application id is stored in this repository, no
 account has consented, and no request has reached Microsoft Graph.

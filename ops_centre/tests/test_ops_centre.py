@@ -229,6 +229,60 @@ class OverviewHonestyTests(unittest.TestCase):
                 overview = centre.overview()
                 self.assertNotEqual(overview["overall"], "healthy")
 
+    def test_historical_high_alert_stays_open_without_forcing_degraded(self) -> None:
+        from ops_centre.detections import DetectionHit
+
+        with tempfile.TemporaryDirectory() as tmp:
+            centre = OpsCentre(OpsCentreConfig(data_dir=Path(tmp)))
+
+            def fake_snapshot() -> dict:
+                return {
+                    "overall": "healthy",
+                    "verification": "observed",
+                    "verified_at": "2026-10-21T22:00:00Z",
+                    "services": [],
+                    "note": "test",
+                }
+
+            centre.alerts.ingest_hits([DetectionHit(
+                rule_id="agent.repeated_failures",
+                rule_version="1",
+                title="Repeated agent task failures",
+                severity="high",
+                confidence="high",
+                evidence=["2020-01-01T00:00:00Z task failed"],
+                event_ids=["old"],
+                fingerprint="historical-agent-failures",
+                detail={"count": 3},
+            )])
+            with patch.object(centre, "refresh_health", side_effect=lambda: fake_snapshot()):
+                overview = centre.overview()
+            self.assertEqual(overview["overall"], "healthy")
+            self.assertEqual(overview["open_alerts_outside_health_window"], 1)
+            self.assertEqual(centre.alerts.open_counts()["total_open"], 1)
+            self.assertNotEqual(centre.alerts.list()[0].status, "resolved")
+
+    def test_snapshot_records_one_failure_per_task_and_keeps_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            centre = OpsCentre(OpsCentreConfig(data_dir=Path(tmp)))
+
+            class Desk:
+                def history_list(self, limit: int = 20) -> list[dict]:
+                    return [{
+                        "task_id": "task-1",
+                        "execution": "failed",
+                        "failure": "tool timed out",
+                        "goal": "check the queue",
+                    }]
+
+            first = centre.collect_agent_snapshot(Desk())
+            second = centre.collect_agent_snapshot(Desk())
+            rows = centre.events.list(limit=20, event_type="agent.task_failed")
+            self.assertEqual(first["recorded"], 1)
+            self.assertEqual(second["recorded"], 0)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0].correlation_id, "task-1")
+
 
 if __name__ == "__main__":
     unittest.main()

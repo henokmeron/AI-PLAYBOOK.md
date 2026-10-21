@@ -225,6 +225,78 @@ class DirectorReportTests(unittest.TestCase):
             self.assertIn("symlink", " ".join(auth["evidence"]))
             self.assertNotIn(usable["password_hash"], json.dumps(linked))
 
+    def _healthy_snapshot(self) -> dict:
+        return _health([
+            {"name": "qwen", "state": "healthy", "verified_at": "2026-10-21T22:00:00Z", "http_status": 200, "detail": "ok"},
+            {"name": "gateway_live", "state": "healthy", "verified_at": "2026-10-21T22:00:00Z", "http_status": 200, "detail": "ok"},
+            {"name": "gateway_ready", "state": "healthy", "verified_at": "2026-10-21T22:00:00Z", "http_status": 200, "detail": "ok"},
+            {"name": "console", "state": "healthy", "verified_at": "2026-10-21T22:00:00Z", "http_status": 200, "detail": "ok"},
+            {"name": "disk", "state": "healthy", "verified_at": "2026-10-21T22:00:00Z", "detail": "ok"},
+        ])
+
+    def test_historical_agent_failures_stay_in_the_audit_log(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            centre = self._centre(tmp)
+            for _ in range(3):
+                centre.events.append(
+                    event_type="agent.task_failed",
+                    component="agent",
+                    outcome="failed",
+                    severity="high",
+                    summary="historical task failed",
+                )
+            for event in centre.events.list(limit=10, event_type="agent.task_failed"):
+                event.at = "2020-01-01T00:00:00Z"
+            with patch.object(centre.health, "snapshot", return_value=self._healthy_snapshot()):
+                with patch.dict(os.environ, {"OPERATOR_AUTH_DIR": tmp}, clear=False):
+                    os.environ.pop("RAG_DOCS_DIR", None)
+                    os.environ.pop("MICROSOFT_CLIENT_ID", None)
+                    report = build_report(centre)
+            agents = next(item for item in report["components"] if item["name"] == "agents")
+            self.assertEqual(agents["state"], "UNKNOWN")
+            self.assertIn("audit_preserved=true", agents["evidence"])
+            self.assertIn("historical_failed_tasks=3", agents["evidence"])
+            self.assertEqual(len(centre.events.list(limit=10, event_type="agent.task_failed")), 3)
+            self.assertEqual(report["retained_failed_audit_rows"], 3)
+            self.assertEqual(report["recent_failed_tasks"], 0)
+            self.assertNotEqual(agents["state"], "DEGRADED")
+
+    def test_a_current_agent_failure_is_degraded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            centre = self._centre(tmp)
+            centre.events.append(
+                event_type="agent.task_failed",
+                component="agent",
+                outcome="failed",
+                severity="high",
+                summary="current task failed",
+            )
+            with patch.object(centre.health, "snapshot", return_value=self._healthy_snapshot()):
+                with patch.dict(os.environ, {"OPERATOR_AUTH_DIR": tmp}, clear=False):
+                    os.environ.pop("RAG_DOCS_DIR", None)
+                    report = build_report(centre)
+            agents = next(item for item in report["components"] if item["name"] == "agents")
+            self.assertEqual(agents["state"], "DEGRADED")
+            self.assertEqual(len(centre.events.list(limit=10, event_type="agent.task_failed")), 1)
+
+    def test_rag_probe_cites_and_abstains_without_calling_a_model(self) -> None:
+        from ops_centre.rag_probe import write_acceptance_corpus
+
+        with tempfile.TemporaryDirectory() as tmp:
+            docs = Path(tmp) / "docs"
+            write_acceptance_corpus(docs)
+            centre = self._centre(tmp)
+            with patch.object(centre.health, "snapshot", return_value=self._healthy_snapshot()):
+                with patch.dict(os.environ, {"OPERATOR_AUTH_DIR": tmp, "RAG_DOCS_DIR": str(docs)}, clear=False):
+                    os.environ.pop("MICROSOFT_CLIENT_ID", None)
+                    report = build_report(centre)
+            rag = next(item for item in report["components"] if item["name"] == "rag")
+            self.assertEqual(rag["state"], "HEALTHY")
+            self.assertIn("model_called=false", rag["evidence"])
+            self.assertIn("citation_file=warranty.txt", rag["evidence"])
+            self.assertIn("abstained=true", rag["evidence"])
+            self.assertNotIn("fourteen months", json.dumps(rag))
+
 
 if __name__ == "__main__":
     unittest.main()

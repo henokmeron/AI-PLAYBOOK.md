@@ -116,5 +116,5 @@ All other browser APIs require a valid session and the matching permission.
 
 1. **Provision first:** create at least one administrator with `scripts/provision_console_operator.py create-admin` into `OPERATOR_AUTH_DIR` **before** any console restart that includes this code (fail-closed otherwise).
 2. `ops/release/deploy-console-only.sh` refuses restart when `operators.json` is missing, and passes `OPERATOR_AUTH_DIR` into the new console process. It does not restart Qwen or the gateway. Its default branch is `main`.
-3. Default `OPERATOR_AUTH_DIR=/tmp/console-operators` survives console-only reloads on the same Pod session; a full Pod stop may wipe `/tmp` — re-provision after cold start if needed.
+3. Default `OPERATOR_AUTH_DIR=/tmp/console-operators` survives console-only reloads on the same Pod session. A Pod stop deletes `/tmp`. `ops/platform_state.py` keeps a checksummed copy of `operators.json` at `/workspace/platform-state/operator-backups/` and restores it onto local disk with mode 0600. Sessions, the gateway key, and the Microsoft token are not in that backup. There is still no default password. See `docs/release/RECOVERY.md`.
 4. Rollback: revert to a console build without `require_operator` gates; remove or ignore `OPERATOR_AUTH_DIR`.

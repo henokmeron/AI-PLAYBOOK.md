@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+
+from .health_window import failure_window_seconds, within_window
 
 from .service import OpsCentre
 
@@ -341,6 +345,110 @@ def _operator_auth(verified_at: str | None) -> dict[str, Any]:
     )
 
 
+def _agent_health(centre: OpsCentre, verified_at: str | None) -> dict[str, Any]:
+    """Classify agent failures without deleting audit events."""
+    now = datetime.now(timezone.utc)
+    window = failure_window_seconds()
+    agent_events = centre.events.list(limit=500, component="agent")
+    if not agent_events:
+        return _component(
+            "agents",
+            "UNKNOWN",
+            evidence=["no agent events in the retained log", "audit_preserved=true"],
+            detail="No agent telemetry was found. This is not evidence that agents are healthy.",
+            checked_at=verified_at,
+        )
+    failed = [event for event in agent_events if event.event_type == "agent.task_failed"]
+    pending = [event for event in agent_events if event.event_type == "agent.approval_pending"]
+    current: list[Any] = []
+    historical: list[Any] = []
+    for event in failed:
+        flag = within_window(event.at, now=now, window_seconds=window)
+        if flag is False:
+            historical.append(event)
+        else:
+            current.append(event)
+    evidence = [
+        "audit_preserved=true",
+        f"current_failed_tasks={len(current)}",
+        f"historical_failed_tasks={len(historical)}",
+        f"window_seconds={window}",
+    ]
+    evidence.extend(
+        f"{event.event_id} {event.event_type} at={event.at}"
+        for event in (current or historical or agent_events)[:5]
+    )
+    if current:
+        state = "DEGRADED"
+        detail = (
+            f"failed={len(current)} inside {window}s. "
+            f"historical_retained={len(historical)} stay in the audit log and were not deleted."
+        )
+    elif historical:
+        state = "UNKNOWN"
+        detail = (
+            f"No agent failure is inside the {window}s window. "
+            f"historical_retained={len(historical)} stay in the audit log and do not mark current health as failed."
+        )
+    else:
+        state = "HEALTHY"
+        detail = f"No agent.task_failed events in the retained log. pending_approvals={len(pending)}."
+    return _component(
+        "agents",
+        state,
+        evidence=evidence,
+        detail=detail,
+        checked_at=current[0].at if current else agent_events[0].at,
+    )
+
+
+def _rag_health(verified_at: str | None) -> dict[str, Any]:
+    rag_dir = os.environ.get("RAG_DOCS_DIR", "").strip()
+    if not rag_dir:
+        return _component(
+            "rag",
+            "NOT CONFIGURED",
+            evidence=["RAG_DOCS_DIR is unset in this process"],
+            detail="Document retrieval was not probed. Unset means not configured for this report, not that RAG code is absent.",
+            checked_at=verified_at,
+        )
+    if not os.path.isdir(rag_dir) or os.path.islink(rag_dir):
+        return _component(
+            "rag",
+            "DEGRADED",
+            evidence=["RAG_DOCS_DIR is set but is not a directory"],
+            detail="The configured document directory is missing.",
+            checked_at=verified_at,
+        )
+    try:
+        from .rag_probe import probe_folder
+
+        probed = probe_folder(Path(rag_dir))
+    except Exception as exc:  # noqa: BLE001
+        return _component(
+            "rag",
+            "UNKNOWN",
+            evidence=[type(exc).__name__, "model_called=false"],
+            detail="The retrieval probe could not be completed.",
+            checked_at=verified_at,
+        )
+    evidence = [
+        f"grounded={str(bool(probed.get('grounded'))).lower()}",
+        f"abstained={str(bool(probed.get('abstained'))).lower()}",
+        "model_called=false",
+    ]
+    citation = probed.get("citation_file")
+    if isinstance(citation, str) and citation and "/" not in citation and "\\" not in citation:
+        evidence.append(f"citation_file={citation[:160]}")
+    return _component(
+        "rag",
+        str(probed.get("state") or "UNKNOWN"),
+        evidence=evidence,
+        detail=str(probed.get("detail") or "Retrieval probe finished."),
+        checked_at=str(probed.get("checked_at") or verified_at or "") or None,
+    )
+
+
 def build_report(centre: OpsCentre, *, desk: Any | None = None) -> dict[str, Any]:
     """Return a Director status report. Side effect: one append-only audit event."""
     if desk is not None:
@@ -414,52 +522,8 @@ def build_report(centre: OpsCentre, *, desk: Any | None = None) -> dict[str, Any
         ),
     ]
 
-    agent_events = centre.events.list(limit=30, component="agent")
-    if not agent_events:
-        components.append(_component(
-            "agents",
-            "UNKNOWN",
-            evidence=["no agent events in the retained window"],
-            detail="No agent telemetry was found. This is not evidence that agents are healthy.",
-            checked_at=verified_at,
-        ))
-    else:
-        failed = [e for e in agent_events if e.event_type == "agent.task_failed"]
-        pending = [e for e in agent_events if e.event_type == "agent.approval_pending"]
-        state = "DEGRADED" if failed else "HEALTHY"
-        components.append(_component(
-            "agents",
-            state,
-            evidence=[f"{e.event_id} {e.event_type} at={e.at}" for e in (failed or pending or agent_events)[:5]],
-            detail=f"failed={len(failed)} pending_approvals={len(pending)} in the latest agent events",
-            checked_at=agent_events[0].at,
-        ))
-
-    rag_dir = os.environ.get("RAG_DOCS_DIR", "").strip()
-    if not rag_dir:
-        components.append(_component(
-            "rag",
-            "NOT CONFIGURED",
-            evidence=["RAG_DOCS_DIR is unset in this process"],
-            detail="Document retrieval was not probed. Unset means not configured for this report, not that RAG code is absent.",
-            checked_at=verified_at,
-        ))
-    elif not os.path.isdir(rag_dir):
-        components.append(_component(
-            "rag",
-            "DEGRADED",
-            evidence=[f"RAG_DOCS_DIR is set but is not a directory"],
-            detail="The configured document directory is missing.",
-            checked_at=verified_at,
-        ))
-    else:
-        components.append(_component(
-            "rag",
-            "UNKNOWN",
-            evidence=["document directory exists; retrieval quality was not executed"],
-            detail="Directory presence is not evidence that answers are grounded.",
-            checked_at=verified_at,
-        ))
+    components.append(_agent_health(centre, verified_at))
+    components.append(_rag_health(verified_at))
 
     if os.environ.get("MICROSOFT_CLIENT_ID", "").strip():
         components.append(_component(
@@ -589,6 +653,8 @@ def build_report(centre: OpsCentre, *, desk: Any | None = None) -> dict[str, Any
         "open_incidents": incidents[:10],
         "pending_approvals": overview.get("pending_approvals"),
         "recent_failed_tasks": overview.get("recent_failed_tasks"),
+        "retained_failed_audit_rows": overview.get("retained_failed_audit_rows"),
+        "open_alerts_outside_health_window": overview.get("open_alerts_outside_health_window"),
         "recommendations": recommendations,
         "tool_allowlist": list(READ_ONLY_TOOLS),
         "forbidden_capabilities": list(FORBIDDEN_CAPABILITIES),
