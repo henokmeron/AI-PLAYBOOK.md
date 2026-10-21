@@ -33,6 +33,13 @@ def _pids(value: str) -> list[int]:
     return rows
 
 
+def assess_replacement(*, qwen_health: int, gateway_health: int, console_health: int) -> str:
+    """Return ``keep`` or ``rollback``. This does not signal a process."""
+    if qwen_health == 200 and gateway_health == 200 and console_health == 200:
+        return "keep"
+    return "rollback"
+
+
 def decide(
     *,
     approved: bool,
@@ -41,6 +48,7 @@ def decide(
     pid_8002: str = "",
     pid_8010: str = "",
     pid_8080: str = "",
+    operators_ready: bool = True,
 ) -> str:
     """Return ``dry-run`` or ``restart-console``.
 
@@ -61,6 +69,10 @@ def decide(
         raise DeployRefusal("the console process id matches Qwen or the gateway. Nothing was stopped.")
     if not approved:
         return "dry-run"
+    if not operators_ready:
+        raise DeployRefusal(
+            "operator provisioning is missing. A healthy console was not replaced."
+        )
     if len(console) != 1:
         raise DeployRefusal("expected exactly one process on port 8080. Nothing was stopped.")
     return "restart-console"
@@ -74,7 +86,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pid-8002", default="")
     parser.add_argument("--pid-8010", default="")
     parser.add_argument("--pid-8080", default="")
+    parser.add_argument("--operators-ready", choices=("yes", "no"), default="yes")
+    parser.add_argument("--assess", action="store_true")
+    parser.add_argument("--health-8080", type=int, default=0)
     args = parser.parse_args(argv)
+    if args.assess:
+        print(assess_replacement(
+            qwen_health=args.health_8002,
+            gateway_health=args.health_8010,
+            console_health=args.health_8080,
+        ))
+        return 0
     try:
         decision = decide(
             approved=args.approved == "yes",
@@ -83,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
             pid_8002=args.pid_8002,
             pid_8010=args.pid_8010,
             pid_8080=args.pid_8080,
+            operators_ready=args.operators_ready == "yes",
         )
     except DeployRefusal as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

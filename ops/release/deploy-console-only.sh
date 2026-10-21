@@ -45,9 +45,20 @@ P8002="$(pids_for 8002)"
 P8010="$(pids_for 8010)"
 P8080="$(pids_for 8080)"
 
+# Named-operator auth is checked before any console process is stopped.
+# Provision the first admin BEFORE approving a restart:
+#   OPERATOR_AUTH_DIR=/tmp/console-operators \
+#     python3 "$REPO_ROOT/scripts/provision_console_operator.py" create-admin --username <name>
+OPERATOR_AUTH_DIR="${OPERATOR_AUTH_DIR:-/tmp/console-operators}"
+OPS_READY=no
+if [[ -f "$OPERATOR_AUTH_DIR/operators.json" ]]; then
+  OPS_READY=yes
+fi
+
 DECISION="$(
   python3 "$REPO_ROOT/ops/release/console_deploy.py" \
     --approved "$APPROVED" \
+    --operators-ready "$OPS_READY" \
     --health-8002 "$H8002" \
     --health-8010 "$H8010" \
     --pid-8002 "$P8002" \
@@ -83,15 +94,6 @@ if kill -0 "$P8080" 2>/dev/null; then
   fail "the previous console process is still running. Qwen and the gateway were not signalled."
 fi
 
-# Named-operator auth: fail-closed when OPERATOR_AUTH_DIR has no active operators.
-# Provision the first admin BEFORE approving a restart that includes this console:
-#   OPERATOR_AUTH_DIR=/tmp/console-operators \
-#     python3 "$REPO_ROOT/scripts/provision_console_operator.py" create-admin --username <name>
-OPERATOR_AUTH_DIR="${OPERATOR_AUTH_DIR:-/tmp/console-operators}"
-if [[ ! -f "$OPERATOR_AUTH_DIR/operators.json" ]]; then
-  fail "OPERATOR_AUTH_DIR=$OPERATOR_AUTH_DIR has no operators.json. Provision create-admin first so the console is not locked out. Qwen and the gateway were not signalled."
-fi
-
 nohup env \
   WEB_HOST=127.0.0.1 \
   WEB_PORT=8080 \
@@ -112,7 +114,17 @@ nohup env \
 echo $! >"$DIAG/console.pid"
 
 kill -0 "$P8002" && kill -0 "$P8010" || fail "Qwen or the gateway is no longer running after the console start."
-if [[ "$(http_code 8002)" != "200" || "$(http_code 8010)" != "200" ]]; then
-  fail "Qwen or the gateway health changed. Their processes were not signalled by this script."
+H8002_AFTER="$(http_code 8002)"
+H8010_AFTER="$(http_code 8010)"
+H8080_AFTER="$(http_code 8080)"
+OUTCOME="$(
+  python3 "$REPO_ROOT/ops/release/console_deploy.py" \
+    --assess \
+    --health-8002 "$H8002_AFTER" \
+    --health-8010 "$H8010_AFTER" \
+    --health-8080 "$H8080_AFTER"
+)" || fail "replacement health check failed. Qwen and the gateway were not signalled."
+if [[ "$OUTCOME" != "keep" ]]; then
+  fail "replacement is not healthy. Do not treat the new console as ready. Qwen and the gateway were not signalled."
 fi
 log "console process replaced. Qwen pid $P8002 and gateway pid $P8010 were left running."
