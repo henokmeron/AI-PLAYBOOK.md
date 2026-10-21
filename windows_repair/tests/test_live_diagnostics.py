@@ -922,6 +922,80 @@ class DeviceStoreGuardTests(unittest.TestCase):
             self.assertFalse(duplicate["problem_resolved"])
             self.assertEqual(store.nonces.count(envelope["nonce"]), 1)
 
+    def test_one_pull_claims_the_job_and_a_restart_keeps_that_claim(self) -> None:
+        """Two workers must not both collect. A restarted console keeps the claim and a duplicate result."""
+        import threading
+
+        from integrations.endpoint_worker import execute_assigned_job
+
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": 11_000.0}
+            store = DeviceStore(Path(tmp) / "device.json", clock=lambda: clock["now"], ttl=300)
+            secret = "d" * 32
+            device = store.enrol("acme", secret)
+            other = store.enrol("acme", "e" * 32)
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
+            self.assertEqual(store.pending_jobs("e" * 32), [])
+            self.assertEqual(store.pending_jobs(secret)[0]["job_id"], envelope["job_id"])
+            self.assertEqual(store.pending_jobs(secret), [])
+            path = Path(tmp) / "device.json"
+            restarted = DeviceStore(path, clock=lambda: clock["now"])
+            self.assertEqual(restarted.pending_jobs(secret), [])
+            seen = {"n": 0}
+            errors: list[BaseException] = []
+
+            def _pull() -> None:
+                try:
+                    rows = store.pending_jobs(secret)
+                    seen["n"] += len(rows)
+                except RepairDenied as exc:
+                    errors.append(exc)
+
+            clock["now"] = 11_061.0
+            first = threading.Thread(target=_pull)
+            second = threading.Thread(target=_pull)
+            first.start()
+            second.start()
+            first.join()
+            second.join()
+            self.assertEqual(errors, [])
+            self.assertEqual(seen["n"], 1)
+
+            class _Once:
+                def collect(self, procedure_id: str) -> dict:
+                    return {
+                        "evidence_source": "mock",
+                        "mocked": True,
+                        "status": "collected",
+                        "ok": True,
+                        "problem_resolved": True,
+                        "collected_at_unix": clock["now"],
+                    }
+
+            pulled = store.pending_jobs(secret)
+            self.assertEqual(len(pulled), 0)
+            clock["now"] = 11_122.0
+            pulled = DeviceStore(path, clock=lambda: clock["now"]).pending_jobs(secret)
+            self.assertEqual(len(pulled), 1)
+            result = execute_assigned_job(
+                pulled[0],
+                device_id=device,
+                tenant_id="acme",
+                mac_key=store.mac_key(device),
+                provider=_Once(),
+                now=clock["now"],
+            )
+            self.assertFalse(result["problem_resolved"])
+            recorded = store.record_result(secret, pulled[0], result)
+            self.assertEqual(recorded["collected_by"], "endpoint_worker")
+            self.assertFalse(recorded["problem_resolved"])
+            recovered = DeviceStore(path, clock=lambda: clock["now"])
+            duplicate = recovered.record_result(secret, pulled[0], result)
+            self.assertTrue(duplicate["duplicate"])
+            self.assertEqual(recovered.nonces.count(envelope["nonce"]), 1)
+            self.assertEqual(recovered.pending_jobs(secret), [])
+            self.assertNotEqual(other, device)
+
     def test_two_processes_cannot_both_collect(self) -> None:
         import multiprocessing
 

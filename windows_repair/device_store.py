@@ -51,6 +51,7 @@ def _canonical(payload: dict[str, Any]) -> bytes:
 
 _RESULT_SOURCES = frozenset({"live_windows", "unavailable", "mock", "fixture"})
 _SIGNATURE_FIELDS = frozenset({"signature", "device_signature", "result_signature"})
+_CLAIM_SECONDS = 60.0
 
 
 def job_body(envelope: dict[str, Any]) -> dict[str, Any]:
@@ -384,6 +385,16 @@ class DeviceStore:
                 if self._clock() >= float(job.get("expires_at") or 0):
                     self._set_lifecycle(str(job.get("job_id") or ""), "expired", expired_at=self._clock(), save=False)
                     continue
+                job_id = str(job.get("job_id") or "")
+                if self._claim_held(job_id):
+                    continue
+                self._set_lifecycle(
+                    job_id,
+                    "issued",
+                    in_flight=True,
+                    claimed_until=self._clock() + _CLAIM_SECONDS,
+                    save=False,
+                )
                 rows.append({key: value for key, value in job.items() if key != "mac_key"})
             self._save()
             return rows
@@ -468,10 +479,27 @@ class DeviceStore:
             self._save()
             raise RepairDenied("job replay rejected")
         if not consume:
-            if (self.job_states.get(job_id) or {}).get("in_flight"):
+            if self._claim_held(job_id):
                 raise RepairDenied("job is already being collected")
-            self._set_lifecycle(job_id, "issued", in_flight=True)
+            self._set_lifecycle(
+                job_id,
+                "issued",
+                in_flight=True,
+                claimed_until=self._clock() + _CLAIM_SECONDS,
+            )
         return device
+
+    def _claim_held(self, job_id: str) -> bool:
+        state = self.job_states.get(job_id) or {}
+        if not state.get("in_flight"):
+            return False
+        until = state.get("claimed_until")
+        if until is None:
+            return True
+        try:
+            return self._clock() < float(until)
+        except (TypeError, ValueError):
+            return True
 
     def _record(self, secret: str, envelope: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(result, dict):
