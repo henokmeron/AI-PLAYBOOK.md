@@ -89,6 +89,11 @@ KNOWN_ROUTES = {
 }
 
 
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        raise urllib.error.HTTPError(req.full_url, code, "redirect refused", headers, fp)
+
+
 class UpstreamError(RuntimeError):
     """Inference upstream failed; ``reason`` is safe to return to clients."""
 
@@ -494,10 +499,16 @@ def read_upstream_json(path: str, payload: dict[str, Any] | None = None, timeout
         f"{UPSTREAM}{path}", data=data, headers=headers,
         method="GET" if data is None else "POST",
     )
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _RefuseRedirects)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
+        with opener.open(req, timeout=timeout) as response:
             value = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
+        exc.close()
+        if int(exc.code) in {301, 302, 303, 307, 308}:
+            raise UpstreamError(
+                "Inference upstream redirect was refused", "upstream_redirect_refused"
+            ) from exc
         raise UpstreamError(f"Inference upstream returned HTTP {exc.code}", f"upstream_http_{exc.code}") from exc
     except (TimeoutError, socket.timeout) as exc:
         raise UpstreamError("Inference upstream timed out", "upstream_timeout") from exc

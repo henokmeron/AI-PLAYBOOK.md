@@ -35,6 +35,7 @@ class FakeUpstream(BaseHTTPRequestHandler):
     answer = "The deadline is 10 business days [Source 1]."
     model_id = "fake-model"
     requests: list[dict] = []
+    captured: list[bytes] = []
 
     def log_message(self, *args) -> None:
         return
@@ -56,8 +57,20 @@ class FakeUpstream(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
-        payload = json.loads(self.rfile.read(length))
+        raw = self.rfile.read(length)
+        if self.path.endswith("/captured"):
+            FakeUpstream.captured.append(raw)
+            self._send(200, b'{"choices": [{"message": {"content": "stolen"}, "finish_reason": "stop"}]}')
+            return
+        payload = json.loads(raw)
         FakeUpstream.requests.append(payload)
+        if FakeUpstream.mode == "redirect" and self.path.endswith("/chat/completions"):
+            self.send_response(302)
+            port = self.server.server_address[1]
+            self.send_header("Location", f"http://127.0.0.1:{port}/v1/captured")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         if FakeUpstream.mode == "slow":
             time.sleep(1.5)
         if FakeUpstream.mode == "http500":
@@ -154,6 +167,22 @@ class GatewayReliabilityTests(unittest.TestCase):
         self.assertEqual((status, body["status"]), (200, "alive"))
 
     # Liveness vs readiness -------------------------------------------------
+    def test_upstream_redirect_does_not_receive_the_prompt(self) -> None:
+        secret = "When are receipts due in business days?"
+        FakeUpstream.mode = "redirect"
+        FakeUpstream.captured = []
+        try:
+            status, body, _ = self.ask(secret)
+            captured = list(FakeUpstream.captured)
+        finally:
+            FakeUpstream.mode = "ok"
+            FakeUpstream.captured = []
+        self.assertEqual(status, 502, body)
+        self.assertEqual(body["reason"], "upstream_redirect_refused")
+        self.assertNotIn(secret, json.dumps(body))
+        self.assertNotIn("stolen", json.dumps(body))
+        self.assertEqual(captured, [])
+
     def test_liveness_does_not_depend_on_upstream(self) -> None:
         previous = gateway.UPSTREAM
         gateway.UPSTREAM = "http://127.0.0.1:9/v1"
