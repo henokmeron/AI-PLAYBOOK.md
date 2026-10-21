@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-21** (Operator backup and the 24-hour agent-failure window are on `main` as `f6da54bc695c47e2184719aee618f3a51b05058d`. The Pod was not contacted in that pass. Release SHA-256 `952c29081256ec5575038883e90268b67123beb4e0251d129622ffdbf082dff7`, 366 files, not copied to the volume. Go-live remains **NO-GO**.)
+Last updated: **2026-10-21** (Read-only Graph scopes and `ops.run_tests` are on `main` as `7e7ff516fda9abf1d70a136104ffd8c397a22cee`. Release SHA-256 `e20b686ad8f00f8516face757ae533093b677a88c710f47078caf4bdfb636591`, 369 files. Pod and Entra live config were not completed from this agent. Go-live remains **NO-GO**.)
 
 ## Only this repository
 
