@@ -18,7 +18,7 @@ The package is written to `%LOCALAPPDATA%\AI-PLAYBOOK\releases\<commit>\`. The c
 python -m ops.release.recover --archive <archive.tar.gz> --sha256 <checksum> --destination <empty-directory>
 ```
 
-Automatic steps: checksum check, reject unsafe archive paths, extract into an empty directory.
+Automatic steps: checksum check, reject unsafe archive paths and all symlink/hardlink/device/FIFO members, reject a symlink destination, then extract into an empty directory. Paths are checked for POSIX traversal, Windows drive/UNC paths, backslash traversal, and NTFS alternate data streams. These checks protect recovery from a crafted archive; they do not establish that a release is deployed.
 
 Human steps after that:
 
