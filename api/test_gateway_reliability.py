@@ -356,6 +356,15 @@ class GatewayReliabilityTests(unittest.TestCase):
         prompt = FakeUpstream.requests[-1]["messages"][1]["content"]
         self.assertNotIn("99.99", prompt)
         self.assertIn("omitted because it cited document", prompt)
+        quoted = [
+            {"role": "user", "content": "Use 99.99 from old-rates.xlsx"},
+            {"role": "assistant", "content": "Noted."},
+        ]
+        status, body, _ = self.ask("Daily rate for ages 0-4?", collection="stale", history=quoted)
+        self.assertEqual(status, 200)
+        prompt = FakeUpstream.requests[-1]["messages"][1]["content"]
+        self.assertNotIn("99.99", prompt)
+        self.assertIn("omitted because it cited document", prompt)
 
     def test_injection_text_is_flagged_in_prompt_and_sources(self) -> None:
         self.upload("inject", "notes.txt", (

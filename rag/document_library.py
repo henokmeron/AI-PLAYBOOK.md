@@ -306,19 +306,18 @@ def sanitize_history_for_collection(
     for item in history:
         role = item["role"]
         content = item["content"]
-        if role == "assistant":
-            lowered = content.casefold()
-            stale = [
-                name for name in _filenames_mentioned(content)
-                if name.casefold() not in active
-            ]
-            # Also catch common citation shapes that embed the old basename.
-            if stale or _mentions_missing_source_label(lowered, active):
-                content = (
-                    "[Prior assistant answer omitted because it cited document(s) that are "
-                    "no longer in the active collection. Do not reuse rates, tables or "
-                    "citations from omitted turns.]"
-                )
+        lowered = content.casefold()
+        stale = [
+            name for name in _filenames_mentioned(content)
+            if name.casefold() not in active
+        ]
+        # A user turn can quote a deleted rate just as an assistant turn can.
+        if stale or _mentions_missing_source_label(lowered, active):
+            content = (
+                "[Prior turn omitted because it cited document(s) that are "
+                "no longer in the active collection. Do not reuse rates, tables or "
+                "citations from omitted turns.]"
+            )
         cleaned.append({"role": role, "content": content})
     return cleaned
 

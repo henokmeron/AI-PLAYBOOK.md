@@ -178,9 +178,21 @@ class DocumentLibraryTests(unittest.TestCase):
             history,
             ["Placement Fees - Fee to LA (Local authority) -  Effective from 1 July 2026 -.xlsx"],
         )
-        self.assertEqual(cleaned[0]["role"], "user")
+        self.assertEqual(cleaned[0]["content"], "What is the fee?")
         self.assertIn("omitted because it cited document", cleaned[1]["content"].casefold())
         self.assertNotIn("99.498", cleaned[1]["content"])
+        quoted = sanitize_history_for_collection(
+            [{
+                "role": "user",
+                "content": (
+                    "Use 99.498 from "
+                    "Banya fee to carers – Carer Pay Rates – Effective from 1 April 2026.xlsx"
+                ),
+            }],
+            ["Placement Fees - Fee to LA (Local authority) -  Effective from 1 July 2026 -.xlsx"],
+        )
+        self.assertIn("omitted because it cited document", quoted[0]["content"].casefold())
+        self.assertNotIn("99.498", quoted[0]["content"])
 
 
 if __name__ == "__main__":
