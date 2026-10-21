@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-21** (Agent audit for registered Windows checks is on `main` as `dd197bf275e21a237780f3baac531f8bfd575695`. Release SHA-256 `418c86529cd5814b4f79ca74d6de64eb68f2b9c2e727c3eb0ad1a7eff6b1f151`, 370 files. Pod and Entra were not configured. Go-live remains **NO-GO**.)
+Last updated: **2026-10-21** (Mandatory living playbook A–F recorded in `PLAYBOOK.md`; standing rule #9. Prior: agent audit for registered Windows checks on `main` as `dd197bf275e21a237780f3baac531f8bfd575695`. Pod and Entra were not configured. Go-live remains **NO-GO**.)
 
 ## Only this repository
 
@@ -38,6 +38,7 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 6. Secrets stay out of git, browser JS, and reports. Key file on Pod: `/tmp/platform-gateway.key` (ephemeral; never print it).
 7. PowerShell + SSH strips embedded double quotes and CRLF breaks bash. Prefer scp’d scripts + LF conversion (`python3 /tmp/fresh/_lfconvert.py` if present).
 8. **Push feature-branch commits and `main`.** The owner requires this. Keep `feature/qwen-a100-start-hardening`, `feature/qwen3.5-27b-integration`, and `main` on the same commit by fast-forwarding `main`. Never force-push. Do not push untracked `ops/_*.sh`, `ops/_*.py`, or `__pycache__`.
+9. **Mandatory living playbook.** Every significant change is unfinished until matching playbook/docs are updated, verified for accuracy, committed, and pushed with the code. See `PLAYBOOK.md` → **Mandatory living playbook — continuously maintained** (sections A–F).
 
 ---
 
@@ -163,6 +164,10 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-21 — mandatory living playbook recorded
+
+- Documented owner mandate in `PLAYBOOK.md` (sections A–F after project purpose). Standing rule #9 points there. Change log notes the recording only. No feature work. §11 Initial roadmap unchanged.
 
 ### 2026-10-21 — agent audit for registered Windows checks
 

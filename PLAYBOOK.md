@@ -19,6 +19,53 @@ Target capabilities include:
 - Memory and company-specific context
 - Agent-like execution where appropriate
 
+## Mandatory living playbook — continuously maintained
+
+This playbook is a **mandatory living document**. The platform and the playbook evolve together. Documentation is part of the same increment as the code — not a follow-up task. This rule is non-negotiable.
+
+### A. Update after every significant change
+
+After every significant implementation, architecture, ops, security, recovery, or integration change, update the playbook (and related `docs/` when appropriate) in the same increment. Record at least:
+
+- What changed and why; architecture and components affected; how it works
+- Files, services, APIs, config, dependencies, permissions, and environment variables
+- Install / configure / test / deploy steps; test results and live-verification evidence
+- Security and approval requirements; known limits and outstanding work
+- Backup, rollback, and recovery; exact Git commit and release identity
+- Clear labels: planned vs implemented vs tested vs deployed vs verified
+
+Do not document unbuilt features as done.
+
+### B. Maintain daily when development is active
+
+On active development days, review playbook accuracy against the current implementation. Skip empty status-only commits when nothing material changed. Artificial daily commits are not required.
+
+### C. Keep synchronized with GitHub
+
+Playbook and docs updates ship with the code: commit and push to GitHub (`main`) so the remote remains the authoritative, current blueprint. Local-only doc edits are unfinished work.
+
+### D. Write for future AI agents
+
+Write so a new AI agent can continue without undocumented chat context. Cover system overview, repo layout, data flows, RunPod/local setup, storage inventory, models, M365/Azure integrations, test/deploy/monitor/recover, secrets handling, decisions and alternatives, known issues, next concrete tasks, and release reproduce/restore procedures. Prefer explicit commands with where they run and how to verify. Never put secrets in docs.
+
+### E. Preserve historical record
+
+Do not silently erase technical decisions or working configurations. Keep a concise chronological change and release history linked to commits and manifests. Mark superseded docs and link to replacements.
+
+### F. Final check before every push
+
+Before every push, confirm:
+
+- Code changes are documented
+- Playbook matches the implementation
+- Verification claims are accurate (use VERIFIED / FAILED / NOT TESTED / BLOCKED)
+- Config and deploy steps are present
+- Recovery and rollback guidance remains valid
+- Commit and release references are correct
+- No secrets appear in docs
+
+This mandate does not replace the explicit approval rules in `docs/AGENT_HANDOFF.md` (Pods, Azure spend, destructive ops).
+
 ## 1. Core business strategy
 Do not compete only by owning a model.
 
@@ -280,6 +327,10 @@ Phase 7 — Advanced model customisation
 - Treat the playbook as a reproducible blueprint for future AI-assisted automation.
 
 ## 13. Change log
+### 2026-10-21 — Mandatory living playbook recorded
+- Recorded the owner mandate **Mandatory living playbook — continuously maintained** (sections A–F) early in this playbook, after project purpose.
+- Standing-rule pointer added in `docs/AGENT_HANDOFF.md`. Documentation discipline only; no platform features claimed as implemented in this entry.
+
 ### 2026-10-20 — Device job review fixes
 - `DeviceStore.issue` accepts only read-only diagnostics. `print.spooler.restart` is rejected at issue time and is not executed. An approval id does not enable it.
 - A matching operator name is not authority. Issuance requires `grant_from_session` from a server-side session with role `admin` or `operator` and the same tenant. Viewers, missing sessions, and cross-tenant grants are refused. There is no console route that passes a request field into `issue`.
