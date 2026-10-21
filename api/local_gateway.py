@@ -1081,6 +1081,12 @@ class Handler(BaseHTTPRequestHandler):
         self._log_fields["upstream_ms"] = round((time.monotonic() - upstream_started) * 1000, 1)
 
         status, citations = answer_delivery(answer_text, len(sources))
+        if status != "answered":
+            # The model text can carry a rate or label that was not in the evidence.
+            # Returning it lets the next turn treat that text as prior conversation.
+            answer_text = (
+                "This reply was withheld because it cited a source that was not in the evidence."
+            )
         retrieval = {
             "matched": True,
             "top_score": round(top_score, 3),
