@@ -371,7 +371,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 
 | Date | Change |
 | --- | --- |
-| 2026-10-21 | Release recovery rejects symlink/hardlink/device/FIFO archive members, cross-platform traversal paths, Windows alternate data streams, and symlink destinations. Security tests added. Not yet run on this host; no Pod or volume was touched. |
+| 2026-10-21 | Release recovery rejects symlink/hardlink/device/FIFO archive members, cross-platform traversal paths, Windows alternate data streams, and symlink destinations. A main-push workflow is configured to test and package a 90-day artifact; no run/artifact is verified yet. No Pod or volume was touched. |
 | 2026-10-21 | Agent Windows diagnose tool runs registered read-only collectors, audits the call, and treats the text as untrusted. Elevated approval does not change this PC. Not deployed. |
 | 2026-10-20 | Canonical PC checkout is `C:\Users\kokob\src\AI-PLAYBOOK.md`. Repair jobs now record issued, accepted, and expired. A missing or stale device check-in is not HEALTHY in the Director report. Not deployed. |
 | 2026-10-18 | On-demand Operations Director report (`ops_centre/director.py`, `GET /api/ops/director`). No scheduler. Pod was not started or stopped for this change. See `docs/ops_centre/DIRECTOR.md`. |
