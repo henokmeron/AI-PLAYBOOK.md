@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-18** (SSH `154.54.102.40:13212` and `216.81.248.126:19091` both refused. This machine has no `id_ed25519`. Pod health was not read. Local tests 40 OK.)
+Last updated: **2026-10-21** (H100 Pod `xx9cjogra5vcwl` is running and verified. No Blackwell Pod is in the account. This machine still has no `id_ed25519`. Jupyter on the running Pod was used. Local tests 426 OK, 2 skipped.)
 
 ## Only this repository
 
@@ -163,6 +163,15 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-21 — H100 stack verified; Blackwell Pod was not present
+
+- Canonical checkout `C:\Users\kokob\src\AI-PLAYBOOK.md` on `main`. Local and `origin/main` are `a0e9422145aae4e38025709d1ca88288e42f375b`. The Pod checkout `/tmp/AI-PLAYBOOK` is the same commit. Untracked `__pycache__` was not committed.
+- The only Pod in the RunPod list is `xx9cjogra5vcwl` / `reliable_moccasin_hummingbird`, H100 NVL, `$3.20/hr`, driver **595.91.07**, compute capability **9.0**, 95,830 MiB. Global Volume `5aac0c77-6fcc-4be9-a112-dfe3890e1373` is `fuse.geesefs` at `/workspace`. Eleven Qwen shards are present. The A100 env `/tmp/vllm-qwen-env` was restored and left in place. `/tmp/vllm-qwen-blackwell-env` was not created. No second Pod was created. The Pod was not stopped.
+- `START.sh` was already loading Qwen when this session inspected the Pod. It reached `FIRST_RELEASE_READY` at 2026-10-21T20:04:56Z. Direct `:8002`, gateway `:8010`, and console `:8080` each returned the word `pong`. An administrator `platform-admin` was provisioned in `/tmp/console-operators`. The password file is mode `0600` on the Pod and is not recorded here. `MICROSOFT_CLIENT_ID` is absent. `GET /api/microsoft/start` returned **409**. Connectors are **NOT CONFIGURED**.
+- Console health was falsely degraded because the probe read 400 bytes of `/api/status`. `a0e9422` reads 16,384 bytes. The console process was restarted after the fast-forward. Qwen and the gateway were reused, not reloaded. Operations Centre service health is **healthy**. Director overall stays **DEGRADED** (20 retained agent failures, RAG UNKNOWN, Graph NOT CONFIGURED, endpoint fleet UNKNOWN, repair jobs NOT CONFIGURED). Operator auth is HEALTHY for the ephemeral administrator.
+- Local tests, not a second computer: Python 3.12.10, `python -m unittest` of the repo test modules, **426 tests, 2 skipped, exit 0**. The skips are symlink tests on Windows. PyYAML 6.0.3 loaded, so the registry loader tests ran. Microsoft and the model were not contacted by those tests.
+- Release of `a0e9422145aae4e38025709d1ca88288e42f375b`: SHA-256 `6f4c2b2f62b4178f135170c293c9dfd374fb2698ff5933fb9a42de0ba6a0d06c`, 360 files, under `%LOCALAPPDATA%\AI-PLAYBOOK\releases\`. Not copied to `/workspace`. Go-live is **NO-GO**.
 
 ### 2026-10-20 — mock repair evidence is not healthy
 

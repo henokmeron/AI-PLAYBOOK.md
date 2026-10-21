@@ -1,6 +1,10 @@
 # Implementation status
 
-Checked 2026-10-21. The release archive contains code commit `4de5d278d4d1147184344b9d567e1d2c5940fa2e`. This note is not inside that archive. A row is not “working in production” unless the Deployed column has evidence. Unit tests are not a second physical computer. A push is not a deployment. Missing configuration is **NOT CONFIGURED** or **UNKNOWN**, never **HEALTHY**. Go-live is **NO-GO**.
+Checked 2026-10-21 after the H100 verification. The release archive contains code commit `a0e9422145aae4e38025709d1ca88288e42f375b`. This note is not inside that archive. SHA-256 `6f4c2b2f62b4178f135170c293c9dfd374fb2698ff5933fb9a42de0ba6a0d06c`. 360 files. Saved at `%LOCALAPPDATA%\AI-PLAYBOOK\releases\a0e9422145aae4e38025709d1ca88288e42f375b\`. The archive was not copied to the Global Volume.
+
+The only running Pod is `xx9cjogra5vcwl` (`reliable_moccasin_hummingbird`), NVIDIA H100 NVL, driver 595.91.07, compute capability 9.0, 95,830 MiB. It is not an RTX PRO 6000 Blackwell. The account pod list, with all statuses shown, contained this one Pod. No Blackwell Pod was started. The saved A100 runtime `torch 2.13.0+cu126`, vLLM `0.32.0rc1.dev62+g624a5ddaf`, loaded Qwen on this H100. CUDA was available. A direct completion, a gateway completion, and a console completion each returned `pong`. Operations Centre service health is healthy after the console status probe was given the full document. Director stays **DEGRADED** because 20 retained agent failures are still in the event window, RAG grounding is UNKNOWN, Microsoft Graph is **NOT CONFIGURED**, the endpoint fleet is UNKNOWN, and repair jobs are **NOT CONFIGURED**. Go-live is **NO-GO**.
+
+Earlier check: the release archive then contained code commit `4de5d278d4d1147184344b9d567e1d2c5940fa2e`. That older note follows. A row is not “working in production” unless the Deployed column has evidence. Unit tests are not a second physical computer. A push is not a deployment. Missing configuration is **NOT CONFIGURED** or **UNKNOWN**, never **HEALTHY**. Go-live is **NO-GO**.
 
 | Capability | In code | Tested locally | Real Windows | Real external service | GitHub `main` | Deployed |
 | --- | --- | --- | --- | --- | --- | --- |
