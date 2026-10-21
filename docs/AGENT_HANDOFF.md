@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-21** (H100 Pod `xx9cjogra5vcwl` is running and verified. No Blackwell Pod is in the account. This machine still has no `id_ed25519`. Jupyter on the running Pod was used. Local tests 426 OK, 2 skipped.)
+Last updated: **2026-10-21** (Operator backup and the 24-hour agent-failure window are on `main` as `f6da54bc695c47e2184719aee618f3a51b05058d`. The Pod was not contacted in that pass. Release SHA-256 `952c29081256ec5575038883e90268b67123beb4e0251d129622ffdbf082dff7`, 366 files, not copied to the volume. Go-live remains **NO-GO**.)
 
 ## Only this repository
 
@@ -163,6 +163,15 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-21 — operator backup and agent-failure window
+
+- The release archive is code commit `f6da54bc695c47e2184719aee618f3a51b05058d`. This session log is the follow-up note and is not inside that archive. SHA-256 `952c29081256ec5575038883e90268b67123beb4e0251d129622ffdbf082dff7`, 366 files, under `%LOCALAPPDATA%\AI-PLAYBOOK\releases\`. Not copied to `/workspace`.
+- This session had no SSH key and no RunPod/Jupyter tool. Pod `xx9cjogra5vcwl` was not inspected, restarted, or stopped. The live `/tmp/console-operators` file was not backed up from here. Do not claim the running console is on `f6da54b`.
+- New behaviour, tested locally: `ops/platform_state.py` backs up scrypt hashes to `/workspace/platform-state/operator-backups/` and restores them onto a private local file. Sessions, the gateway key, and the Microsoft token are not in the backup. `START.sh` refuses a console start when no administrator can be loaded or restored. There is no default password.
+- Director agent health uses a 24-hour window. Older `agent.task_failed` rows stay in the audit log and do not mark current health **DEGRADED**. The same task id is recorded once. A local retrieval probe cited `warranty.txt` and abstained. It did not call Qwen. The Pod's RAG grounding was not re-run.
+- Microsoft: no browser session and `MICROSOFT_CLIENT_ID` unset. **NOT CONFIGURED**. Endpoint fleet and repair jobs were not given a second Windows computer. Remote support stays MeshCentral **NOT CONFIGURED** until a session is established.
+- Tests: discover 272 OK, 2 skipped, exit 0. Every `test_*.py` module: 441 tests, 2 skipped, 1 socket abort under load. `api.test_gateway_reliability` alone: 22 OK, exit 0. Go-live **NO-GO**.
 
 ### 2026-10-21 — H100 stack verified; Blackwell Pod was not present
 
