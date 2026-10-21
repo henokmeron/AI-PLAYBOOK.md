@@ -12,7 +12,7 @@ python -m ops.release.make_release
 
 The package is written to `%LOCALAPPDATA%\AI-PLAYBOOK\releases\<commit>\`. The command prints the release id and the SHA-256 of the archive. It does not contact the Pod.
 
-The `.github/workflows/verify-and-package.yml` workflow is configured to run the release-recovery tests and build a commit-versioned archive plus manifest on pushes to `main`, then upload them as a GitHub Actions artifact for 90 days. Workflow run 39690305165 was created for commit f41f6f2e456609b8977922a3cbe9b001a5c1abbf and was still queued at the latest check; artifact availability is **NOT VERIFIED**. It does not create a GitHub Release or copy files to the RunPod Global Volume.
+The `.github/workflows/verify-and-package.yml` workflow is configured to run the release-recovery tests and build a commit-versioned archive plus manifest on pushes to `main`, then upload them as a GitHub Actions artifact for 90 days. Workflow run 39690350318 completed successfully for commit b25294644ffd69415ecb4291723047ec647e8b41. It passed ops.test_release_package and uploaded artifact ID 12387414455, named AI-PLAYBOOK-b25294644ffd69415ecb4291723047ec647e8b41. The 374-member source archive SHA-256 is e92c9005052d63006a03004bfe212ace11969074a86be6c3c2b333624b33fdf1; the downloaded artifact ZIP SHA-256 is 097ec6835443b489a0e186a82781043e5cf5f09fd5c6aef2b847d998bf6da4a1. The artifact is retained for 90 days. This is a focused release-test pass, not a full-suite pass. It does not create a GitHub Release or copy files to the RunPod Global Volume.
 
 ## Extract a package
 

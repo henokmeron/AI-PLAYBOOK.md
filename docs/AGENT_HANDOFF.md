@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-21** (release archive extraction hardening is now on GitHub `main`; the new regression tests and full suite are **NOT RUN** in this session. Current local working-tree state, RunPod inventory, and Global Volume contents were not accessible here. Live Blackwell **NOT TESTED**. Volume copy **BLOCKED**. Go-live **NO-GO**.)
+Last updated: **2026-10-21** (release recovery hardening is on GitHub `main`; focused release tests **PASS** in Actions run 39690350318 and a 374-member archive was produced for code-bearing commit b25294644ffd69415ecb4291723047ec647e8b41, SHA-256 `e92c9005052d63006a03004bfe212ace11969074a86be6c3c2b333624b33fdf1`. Full suite **NOT RUN**. Local working-tree state, RunPod inventory, and Global Volume contents remain inaccessible. Live Blackwell **NOT TESTED**. Volume copy **BLOCKED**. Go-live **NO-GO**.)
 
 ## Only this repository
 
@@ -168,9 +168,9 @@ E2E helper (uses key file; does not print it):
 ### 2026-10-21 — release archive extraction hardening
 
 - Source changes in ops/release/package.py now reject POSIX/Windows traversal, Windows drive/UNC paths, NULs, colon-based alternate data streams, symlinks, hardlinks, devices, FIFOs, and a symlink extraction destination. Regression cases were added to ops/test_release_package.py.
-- **NOT TESTED:** no local checkout/shell was available to this session. A fresh clone failed because this execution environment could not resolve github.com. Earlier suite results predate this patch and must not be attributed to it. Run the targeted test and then python -m ops.run_tests from the canonical clean checkout.
+- **FOCUSED TEST VERIFIED:** GitHub Actions run 39690350318 passed ops.test_release_package and generated the 374-member archive for commit b25294644ffd69415ecb4291723047ec647e8b41 (SHA-256 `e92c9005052d63006a03004bfe212ace11969074a86be6c3c2b333624b33fdf1`; artifact ID 12387414455). The full `python -m ops.run_tests` suite is **NOT RUN** for this change. A fresh clone failed because this execution environment could not resolve github.com, and the local Windows working tree could not be inspected.
 - GitHub's authenticated connector can read/write the repository. The root README.md lookup returned 404; PLAYBOOK.md is the root project playbook. The local Windows working tree could not be inspected, so preserve any uncommitted changes there; do not assume it is clean or synchronized.
-- RunPod inventory and Global Volume inspection are **BLOCKED / NOT VERIFIED**: no authenticated RunPod browser or SSH key is available in this session. No Pod/paid-resource mutation, model reload, volume write, or Microsoft Graph call occurred. No release archive was created directly because the release command could not run in a local checkout. A main-push workflow was added to run focused tests and upload a 90-day archive/manifest artifact, and GitHub created workflow run 39690305165 for commit f41f6f2e456609b8977922a3cbe9b001a5c1abbf. It remains queued; do not claim an artifact exists.
+- RunPod inventory and Global Volume inspection are **BLOCKED / NOT VERIFIED**: no authenticated RunPod browser or SSH key is available in this session. No Pod/paid-resource mutation, model reload, volume write, or Microsoft Graph call occurred. RunPod volume copy remains **NOT VERIFIED**. The main-push workflow now produced a verified artifact for code-bearing commit b25294644ffd69415ecb4291723047ec647e8b41: archive SHA-256 `e92c9005052d63006a03004bfe212ace11969074a86be6c3c2b333624b33fdf1`, 374 members, artifact ID 12387414455 (90-day retention). The artifact is not a GitHub Release and was not copied to `/workspace`.
 - Production remains **NO-GO** until the tests run and live behavior, security, integrations, and acceptance tests are verified.
 
 
