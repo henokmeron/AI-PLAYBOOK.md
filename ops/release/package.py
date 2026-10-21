@@ -11,7 +11,7 @@ import json
 import os
 import subprocess
 import tarfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Iterable
 
 REQUIRED_PATHS = (
@@ -51,20 +51,31 @@ def sha256_file(path: Path) -> str:
 
 
 def path_is_safe(name: str) -> bool:
-    if not name or name.startswith(("/", "\\")):
+    """Reject paths that can escape the destination on POSIX or Windows."""
+    if not name or "\\x00" in name:
         return False
-    parts = Path(name).parts
-    return ".." not in parts and not any(part.endswith(":") for part in parts)
+    windows_path = PureWindowsPath(name)
+    normalized = name.replace("\\", "/")
+    if normalized.startswith("/") or windows_path.is_absolute() or windows_path.drive:
+        return False
+    parts = PurePosixPath(normalized).parts
+    return bool(parts) and ".." not in parts
+
+
+def _validated_members(tar: tarfile.TarFile) -> list[tarfile.TarInfo]:
+    """Allow only regular files and directories; never extract links or special files."""
+    members = tar.getmembers()
+    for member in members:
+        if not path_is_safe(member.name):
+            raise ReleaseError(f"archive path is not safe: {member.name}")
+        if not (member.isfile() or member.isdir()):
+            raise ReleaseError(f"archive member type is not allowed: {member.name}")
+    return members
 
 
 def archive_names(archive: Path) -> list[str]:
     with tarfile.open(archive, "r:gz") as tar:
-        names = []
-        for member in tar.getmembers():
-            if not path_is_safe(member.name):
-                raise ReleaseError(f"archive path is not safe: {member.name}")
-            names.append(member.name)
-    return names
+        return [member.name for member in _validated_members(tar)]
 
 
 def verify_archive(archive: Path, expected_sha256: str, required: Iterable[str] = REQUIRED_PATHS) -> None:
@@ -79,14 +90,16 @@ def verify_archive(archive: Path, expected_sha256: str, required: Iterable[str] 
 
 def extract_archive(archive: Path, destination: Path, expected_sha256: str) -> None:
     verify_archive(archive, expected_sha256)
+    if destination.is_symlink():
+        raise ReleaseError("destination must not be a symlink")
     destination.mkdir(parents=True, exist_ok=True)
     if any(destination.iterdir()):
         raise ReleaseError("destination is not empty")
     with tarfile.open(archive, "r:gz") as tar:
-        for member in tar.getmembers():
-            if not path_is_safe(member.name):
-                raise ReleaseError(f"archive path is not safe: {member.name}")
-        tar.extractall(destination)
+        members = _validated_members(tar)
+        # Links and special files are rejected above so extraction cannot redirect
+        # a later member outside the destination through a symlink or hard link.
+        tar.extractall(destination, members=members)
 
 
 def git_output(repo: Path, *args: str) -> str:
