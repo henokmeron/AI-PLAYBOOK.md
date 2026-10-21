@@ -196,24 +196,39 @@ def upstream_listen_port() -> int | None:
     return None
 
 
+def _candidate_listen_port(entry: dict[str, Any]) -> int | None:
+    serving = entry.get("serving") if isinstance(entry.get("serving"), dict) else {}
+    port = serving.get("listen_port")
+    try:
+        return int(port) if port is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _loopback_models_ready(port: int, timeout: float = 2) -> bool:
+    """GET loopback /v1/models. A redirect is not followed and is not healthy."""
+    request = urllib.request.Request(f"http://127.0.0.1:{port}/v1/models", method="GET")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _RefuseRedirects)
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            return 200 <= int(getattr(response, "status", 0) or 0) < 300
+    except urllib.error.HTTPError as exc:
+        exc.close()
+        return False
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return False
+
+
 def probe_runtime_health_by_registry(registry: dict[str, Any]) -> dict[str, bool]:
     """Best-effort /v1/models probes for candidate listen ports (loopback only)."""
-    from registry_loader import serving_listen_port
-
     health: dict[str, bool] = {}
     for entry in registry.get("candidates", []):
         if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
             continue
-        port = serving_listen_port(entry)
+        port = _candidate_listen_port(entry)
         if port is None:
             continue
-        url = f"http://127.0.0.1:{port}/v1/models"
-        try:
-            req = urllib.request.Request(url, method="GET")
-            with urllib.request.urlopen(req, timeout=2) as resp:
-                health[entry["id"]] = 200 <= resp.status < 300
-        except Exception:
-            health[entry["id"]] = False
+        health[entry["id"]] = _loopback_models_ready(port)
     return health
 
 

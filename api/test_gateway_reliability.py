@@ -497,6 +497,55 @@ class GatewayReliabilityTests(unittest.TestCase):
         self.assertEqual(sorted(set(results)), [200, 400])
         self.assert_alive()
 
+    def test_registry_health_probe_does_not_follow_a_redirect(self) -> None:
+        captured: list[str] = []
+
+        class Target(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802
+                captured.append(self.path)
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"{}")
+
+            def log_message(self, fmt: str, *args: object) -> None:
+                return
+
+        class Redirect(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.1:{target.server_address[1]}/captured")
+                self.end_headers()
+
+            def log_message(self, fmt: str, *args: object) -> None:
+                return
+
+        class Ready(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"data":[]}')
+
+            def log_message(self, fmt: str, *args: object) -> None:
+                return
+
+        target = ThreadingHTTPServer(("127.0.0.1", 0), Target)
+        source = ThreadingHTTPServer(("127.0.0.1", 0), Redirect)
+        ready = ThreadingHTTPServer(("127.0.0.1", 0), Ready)
+        for server in (target, source, ready):
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            self.addCleanup(server.shutdown)
+            self.addCleanup(server.server_close)
+        health = gateway.probe_runtime_health_by_registry({
+            "candidates": [
+                {"id": "redirected", "serving": {"listen_port": source.server_address[1]}},
+                {"id": "ready", "serving": {"listen_port": ready.server_address[1]}},
+            ]
+        })
+        self.assertEqual(health["redirected"], False)
+        self.assertEqual(health["ready"], True)
+        self.assertEqual(captured, [])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
