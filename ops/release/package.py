@@ -59,7 +59,8 @@ def path_is_safe(name: str) -> bool:
     if normalized.startswith("/") or windows_path.is_absolute() or windows_path.drive:
         return False
     parts = PurePosixPath(normalized).parts
-    return bool(parts) and ".." not in parts
+    # A colon can introduce a Windows drive or NTFS alternate data stream.
+    return bool(parts) and ".." not in parts and not any(":" in part for part in parts)
 
 
 def _validated_members(tar: tarfile.TarFile) -> list[tarfile.TarInfo]:
