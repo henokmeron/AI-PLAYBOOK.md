@@ -21,50 +21,25 @@ Target capabilities include:
 
 ## Mandatory living playbook — continuously maintained
 
-This playbook is a **mandatory living document**. The platform and the playbook evolve together. Documentation is part of the same increment as the code — not a follow-up task. This rule is non-negotiable.
+The platform and playbook evolve together. A significant change is unfinished until matching docs are updated, accurate, committed, and pushed to `main` with the code. Non-negotiable.
 
-### A. Update after every significant change
+### A. Update with the change
+In the same increment, record what changed, how to run/recover it, and the commit/release identity. Label **planned / implemented / tested / deployed / verified** (or VERIFIED / FAILED / NOT TESTED / BLOCKED). Do not document unbuilt work as done.
 
-After every significant implementation, architecture, ops, security, recovery, or integration change, update the playbook (and related `docs/` when appropriate) in the same increment. Record at least:
+### B. No empty status commits
+Keep docs accurate on active days. Do not invent status-only commits when nothing material changed.
 
-- What changed and why; architecture and components affected; how it works
-- Files, services, APIs, config, dependencies, permissions, and environment variables
-- Install / configure / test / deploy steps; test results and live-verification evidence
-- Security and approval requirements; known limits and outstanding work
-- Backup, rollback, and recovery; exact Git commit and release identity
-- Clear labels: planned vs implemented vs tested vs deployed vs verified
+### C. Ship on GitHub
+Docs go with the code to `main`. Local-only doc edits are unfinished.
 
-Do not document unbuilt features as done.
+### D. Write for the next agent
+Enough for a new agent to continue without chat: exact commands, where they run, how to verify. Never put secrets in docs.
 
-### B. Maintain daily when development is active
+### E. Keep history
+Do not silently erase decisions or working configs. Mark superseded docs and link replacements.
 
-On active development days, review playbook accuracy against the current implementation. Skip empty status-only commits when nothing material changed. Artificial daily commits are not required.
-
-### C. Keep synchronized with GitHub
-
-Playbook and docs updates ship with the code: commit and push to GitHub (`main`) so the remote remains the authoritative, current blueprint. Local-only doc edits are unfinished work.
-
-### D. Write for future AI agents
-
-Write so a new AI agent can continue without undocumented chat context. Cover system overview, repo layout, data flows, RunPod/local setup, storage inventory, models, M365/Azure integrations, test/deploy/monitor/recover, secrets handling, decisions and alternatives, known issues, next concrete tasks, and release reproduce/restore procedures. Prefer explicit commands with where they run and how to verify. Never put secrets in docs.
-
-### E. Preserve historical record
-
-Do not silently erase technical decisions or working configurations. Keep a concise chronological change and release history linked to commits and manifests. Mark superseded docs and link to replacements.
-
-### F. Final check before every push
-
-Before every push, confirm:
-
-- Code changes are documented
-- Playbook matches the implementation
-- Verification claims are accurate (use VERIFIED / FAILED / NOT TESTED / BLOCKED)
-- Config and deploy steps are present
-- Recovery and rollback guidance remains valid
-- Commit and release references are correct
-- No secrets appear in docs
-
-This mandate does not replace the explicit approval rules in `docs/AGENT_HANDOFF.md` (Pods, Azure spend, destructive ops).
+### F. Pre-push check
+Docs match code; verification claims are honest; recovery still valid; no secrets. Does not replace approval rules in `docs/AGENT_HANDOFF.md`.
 
 ## 1. Core business strategy
 Do not compete only by owning a model.
@@ -327,6 +302,9 @@ Phase 7 — Advanced model customisation
 - Treat the playbook as a reproducible blueprint for future AI-assisted automation.
 
 ## 13. Change log
+### 2026-10-21 — Living playbook lean trim
+- Trimmed **Mandatory living playbook — continuously maintained** (A–F) to vital operational rules only. No feature claims.
+
 ### 2026-10-21 — Mandatory living playbook recorded
 - Recorded the owner mandate **Mandatory living playbook — continuously maintained** (sections A–F) early in this playbook, after project purpose.
 - Standing-rule pointer added in `docs/AGENT_HANDOFF.md`. Documentation discipline only; no platform features claimed as implemented in this entry.
