@@ -568,8 +568,9 @@ class DeviceStore:
             in_flight=False,
             save=False,
         )
+        returned = dict(public)
         if isinstance(result.get("result_signature"), str):
-            public["result_signature"] = result["result_signature"]
+            returned["result_signature"] = result["result_signature"]
         self._audit(
             "accept",
             device["tenant_id"],
@@ -579,7 +580,7 @@ class DeviceStore:
             job_id=job_id,
         )
         self._save()
-        return public
+        return returned
 
     def summary(self) -> dict[str, Any]:
         with self._exclusive():

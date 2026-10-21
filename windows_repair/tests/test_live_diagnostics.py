@@ -1048,6 +1048,47 @@ class DeviceStoreGuardTests(unittest.TestCase):
             self.assertEqual(again["procedure_id"], "win.services.inspect")
             self.assertNotEqual(again["job_id"], envelope["job_id"])
 
+    def test_accepted_result_does_not_keep_the_result_signature(self) -> None:
+        from integrations.endpoint_worker import execute_assigned_job
+
+        class _Once:
+            def collect(self, procedure_id: str) -> dict:
+                return {
+                    "evidence_source": "mock",
+                    "mocked": True,
+                    "status": "collected",
+                    "ok": True,
+                    "collected_at_unix": 10_000,
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": 10_000.0}
+            store, secret, device = self._store(tmp, clock)
+            envelope = store.issue(
+                tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada(),
+            )
+            result = execute_assigned_job(
+                envelope,
+                device_id=device,
+                tenant_id="acme",
+                mac_key=store.mac_key(device),
+                provider=_Once(),
+                now=clock["now"],
+            )
+            signature = result["result_signature"]
+            recorded = store.record_result(secret, envelope, result)
+            self.assertEqual(recorded.get("result_signature"), signature)
+            raw = (Path(tmp) / "device.json").read_text(encoding="utf-8")
+            self.assertNotIn(signature, raw)
+            self.assertNotIn("result_signature", raw)
+            reloaded = DeviceStore(Path(tmp) / "device.json", clock=lambda: clock["now"])
+            stored = reloaded.job_states[envelope["job_id"]]["public_result"]
+            self.assertNotIn("result_signature", stored)
+            duplicate = reloaded.record_result(secret, envelope, result)
+            self.assertTrue(duplicate["duplicate"])
+            self.assertNotIn("result_signature", duplicate)
+            self.assertNotIn(signature, json.dumps(duplicate))
+
     def test_http_issue_rejects_request_identity(self) -> None:
         source = (Path(__file__).resolve().parents[2] / "web" / "server.py").read_text(encoding="utf-8")
         self.assertIn("grant_from_session(session, CONSOLE_TENANT)", source)
