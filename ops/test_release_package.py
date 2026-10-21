@@ -22,6 +22,15 @@ def _archive(path: Path, names: dict[str, bytes]) -> str:
     return digest
 
 
+def _special_archive(path: Path, *, member_type: bytes, name: str, target: str) -> str:
+    with tarfile.open(path, "w:gz") as tar:
+        info = tarfile.TarInfo(name)
+        info.type = member_type
+        info.linkname = target
+        tar.addfile(info)
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 class ReleasePackageTests(unittest.TestCase):
     def test_checksum_and_required_file_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -43,6 +52,31 @@ class ReleasePackageTests(unittest.TestCase):
             digest = _archive(archive, {"../secret": b"no\n"})
             with self.assertRaises(ReleaseError):
                 verify_archive(archive, digest, required=())
+
+    def test_windows_path_forms_are_rejected_cross_platform(self) -> None:
+        for path in (
+            r"C:\\Windows\\system.ini",
+            r"C:relative\\secret.txt",
+            r"folder\\..\\secret.txt",
+            r"\\\\server\\share\\secret.txt",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(path_is_safe(path))
+        self.assertTrue(path_is_safe(r"ops\\release\\START.sh"))
+
+    def test_archive_links_are_rejected_before_extraction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            for kind in (tarfile.SYMTYPE, tarfile.LNKTYPE):
+                archive = Path(tmp) / ("link-" + str(kind[0]) + ".tar.gz")
+                digest = _special_archive(
+                    archive,
+                    member_type=kind,
+                    name="release/redirect",
+                    target="../../outside",
+                )
+                with self.subTest(member_type=kind):
+                    with self.assertRaises(ReleaseError):
+                        verify_archive(archive, digest, required=())
 
     def test_shutdown_status_requires_a_verified_volume_copy(self) -> None:
         self.assertEqual(checkpoint_status(True, True), "READY_TO_SHUTDOWN")
