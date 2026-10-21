@@ -164,6 +164,14 @@ E2E helper (uses key file; does not print it):
 
 ## Session log (newest first)
 
+### 2026-10-21 — read-only Graph scopes and reliable test runner
+
+- Code commit `7e7ff516fda9abf1d70a136104ffd8c397a22cee` on `origin/main`. Release SHA-256 `e20b686ad8f00f8516face757ae533093b677a88c710f47078caf4bdfb636591`, 369 files, not copied to `/workspace`.
+- Microsoft: default authorize URL requests read-only Graph + ARM inventory scopes. `Mail.ReadWrite` only with `access=draft`. `MICROSOFT_CLIENT_ID_FILE` loads a private local id file. `scripts/entra_app_manifest.py` prints the portal checklist without secrets.
+- Browser: Cursor `cursor-browser` Local Storage contained `portal.azure.com` and `console.runpod.io` markers. No MCP/browser-drive tool was available. Cookies were locked. No app registration and no Graph call from this agent. **NOT CONFIGURED**.
+- Pod: still no `id_ed25519`. No Jupyter/RunPod automation tool. H100 was not inspected or restarted. Do not claim the running console is on `7e7ff51`.
+- Tests: `python -m ops.run_tests` → 37 modules OK, exit 0. Skips are Windows symlink limits.
+
 ### 2026-10-21 — operator backup and agent-failure window
 
 - The release archive is code commit `f6da54bc695c47e2184719aee618f3a51b05058d`. This session log is the follow-up note and is not inside that archive. SHA-256 `952c29081256ec5575038883e90268b67123beb4e0251d129622ffdbf082dff7`, 366 files, under `%LOCALAPPDATA%\AI-PLAYBOOK\releases\`. Not copied to `/workspace`.
