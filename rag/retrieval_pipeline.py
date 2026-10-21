@@ -253,7 +253,7 @@ def build_evidence(groups: list[RankedGroup], char_budget: int) -> EvidencePack:
         files = group.files
         primary = files[0]
         location = location_of(chunk)
-        suspicious = contains_instruction_like_text(chunk.text)
+        suspicious = contains_instruction_like_text(chunk.text) or contains_instruction_like_text(chunk.header)
         file_note = primary if len(files) == 1 else (
             primary + "; identical extracted rows also in: " + "; ".join(files[1:])
         )
