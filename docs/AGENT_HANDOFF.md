@@ -171,7 +171,8 @@ E2E helper (uses key file; does not print it):
 - **Release recover digest for `7037ae9`:** SHA-256 `841a231a8e01ebe83b4fd6a79e315b0a54f76c8581b01fbc936d5e5074b64d13` (`git archive --format=tar.gz`). Prior digest `2c5bab93…` does not match; do not use it for recover. Archive + manifest under `~/AI-PLAYBOOK/releases/7037ae9…/` (and `%LOCALAPPDATA%\AI-PLAYBOOK\releases\` on Windows). Not on the volume.
 - Offline suite on this Linux host failed until fixed: (1) `AlertService` treated missing fingerprint as monotonic `0` and suppressed first alerts while uptime < cooldown; (2) `assert_safe_state_path` followed symlinks before reject; (3) preflight rejected Windows `C:\…` paths on POSIX; (4) live Windows collector assertion skipped on non-Windows. Assertions otherwise unchanged.
 - **VERIFIED offline:** `python -m ops.run_tests` — 38 modules, exit 0. cu129 wheel HEAD 200; cu130 404. Blackwell GPU path **NOT TESTED**.
-- RunPod console inventory **BLOCKED** (browser not logged in). No SSH key. No Pod mutations. Go-live **NO-GO**.
+- Tip commit `7615fd55e70789ea5387f92b3578c6be8b875233` release SHA-256 `205933b31d77fde5c6c8397f644afc38ec95f3eb88960971ecf1493ac298a52b` (kept separate from the `7037ae9…` archive).
+- RunPod console inventory **BLOCKED** (browser not logged in). Evidence: `docs/results/runpod-inventory-blocked-2026-10-21.md`. No SSH key. No Pod mutations. Go-live **NO-GO**.
 
 ### 2026-10-21 — Blackwell CUDA 12.9 pin (source + offline proof)
 
