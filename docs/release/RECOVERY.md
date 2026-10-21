@@ -12,6 +12,8 @@ python -m ops.release.make_release
 
 The package is written to `%LOCALAPPDATA%\AI-PLAYBOOK\releases\<commit>\`. The command prints the release id and the SHA-256 of the archive. It does not contact the Pod.
 
+The `.github/workflows/verify-and-package.yml` workflow is configured to run the release-recovery tests and build a commit-versioned archive plus manifest on pushes to `main`, then upload them as a GitHub Actions artifact for 90 days. This session has not observed a workflow run or artifact, so availability is **NOT VERIFIED**. It does not create a GitHub Release or copy files to the RunPod Global Volume.
+
 ## Extract a package
 
 ```powershell
