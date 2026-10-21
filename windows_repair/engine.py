@@ -78,13 +78,32 @@ def _printer(evidence: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _services(evidence: dict[str, Any]) -> dict[str, Any]:
+    rows = evidence.get("services") if isinstance(evidence.get("services"), list) else []
+    facts = []
+    for row in rows[:8]:
+        if isinstance(row, dict):
+            facts.append(f"{row.get('name') or 'service'} is {row.get('status') or 'unknown'}.")
+    if not facts:
+        facts.append("No service rows were supplied.")
+    return _unfixed(
+        "Service status only. No service was started or stopped.",
+        facts=facts,
+        hypotheses=["A stopped service is a clue. Restarting it is a separate elevated action and is not performed."],
+        procedure_id="win.services.inspect",
+    )
+
+
 def _network(evidence: dict[str, Any]) -> dict[str, Any]:
+    dns_ok = evidence.get("dns_ok")
+    if dns_ok is None:
+        dns_ok = evidence.get("dns_localhost_ok")
     facts = [
         f"Adapter {evidence.get('adapter') or 'unknown'} is {evidence.get('adapter_status') or 'unknown'}.",
-        f"DNS ok={evidence.get('dns_ok')}. Gateway ok={evidence.get('gateway_ok')}.",
+        f"DNS ok={dns_ok}. Gateway ok={evidence.get('gateway_ok')}.",
     ]
     hypotheses = []
-    if evidence.get("dns_ok") is False and evidence.get("gateway_ok") is True:
+    if dns_ok is False and evidence.get("gateway_ok") is True:
         hypotheses.append("Gateway answers and DNS does not. Name resolution is the leading hypothesis.")
     elif evidence.get("gateway_ok") is False:
         hypotheses.append("The gateway did not answer. This is not a reason to disable the firewall.")
@@ -165,7 +184,7 @@ _RUNNERS = {
     "interpret_app": _app,
     "interpret_activation": lambda evidence: _note("win.activation.inspect", evidence),
     "interpret_startup": lambda evidence: _note("win.startup.inspect", evidence),
-    "interpret_services": lambda evidence: _note("win.services.inspect", evidence),
+    "interpret_services": _services,
     "interpret_performance": lambda evidence: _note("win.performance.inspect", evidence),
     "interpret_usb": lambda evidence: _note("hw.usb.inspect", evidence),
     "interpret_wifi": lambda evidence: _note("net.wifi.inspect", evidence),
@@ -174,6 +193,38 @@ _RUNNERS = {
     "interpret_browser": lambda evidence: _note("app.browser.inspect", evidence),
     "interpret_permissions": lambda evidence: _note("app.permissions.inspect", evidence),
 }
+
+
+def _adapt_live(procedure_id: str, live: dict[str, Any]) -> dict[str, Any]:
+    """Interpreter input. Gateway addresses are not copied into the diagnosis."""
+    if procedure_id == "net.diagnose":
+        addresses = live.get("addresses") if isinstance(live.get("addresses"), list) else []
+        first = addresses[0] if addresses and isinstance(addresses[0], dict) else {}
+        return {
+            "adapter": first.get("name") or "unspecified",
+            "adapter_status": "present" if addresses else "unknown",
+            "dns_ok": live.get("dns_localhost_ok"),
+            "gateway_ok": live.get("gateway_ok"),
+        }
+    if procedure_id == "hw.devices.inventory":
+        problems = live.get("problems") if isinstance(live.get("problems"), list) else []
+        return {
+            "devices": [
+                {"name": row.get("name"), "problem_code": row.get("problem")}
+                for row in problems if isinstance(row, dict)
+            ],
+            "present_count": live.get("present_count"),
+        }
+    if procedure_id == "win.services.inspect":
+        return {"services": live.get("services") if isinstance(live.get("services"), list) else []}
+    if procedure_id == "print.diagnose":
+        return {
+            "connection": "local",
+            "queue": "reported",
+            "jobs": live.get("jobs") if isinstance(live.get("jobs"), list) else [],
+            "spooler": str(live.get("spooler") or "unknown").casefold(),
+        }
+    return {key: value for key, value in live.items() if key not in {"gateway", "addresses"}}
 
 
 def evidence_for(name: str | None, supplied: dict[str, Any] | None) -> dict[str, Any]:
@@ -257,11 +308,35 @@ def execute(
     runner = _RUNNERS.get(proc.runner)
     if runner is None:
         raise RepairDenied("procedure has no registered runner")
+    live_collected = None
+    if not evidence and not fixture and os.name == "nt" and proc.runner != "local_disk":
+        from .providers import LIVE_PROCEDURES, LiveWindowsProvider
+
+        if procedure_id in LIVE_PROCEDURES:
+            live_collected = LiveWindowsProvider().collect(procedure_id)
+            if live_collected.get("evidence_source") != "live_windows":
+                return {
+                    "procedure_id": proc.procedure_id,
+                    "executed": False,
+                    "changed_device": False,
+                    "problem_resolved": False,
+                    "status": "diagnosed",
+                    "operator": operator,
+                    "mocked": False,
+                    "evidence_source": str(live_collected.get("evidence_source") or "unavailable"),
+                    "detail": "The live collector did not return evidence. No repair was run.",
+                }
+            evidence = _adapt_live(procedure_id, live_collected)
     result = runner(evidence_for(fixture, evidence))
     result["status"] = "diagnosed"
     result["operator"] = operator
     result["risk"] = proc.risk
-    if fixture:
+    if live_collected is not None:
+        result["evidence_source"] = "live_windows"
+        result["mocked"] = False
+        result["problem_resolved"] = False
+        result["changed_device"] = False
+    elif fixture:
         result["evidence_source"] = "fixture"
         result["mocked"] = True
     elif procedure_id == "win.storage.space" and not evidence:

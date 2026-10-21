@@ -13,7 +13,13 @@ from .catalogue import PROCEDURES
 from .providers import LIVE_PROCEDURES
 from .runner import SCRIPTS
 
-_LIVE_RAN_ON_THIS_PC = frozenset({"win.storage.space", "print.diagnose"})
+_LIVE_RAN_ON_THIS_PC = frozenset({
+    "win.storage.space",
+    "print.diagnose",
+    "net.diagnose",
+    "win.services.inspect",
+    "hw.devices.inventory",
+})
 _DENIED_RUNNERS = frozenset({"propose_only", "deny_driver_install", "deny_destructive"})
 
 SHARED_PROTOCOL = (

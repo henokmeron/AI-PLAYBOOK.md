@@ -18,7 +18,18 @@ class ItSupportTests(unittest.TestCase):
         self.assertTrue(looks_like_it_support("Helpdesk ticket: disk full"))
         self.assertFalse(looks_like_it_support("What is 2 + 2?"))
         self.assertIsNotNone(playbook_for("Investigate the printer outage"))
+        self.assertIn("windows_repair_plan", playbook_for("Investigate the printer outage") or "")
         self.assertIsNone(playbook_for("Calculate 9 * 9"))
+
+    def test_windows_plan_selects_a_procedure_and_rejects_a_shell(self) -> None:
+        from windows_repair.agent_tools import windows_repair_tools
+
+        tools = {tool.name: tool for tool in windows_repair_tools()}
+        planned = tools["windows_repair_plan"].handler({"symptom": "printer queue is stuck"})
+        self.assertIn("print.diagnose", planned["procedure_ids"])
+        self.assertFalse(planned["problem_resolved"])
+        with self.assertRaises(Exception):
+            tools["windows_repair_diagnose"].handler({"procedure_id": "powershell -enc AA=="})
 
     def test_incident_schema_validates(self) -> None:
         validate(

@@ -196,6 +196,19 @@ class WindowsIntegrationTests(unittest.TestCase):
         self.assertFalse(printers.get("problem_resolved", False))
         self.assertGreater(int(storage["collected_at_unix"]), int(time.time()) - 180)
 
+    def test_live_network_services_and_devices_do_not_repair(self) -> None:
+        from windows_repair.engine import execute
+
+        for procedure_id in ("net.diagnose", "win.services.inspect", "hw.devices.inventory"):
+            with self.subTest(procedure_id=procedure_id):
+                result = execute(procedure_id)
+                self.assertEqual(result["evidence_source"], "live_windows")
+                self.assertFalse(result["mocked"])
+                self.assertFalse(result["problem_resolved"])
+                self.assertFalse(result["changed_device"])
+                blob = json.dumps(result)
+                self.assertNotRegex(blob, r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+
     def test_enrolled_device_runs_one_live_read_only_job(self) -> None:
         """In-process live check on this PC. The separate-process proof is the console worker test."""
         import time

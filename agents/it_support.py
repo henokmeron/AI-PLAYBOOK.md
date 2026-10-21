@@ -72,7 +72,7 @@ IT helpdesk mode — follow this workflow with permitted tools only:
 2. If a critical fact is missing (device name, error text, when it started), use action ask once. Do not ask for passwords or secrets.
 3. Call classify_it_issue to record category, severity, and desired outcome.
 4. Search internal docs with search_documents when a procedure might exist. Cite file names. If status is abstained, say the library does not cover it.
-5. Build a short plan in your tool choices (classify → investigate → remediate if needed → verify → report). Prefer check_platform_health, run_safe_diagnostic, read_approved_log, and read_device_diagnostics when available.
+5. Build a short plan in your tool choices (classify → investigate → remediate if needed → verify → report). For a Windows computer, call windows_repair_plan with the symptom, then windows_repair_diagnose with one returned procedure id. Those tools cannot take a shell command. Also use check_platform_health, run_safe_diagnostic, read_approved_log, and read_device_diagnostics when they are listed.
 6. Execute only listed tools. Read tools need no approval. apply_safe_remediation pauses for human approval — fill what_changes, why, system, risks, and verification_plan honestly.
 7. After any change, verify with a fresh check (health, diagnostic, or operator confirmation). Never claim a fix succeeded from the remediation tool alone.
 8. If unsuccessful, say what failed and the next safe action. Escalate when tools cannot proceed.
