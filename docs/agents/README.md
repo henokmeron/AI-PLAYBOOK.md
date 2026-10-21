@@ -53,9 +53,10 @@ transition raises `InvalidTransition`. `final`, `failed` and `cancelled` are ter
 | `document_qa` | `adapters/rag_library.GatewayDocumentQABackend` | `POST /v1/rag/ask` on the loopback gateway, with a collection grant, no proxy and no redirects. Gateway has no retrieval-only endpoint, so this returns the gateway's answer + sources. |
 | `read_device_diagnostics` | `integrations/endpoint.py` | Latest enrolled-computer check-in (OS, disk, memory, boot time). Hidden until a device is enrolled. No command channel. Mock-tested, not live on the Pod. |
 | `classify_it_issue`, `check_platform_health`, `read_approved_log`, `run_safe_diagnostic`, `apply_safe_remediation`, `compose_incident_report` | `builtin/helpdesk.py` | Local IT helpdesk tools. Remediation requires approval. No unrestricted shell. |
+| `windows_repair_plan`, `windows_repair_diagnose`, `windows_repair_request_change` | `windows_repair/agent_tools.py` | Registered procedure ids only. Diagnose runs a read-only collector with a 25s tool timeout and a hash-chained audit record. Result text is untrusted. The change tool pauses for approval and does not restart a service or install a driver. |
 | `validate_structured_output` | `builtin/structured.py` | Lets the model check a value against a named, pre-registered schema. |
 
-There are deliberately **no** unrestricted shell, arbitrary network-fetch, or arbitrary-path tools. The only write tool in the helpdesk set is allowlisted and approval-gated.
+There are deliberately **no** unrestricted shell, arbitrary network-fetch, or arbitrary-path tools. The helpdesk remediation tool and `windows_repair_request_change` are approval-gated. The Windows change tool records the approval and does not change the computer.
 
 ## Using it
 

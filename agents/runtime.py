@@ -195,9 +195,16 @@ class AgentRunner:
         self.trace.record(task.task_id, "approval_decision", task.state.value,
                           call_id=pending.call_id, tool=pending.tool, approved=approved,
                           approver=approver, note=self.trace.preview(note))
+        tool = self.registry.get(pending.tool, task.allowed_tools)
+        auditor = getattr(tool, "audit_decision", None)
+        if callable(auditor):
+            auditor(
+                approved=approved,
+                arguments=dict(pending.arguments),
+                approver=approver.strip()[:128],
+            )
         if approved:
             task.transition(TaskState.TOOL_CALL)
-            tool = self.registry.get(pending.tool, task.allowed_tools)
             self._arm_approval(tool, pending)
             self._execute(task, tool, pending.arguments, pending.call_id)
         else:

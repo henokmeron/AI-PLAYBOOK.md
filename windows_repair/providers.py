@@ -137,7 +137,7 @@ class FixtureProvider:
 class LiveWindowsProvider:
     """Collects one registered read-only procedure from this Windows computer."""
 
-    def collect(self, procedure_id: str) -> dict[str, Any]:
+    def collect(self, procedure_id: str, timeout: float = 18) -> dict[str, Any]:
         collected_at = int(time.time())
         script_id = LIVE_PROCEDURES.get(procedure_id)
         if script_id is None:
@@ -150,7 +150,7 @@ class LiveWindowsProvider:
                 "collected_at_unix": collected_at,
                 "detail": "This procedure has no live read-only collector.",
             }
-        raw = run_script(script_id)
+        raw = run_script(script_id, timeout=timeout)
         if not raw.get("ok"):
             return {
                 "procedure_id": procedure_id,

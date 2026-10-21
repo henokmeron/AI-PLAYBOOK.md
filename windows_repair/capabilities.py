@@ -19,6 +19,10 @@ _LIVE_RAN_ON_THIS_PC = frozenset({
     "net.diagnose",
     "win.services.inspect",
     "hw.devices.inventory",
+    "win.update.inspect",
+    "win.events.recurring",
+    "win.startup.inspect",
+    "win.performance.inspect",
 })
 _DENIED_RUNNERS = frozenset({"propose_only", "deny_driver_install", "deny_destructive"})
 
@@ -71,8 +75,9 @@ def _windows_row(procedure_id: str) -> Capability:
     elif live and procedure_id in _LIVE_RAN_ON_THIS_PC:
         status = "PARTIAL"
         coverage = (
-            "windows_repair.tests.test_live_diagnostics ran this read-only collector "
-            "on the development PC. That is not a customer endpoint."
+            "A read-only collector ran on the development PC "
+            "(windows_repair.tests.test_live_diagnostics or test_agent_diagnostics). "
+            "That is not a customer endpoint."
         )
         notes = "Diagnostic only. problem_resolved stays false. No repair authority."
         timeout = 20

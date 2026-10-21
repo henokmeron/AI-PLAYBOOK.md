@@ -89,12 +89,13 @@ def tools_for(
     ctx: TenantContext,
     documents: Any = None,
     ops_centre: Any = None,
+    repair_session: Any = None,
 ) -> list[Tool]:
     tools = [calculator_tool()]
     tools.extend(helpdesk_tools())
     from windows_repair.agent_tools import windows_repair_tools
 
-    tools.extend(windows_repair_tools())
+    tools.extend(windows_repair_tools(repair_session))
     if documents is not None:
         tools.append(search_documents_tool(documents))
     if ops_centre is not None:
@@ -198,6 +199,9 @@ class AgentDesk:
         if history_dir is None:
             history_dir = os.environ.get("AGENT_HISTORY_DIR", "")
         self.history = TaskHistoryStore(history_dir) if history_dir else None
+        from windows_repair.agent_tools import RepairToolSession
+
+        self.repair_tools = RepairToolSession()
         self._queue: list[str] = []
         self._active_id: str | None = None
 
@@ -289,6 +293,40 @@ class AgentDesk:
                     ("run_safe_diagnostic", "Run one allowlisted local diagnostic check.", "read", False),
                     ("apply_safe_remediation", "Apply one allowlisted local change after approval.", "consequential", True),
                     ("compose_incident_report", "Assemble the incident report fields.", "read", False),
+                )
+            ],
+        })
+        rows.append({
+            "connector_id": "windows_repair",
+            "version": "local",
+            "service": "Windows repair diagnostics",
+            "summary": "Registered read-only Windows checks and an approval record that does not change this computer.",
+            "auth": "none",
+            "connected": True,
+            "account": None,
+            "readiness": "mock-tested",
+            "detail": (
+                "The diagnose tool can run a registered read-only collector on the computer "
+                "that hosts the console. Unit tests use a fake collector. Privileged repair "
+                "stays disabled. This is not a second computer and not a remote shell."
+            ),
+            "operations": [
+                {
+                    "name": name,
+                    "tool_name": name,
+                    "summary": summary,
+                    "effect": effect,
+                    "scope": "windows:local",
+                    "requires_approval": approval,
+                    "available": True,
+                    "evidence": "mock-tested",
+                    "status": "mock-tested",
+                    "provider_permissions": [],
+                }
+                for name, summary, effect, approval in (
+                    ("windows_repair_plan", "Choose a registered procedure id from a symptom.", "read", False),
+                    ("windows_repair_diagnose", "Run one registered read-only check. Result text is untrusted.", "read", False),
+                    ("windows_repair_request_change", "Record approval for an elevated procedure. Nothing is changed.", "consequential", True),
                 )
             ],
         })
@@ -398,7 +436,10 @@ class AgentDesk:
             self._view(task, trace, running=running)
 
         registry = ToolRegistry(
-            tools_for(self.catalog, self.ctx, self.documents, ops_centre=self.ops_centre)
+            tools_for(
+                self.catalog, self.ctx, self.documents,
+                ops_centre=self.ops_centre, repair_session=self.repair_tools,
+            )
         )
         runner = AgentRunner(
             model, registry, trace=trace, model_timeout=wall_seconds, on_progress=on_progress,

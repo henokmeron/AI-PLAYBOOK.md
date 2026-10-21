@@ -14,6 +14,8 @@ python -m unittest windows_repair.tests.test_windows_repair windows_repair.tests
 
 The Windows integration test reads disk and printer evidence on this PC. It does not restart a service.
 
+The agent tools `windows_repair_plan`, `windows_repair_diagnose`, and `windows_repair_request_change` use the same catalogue. Diagnose can run one registered read-only collector. Its timeout is 25 seconds, the script timeout is 18 seconds, and each call is appended to a hash-chained audit record. Collector text is untrusted data: it cannot mark the fault fixed or skip approval. `windows_repair_request_change` pauses until a person approves that procedure id, then records `approved_not_run_on_this_host` or `denied`. It does not restart a service.
+
 A device job is `issued`, then `accepted` when a read-only check finishes, `expired` when its time limit passes, or `rejected` when the device is revoked or the secret does not match. A failed collection stays `failed`. The Director report treats a missing last-seen as UNKNOWN and a last-seen older than one day as DEGRADED. A mock, fixture, unlabelled, or stale accept is not HEALTHY. HEALTHY requires an accepted job whose evidence source is `live_windows`, whose check succeeded, and whose collection time is under one day old. That is still not a repair.
 
 One live disk check through a throwaway enrolled device, stored outside the source tree:

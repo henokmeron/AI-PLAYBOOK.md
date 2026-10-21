@@ -5,6 +5,7 @@ diagnostic is not reported as a repaired fault.
 """
 from __future__ import annotations
 
+import inspect
 import os
 import shutil
 from typing import Any
@@ -78,12 +79,18 @@ def _printer(evidence: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _plain(value: Any, limit: int) -> str:
+    return " ".join(str(value).replace("\r", " ").replace("\n", " ").split())[:limit]
+
+
 def _services(evidence: dict[str, Any]) -> dict[str, Any]:
     rows = evidence.get("services") if isinstance(evidence.get("services"), list) else []
     facts = []
     for row in rows[:8]:
         if isinstance(row, dict):
-            facts.append(f"{row.get('name') or 'service'} is {row.get('status') or 'unknown'}.")
+            facts.append(
+                f"{_plain(row.get('name') or 'service', 120)} is {_plain(row.get('status') or 'unknown', 40)}."
+            )
     if not facts:
         facts.append("No service rows were supplied.")
     return _unfixed(
@@ -133,6 +140,19 @@ def _devices(evidence: dict[str, Any]) -> dict[str, Any]:
 
 def _update(evidence: dict[str, Any]) -> dict[str, Any]:
     code = evidence.get("update_error")
+    events = evidence.get("events") if isinstance(evidence.get("events"), list) else []
+    if not code and events:
+        ids = []
+        for row in events[:5]:
+            if isinstance(row, dict) and row.get("id") is not None:
+                ids.append(_plain(row.get("id"), 12))
+        listed = ", ".join(ids) or "none"
+        return _unfixed(
+            "Windows Update events were read. No update was installed.",
+            facts=[f"{len(events)} recent Windows Update event(s). Ids: {listed}."],
+            hypotheses=["An event id is evidence. It is not a completed repair and does not authorise a reset."],
+            procedure_id="win.update.inspect",
+        )
     if not code:
         return _unfixed(
             "No Windows Update error was supplied.",
@@ -149,10 +169,21 @@ def _update(evidence: dict[str, Any]) -> dict[str, Any]:
 
 
 def _events(evidence: dict[str, Any]) -> dict[str, Any]:
-    events = evidence.get("events") or []
-    facts = [f"{len(events)} event row(s) supplied."]
-    hypotheses = ["Repeated disk events can mean storage trouble. They do not authorise a format or reset."]
-    return _unfixed("Event evidence recorded.", facts=facts, hypotheses=hypotheses, procedure_id="win.events.recurring")
+    events = evidence.get("events") if isinstance(evidence.get("events"), list) else []
+    bits = []
+    for row in events[:5]:
+        if not isinstance(row, dict):
+            continue
+        provider = _plain(row.get("provider") or "event", 40)
+        event_id = _plain(row.get("id") or "", 12)
+        bits.append(f"{provider} id={event_id}")
+    listed = "; ".join(bits) if bits else "none"
+    return _unfixed(
+        "Event evidence recorded. The log was not cleared.",
+        facts=[f"{len(events)} event row(s). {listed}."],
+        hypotheses=["Event presence is evidence, not a root-cause proof and not approval to format a disk."],
+        procedure_id="win.events.recurring",
+    )
 
 
 def _app(evidence: dict[str, Any]) -> dict[str, Any]:
@@ -161,6 +192,19 @@ def _app(evidence: dict[str, Any]) -> dict[str, Any]:
         facts=[f"{evidence.get('application') or 'unknown'} fault={evidence.get('fault') or 'unspecified'}."],
         hypotheses=["A crash module is a clue. It is not approval to reinstall Windows or the application."],
         procedure_id="app.crash.evidence",
+    )
+
+
+def _startup_reading(procedure_id: str, evidence: dict[str, Any]) -> dict[str, Any]:
+    return _unfixed(
+        "Performance reading only. No process was stopped.",
+        facts=[
+            f"Last boot {_plain(evidence.get('last_boot') or 'unknown', 40)}.",
+            f"Free memory kb={evidence.get('free_memory_kb')}. Total memory kb={evidence.get('total_memory_kb')}.",
+            f"CPU load percent={evidence.get('cpu_load_percent')}.",
+        ],
+        hypotheses=["A high CPU or low memory reading is a clue, not a repair."],
+        procedure_id=procedure_id,
     )
 
 
@@ -183,9 +227,9 @@ _RUNNERS = {
     "interpret_events": _events,
     "interpret_app": _app,
     "interpret_activation": lambda evidence: _note("win.activation.inspect", evidence),
-    "interpret_startup": lambda evidence: _note("win.startup.inspect", evidence),
+    "interpret_startup": lambda evidence: _startup_reading("win.startup.inspect", evidence),
     "interpret_services": _services,
-    "interpret_performance": lambda evidence: _note("win.performance.inspect", evidence),
+    "interpret_performance": lambda evidence: _startup_reading("win.performance.inspect", evidence),
     "interpret_usb": lambda evidence: _note("hw.usb.inspect", evidence),
     "interpret_wifi": lambda evidence: _note("net.wifi.inspect", evidence),
     "interpret_proxy": lambda evidence: _note("net.proxy.inspect", evidence),
@@ -259,6 +303,22 @@ def plan(symptom: str, *, fixture: str | None = None, evidence: dict[str, Any] |
     }
 
 
+def _invoke_collector(collector: Any, procedure_id: str, timeout: float) -> dict[str, Any]:
+    parameters = inspect.signature(collector.collect).parameters
+    if "timeout" in parameters:
+        result = collector.collect(procedure_id, timeout=timeout)
+    else:
+        result = collector.collect(procedure_id)
+    if not isinstance(result, dict):
+        return {
+            "ok": False,
+            "status": "unreadable",
+            "evidence_source": "unavailable",
+            "detail": "Collector returned no evidence object.",
+        }
+    return result
+
+
 def execute(
     procedure_id: str,
     *,
@@ -266,6 +326,8 @@ def execute(
     fixture: str | None = None,
     approval_id: str | None = None,
     operator: str = "operator",
+    provider: Any = None,
+    script_timeout: float = 18,
 ) -> dict[str, Any]:
     try:
         proc = get_procedure(procedure_id)
@@ -309,22 +371,27 @@ def execute(
     if runner is None:
         raise RepairDenied("procedure has no registered runner")
     live_collected = None
-    if not evidence and not fixture and os.name == "nt" and proc.runner != "local_disk":
+    if not evidence and not fixture and proc.runner != "local_disk":
         from .providers import LIVE_PROCEDURES, LiveWindowsProvider
 
-        if procedure_id in LIVE_PROCEDURES:
-            live_collected = LiveWindowsProvider().collect(procedure_id)
-            if live_collected.get("evidence_source") != "live_windows":
+        if procedure_id in LIVE_PROCEDURES and (provider is not None or os.name == "nt"):
+            collector = provider if provider is not None else LiveWindowsProvider()
+            live_collected = _invoke_collector(collector, procedure_id, script_timeout)
+            if live_collected.get("evidence_source") != "live_windows" or not live_collected.get("ok"):
+                timed_out = bool(live_collected.get("timed_out"))
                 return {
                     "procedure_id": proc.procedure_id,
                     "executed": False,
                     "changed_device": False,
                     "problem_resolved": False,
-                    "status": "diagnosed",
+                    "status": "timeout" if timed_out else str(live_collected.get("status") or "unavailable"),
                     "operator": operator,
                     "mocked": False,
                     "evidence_source": str(live_collected.get("evidence_source") or "unavailable"),
-                    "detail": "The live collector did not return evidence. No repair was run.",
+                    "detail": _plain(
+                        live_collected.get("detail") or "The live collector did not return evidence. No repair was run.",
+                        300,
+                    ),
                 }
             evidence = _adapt_live(procedure_id, live_collected)
     result = runner(evidence_for(fixture, evidence))

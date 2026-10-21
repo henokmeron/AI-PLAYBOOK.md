@@ -26,5 +26,5 @@ The machine-readable registry is `windows_repair/capabilities.py`. Its statuses 
 | Microsoft mail search/read | PARTIAL | Code in `integrations/microsoft365.py` needs `Mail.Read` and `MICROSOFT_CLIENT_ID` or a private `MICROSOFT_CLIENT_ID_FILE`. Mock-tested. Not live-connected. |
 | Teams, SharePoint, OneDrive, Azure inventory reads | PARTIAL | Registered and mock-tested. Live Graph/ARM still need Entra consent. Writes stay disabled. |
 | Microsoft / Azure writes | MISSING | Send mail and resource changes stay unavailable. Unsent drafts need `Mail.ReadWrite` via `access=draft`. |
-| Windows repair catalogue and signed jobs | IMPLEMENTED AND TESTED in source | `windows_repair/`. Live read-only collectors exist. Elevated spooler restart is tested with a fake provider and refused on this PC. |
+| Windows repair catalogue and signed jobs | IMPLEMENTED AND TESTED in source | `windows_repair/`. Live read-only collectors exist, including update events, System errors, startup, and performance on this development PC. The agent diagnose tool audits the call and treats collector text as untrusted. Elevated spooler restart pauses for approval and is not run on this PC. |
 | Remote PC control | PARTIAL | MeshCentral 1.2.6, Apache-2.0, is the selected boundary. No server is installed and no remote desktop session has been opened. |

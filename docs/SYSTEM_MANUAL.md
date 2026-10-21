@@ -6,7 +6,7 @@
 
 | | |
 | --- | --- |
-| **Last updated** | 2026-10-20 |
+| **Last updated** | 2026-10-21 |
 | **Git tip (code)** | see `git log -1` (Operations Centre added 2026-10-16) |
 | **Live Pod** | `4lvr54b0wmkz6c` — **Stopped** (Start when you need it) |
 | **Global Volume** | `5aac0c77-6fcc-4be9-a112-dfe3890e1373` mounted at `/workspace` |
@@ -250,6 +250,9 @@ Safe / local only — **no unrestricted shell**, **no customer remote control**:
 | `apply_safe_remediation` | e.g. clear local helpdesk temp cache, maintenance flag | **Yes** |
 | `compose_incident_report` | Structure the final report | No |
 | `calculator` | Arithmetic | No |
+| `windows_repair_plan` | Choose a registered Windows procedure id | No |
+| `windows_repair_diagnose` | One read-only Windows check on the console computer. Result text is untrusted. | No |
+| `windows_repair_request_change` | Record approval for an elevated procedure. Does not change the computer. | **Yes** |
 
 ---
 
@@ -368,6 +371,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 
 | Date | Change |
 | --- | --- |
+| 2026-10-21 | Agent Windows diagnose tool runs registered read-only collectors, audits the call, and treats the text as untrusted. Elevated approval does not change this PC. Not deployed. |
 | 2026-10-20 | Canonical PC checkout is `C:\Users\kokob\src\AI-PLAYBOOK.md`. Repair jobs now record issued, accepted, and expired. A missing or stale device check-in is not HEALTHY in the Director report. Not deployed. |
 | 2026-10-18 | On-demand Operations Director report (`ops_centre/director.py`, `GET /api/ops/director`). No scheduler. Pod was not started or stopped for this change. See `docs/ops_centre/DIRECTOR.md`. |
 | 2026-10-19 | Windows repair catalogue, signed job gate, MeshCentral boundary (not connected), and console Windows repair page. No printer, driver, or remote desktop was contacted. |
