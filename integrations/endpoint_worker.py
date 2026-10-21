@@ -107,7 +107,7 @@ def _post(
         raise InvalidRequest(f"console refused the check-in ({exc.code})") from exc
     except ssl.SSLError as exc:
         raise InvalidRequest("the console certificate was rejected") from exc
-    except (urllib.error.URLError, TimeoutError) as exc:
+    except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
         reason = getattr(exc, "reason", exc)
         if isinstance(reason, ssl.SSLError):
             raise InvalidRequest("the console certificate was rejected") from exc

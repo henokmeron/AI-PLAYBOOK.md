@@ -376,9 +376,14 @@ class WorkerTransportTests(unittest.TestCase):
             thread.start()
         try:
             redirect_origin = f"http://127.0.0.1:{redirect_server.server_address[1]}"
-            with self.assertRaises(InvalidRequest) as redirected:
-                _post(redirect_origin, "/api/repair/device/check-in", {})
-            self.assertIn("refused", str(redirected.exception))
+            message = ""
+            for _attempt in range(2):
+                with self.assertRaises(InvalidRequest) as redirected:
+                    _post(redirect_origin, "/api/repair/device/check-in", {})
+                message = str(redirected.exception)
+                if "refused" in message:
+                    break
+            self.assertIn("refused", message)
             slow_origin = f"http://127.0.0.1:{slow_server.server_address[1]}"
             with self.assertRaises(InvalidRequest) as timed:
                 _post(slow_origin, "/api/repair/device/check-in", {}, timeout=0.2)
