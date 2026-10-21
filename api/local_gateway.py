@@ -563,15 +563,34 @@ class Handler(BaseHTTPRequestHandler):
         if status >= 400:
             self.send_header("X-Error-Id", value["error_id"])
         self.end_headers()
+        self._log_request()
         self.wfile.write(body)
+
+    def _log_request(self) -> None:
+        """Write the request line before the body, so a client cannot observe a response that is not yet logged."""
+        if getattr(self, "_request_logged", False):
+            return
+        self._request_logged = True
+        started = getattr(self, "_started", time.monotonic())
+        log_event(
+            "request",
+            method=self.command,
+            route=urlsplit(self.path).path if urlsplit(self.path).path in KNOWN_ROUTES else "other",
+            status=self._status,
+            duration_ms=round((time.monotonic() - started) * 1000, 1),
+            error_id=self._error_id,
+            client=self.client_address[0],
+            **getattr(self, "_log_fields", {}),
+        )
 
     def _dispatch(self, route: Any) -> None:
         """Run one request; any unexpected failure becomes a 500 with an error id."""
         started = time.monotonic()
         self._status = None
         self._error_id = None
+        self._request_logged = False
+        self._started = started
         self._log_fields: dict[str, Any] = {}
-        path = urlsplit(self.path).path
         try:
             route()
         except (BrokenPipeError, ConnectionResetError, socket.timeout, TimeoutError) as exc:
@@ -585,16 +604,7 @@ class Handler(BaseHTTPRequestHandler):
                 except OSError:
                     self.close_connection = True
         finally:
-            log_event(
-                "request",
-                method=self.command,
-                route=path if path in KNOWN_ROUTES else "other",
-                status=self._status,
-                duration_ms=round((time.monotonic() - started) * 1000, 1),
-                error_id=self._error_id,
-                client=self.client_address[0],
-                **self._log_fields,
-            )
+            self._log_request()
 
     def do_GET(self) -> None:
         self._dispatch(self._route_get)
