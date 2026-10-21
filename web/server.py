@@ -1428,6 +1428,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._agent_model(),
                 wall_seconds=min(wall_cap, self.config.upstream_timeout),
                 wait=wait,
+                started_by=session.username,
             )
         except ValueError as exc:
             self.send_error_json(400, str(exc))

@@ -380,6 +380,7 @@ class AgentDesk:
         *,
         wall_seconds: float = 60.0,
         wait: bool = True,
+        started_by: str = "",
     ) -> dict[str, Any]:
         if not isinstance(goal, str) or not goal.strip() or len(goal) > 2000:
             raise ValueError("task must be 1 to 2000 characters")
@@ -417,6 +418,7 @@ class AgentDesk:
             "trace": trace,
             "cancel": cancel,
             "thread": None,
+            "started_by": started_by.strip()[:128] if isinstance(started_by, str) else "",
         }
         with self._lock:
             self._sessions[task.task_id] = session
@@ -487,6 +489,9 @@ class AgentDesk:
             raise ValueError("approval does not match the pending action")
         if arguments is not None and arguments != pending.arguments:
             raise ValueError("approval arguments do not match the pending action")
+        starter = str(session.get("started_by") or "").strip()
+        if approved and starter and approver.strip() == starter:
+            raise ValueError("the operator who started this task cannot confirm it")
         runner.resolve_approval(
             task, approved=approved, approver=approver, call_id=call_id, cancel=cancel,
         )

@@ -65,6 +65,41 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(client.network_calls, 0)
         self.assertNotEqual(decided["state"], "awaiting_approval")
 
+    def test_starter_cannot_confirm_their_own_tool(self) -> None:
+        catalog, client = platform_catalog()
+        record = catalog.connection("acme", "microsoft365")
+        record.connected = True
+        record.granted_scopes = frozenset({"teams:write"})
+        ctx = TenantContext.create("acme", "worker@example.com", [])
+        desk = AgentDesk(catalog, ctx)
+        model = ScriptedModel([
+            json.dumps({
+                "action": "tool",
+                "tool": "m365_send_teams_message",
+                "arguments": {"conversation_id": "chat-1", "body": "Ship the note."},
+            }),
+            json.dumps({
+                "action": "final",
+                "answer": "The message was not sent.",
+            }),
+        ])
+        view = desk.start(
+            "Send the note.", model, started_by="worker@example.com",
+        )
+        self.assertEqual(view["state"], "awaiting_approval")
+        call_id = view["pending_approval"]["call_id"]
+        with self.assertRaises(ValueError) as caught:
+            desk.decide(view["task_id"], True, "worker@example.com", call_id)
+        self.assertIn("started this task", str(caught.exception))
+        self.assertEqual(client.network_calls, 0)
+        self.assertEqual(desk.get(view["task_id"])["state"], "awaiting_approval")
+        confirmed = desk.decide(
+            view["task_id"], True, "reviewer@example.com", call_id,
+        )
+        self.assertEqual(client.network_calls, 0)
+        self.assertNotEqual(confirmed["state"], "awaiting_approval")
+        self.assertNotIn("Ship the note.", json.dumps(confirmed.get("answer")))
+
     def test_document_tool_cites_abstains_and_flags_embedded_instructions(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
