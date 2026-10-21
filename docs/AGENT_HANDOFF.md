@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-21** (Live Windows network/service/device diagnosis is on `main` as `890883c0cf19f48ae1acb72b61bee052ebac277f`. Release SHA-256 `f4325b28d29d529a53755f783c78d0776aae7d2f9192e0c5f3fd09084ccd3b24`. Pod and Entra were not configured. Go-live remains **NO-GO**.)
+Last updated: **2026-10-21** (Agent audit for registered Windows checks is on `main` as `dd197bf275e21a237780f3baac531f8bfd575695`. Release SHA-256 `418c86529cd5814b4f79ca74d6de64eb68f2b9c2e727c3eb0ad1a7eff6b1f151`, 370 files. Pod and Entra were not configured. Go-live remains **NO-GO**.)
 
 ## Only this repository
 
@@ -163,6 +163,17 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-21 — agent audit for registered Windows checks
+
+- Code commit `dd197bf275e21a237780f3baac531f8bfd575695` on `origin/main`. Release SHA-256 `418c86529cd5814b4f79ca74d6de64eb68f2b9c2e727c3eb0ad1a7eff6b1f151`, 370 files, under `%LOCALAPPDATA%\AI-PLAYBOOK\releases\`. Not copied to `/workspace`. This session log is not inside that archive.
+- `windows_repair_diagnose` now returns a schema-checked result with `untrusted=true`, `problem_resolved=false`, and `changed_device=false`, and appends a hash-chained audit record. The tool waits at most 25 seconds. The registered script waits at most 18 seconds. A timeout or unreadable collector is not reported as a successful diagnosis.
+- On this PC that tool ran `win.update.inspect`, `win.events.recurring`, `win.startup.inspect`, and `win.performance.inspect`. Each returned `evidence_source=live_windows`. This is the development computer, not a second endpoint, and not a repair. No service was restarted.
+- `windows_repair_request_change` pauses until a person approves that procedure id. Approval records the request. It does not restart the spooler, install a driver, disable the firewall, or run sfc or DISM. A fake collector containing "ignore previous instructions" and a password-shaped value could not set `problem_resolved` or skip the pause. The password-shaped value was redacted before the next model turn.
+- Tests: `python -m ops.run_tests` with Python 3.12 — 38 modules, 451 tests, 2 skipped, 0 failed, exit 0. Gateway reliability logged one Windows socket abort and exited 0. Those tests did not call Microsoft Graph or the Pod.
+- Microsoft: a search of the available tool namespaces found no browser-drive, Jupyter, or RunPod tool. `scripts/entra_app_manifest.py` remains the admin checklist. No application was created and no Graph call was made. **NOT CONFIGURED**.
+- Pod `xx9cjogra5vcwl`: `%USERPROFILE%\.ssh\id_ed25519` is not on this PC. The Pod was not contacted, created, stopped, resized, or reloaded. Do not claim the running console is `dd197bf`. Qwen was not reloaded.
+- Go-live **NO-GO**.
 
 ### 2026-10-21 — live network, service, and device diagnosis
 
