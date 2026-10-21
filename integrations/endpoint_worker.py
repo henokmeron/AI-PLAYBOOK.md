@@ -306,11 +306,6 @@ def execute_assigned_job(
     signed["result_signature"] = hmac.new(bytes.fromhex(mac_key), _canonical(view), hashlib.sha256).hexdigest()
     signed["problem_resolved"] = False
     signed["repair_authority"] = False
-    if "mocked" in raw:
-        signed["mocked"] = bool(raw["mocked"])
-    detail = raw.get("detail")
-    if isinstance(detail, str) and detail:
-        signed["detail"] = " ".join(detail.split())[:120]
     return signed
 
 

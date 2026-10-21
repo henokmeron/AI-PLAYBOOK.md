@@ -71,7 +71,7 @@ def result_signing_view(result: dict[str, Any], procedure_id: str) -> dict[str, 
         stamp = None
     else:
         stamp = int(stamp)
-    return {
+    view = {
         "collected_at_unix": stamp,
         "collected_by": "endpoint_worker",
         "evidence_source": source,
@@ -79,6 +79,14 @@ def result_signing_view(result: dict[str, Any], procedure_id: str) -> dict[str, 
         "procedure_id": procedure_id,
         "status": status,
     }
+    detail = result.get("detail")
+    if isinstance(detail, str):
+        text = " ".join(detail.split())[:120]
+        if text:
+            view["detail"] = text
+    if "mocked" in result:
+        view["mocked"] = bool(result["mocked"])
+    return view
 
 
 class OperatorGrant:
@@ -542,11 +550,6 @@ class DeviceStore:
         public["repair_authority"] = False
         public["remote_control"] = False
         public["duplicate"] = False
-        if "mocked" in result:
-            public["mocked"] = bool(result["mocked"])
-        detail = result.get("detail")
-        if isinstance(detail, str) and detail:
-            public["detail"] = " ".join(detail.split())[:120]
         status = str(public["status"])
         ok = bool(public["ok"])
         failed = (not ok) or status in _FAILED_OUTCOMES
