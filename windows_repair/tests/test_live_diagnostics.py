@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import time
 import unittest
@@ -584,6 +585,27 @@ class JobRejectionTests(unittest.TestCase):
             self.assertIn("organisation", str(crossed.exception))
             self.assertEqual(store.summary()["issued_jobs"], 0)
 
+    def test_console_module_path_is_still_a_real_session(self) -> None:
+        web = Path(__file__).resolve().parents[2] / "web"
+        sys.path.insert(0, str(web))
+        from auth.store import SessionRecord as ConsoleSession
+
+        now = time.time()
+        console = ConsoleSession(
+            session_id="sess-console",
+            operator_id="op-console",
+            username="admin",
+            role="admin",
+            csrf_token="csrf-console",
+            created_at=now,
+            last_seen=now,
+            expires_at=now + 600,
+            absolute_expires_at=now + 600,
+        )
+        grant = grant_from_session(console, "local-console")
+        self.assertEqual(grant.username, "admin")
+        self.assertIsNot(type(console), SessionRecord)
+
     def test_key_is_split_and_reload_verifies_signatures(self) -> None:
         import os as _os
         import stat
@@ -925,11 +947,27 @@ class DeviceStoreGuardTests(unittest.TestCase):
             self.assertEqual(reloaded.job_states[envelope["job_id"]]["lifecycle"], "accepted")
             self.assertFalse(reloaded.job_states[envelope["job_id"]]["problem_resolved"])
             self.assertEqual(reloaded.nonces.count(envelope["nonce"]), 1)
+            follow = DeviceStore(Path(tmp) / "device.json", clock=lambda: clock["now"])
+            follow.enrol("acme", "e" * 32)
+            self.assertEqual(follow.summary()["device_count"], 2)
 
-    def test_http_surface_does_not_issue_device_jobs(self) -> None:
+    def test_failed_accept_releases_the_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": 10_100.0}
+            store, secret, device = self._store(tmp, clock)
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
+            broken = dict(envelope)
+            broken["signature"] = "0" * 64
+            with self.assertRaises(RepairDenied):
+                store.accept(secret, broken, provider=_MustNotRun())
+            again = store.issue(tenant_id="acme", device_id=device, procedure_id="win.services.inspect", grant=_ada())
+            self.assertEqual(again["procedure_id"], "win.services.inspect")
+            self.assertNotEqual(again["job_id"], envelope["job_id"])
+
+    def test_http_issue_rejects_request_identity(self) -> None:
         source = (Path(__file__).resolve().parents[2] / "web" / "server.py").read_text(encoding="utf-8")
-        self.assertNotIn("DeviceStore", source)
-        self.assertNotIn("grant_from_session", source)
+        self.assertIn("grant_from_session(session, CONSOLE_TENANT)", source)
+        self.assertIn("operator, tenant, and approval are not taken from the request", source)
 
 
 if __name__ == "__main__":

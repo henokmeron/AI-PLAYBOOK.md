@@ -21,6 +21,7 @@ import json
 import os
 import re
 import secrets
+import sys
 import threading
 import time
 import uuid
@@ -70,15 +71,37 @@ class OperatorGrant:
         self.session_id = session_id
 
 
+def _is_project_session(session: Any) -> bool:
+    """True only for SessionRecord defined by this repo's auth store.
+
+    The console imports that class as auth.store and the device store imports
+    it as web.auth.store. Those are the same file with two module objects, so
+    isinstance against one of them rejects a real signed-in session. A class
+    with the same fields in any other file still fails.
+    """
+    cls = type(session)
+    if cls.__name__ != "SessionRecord":
+        return False
+    module = sys.modules.get(cls.__module__)
+    source = getattr(module, "__file__", None) if module is not None else None
+    if not source:
+        return False
+    expected = Path(__file__).resolve().parents[1] / "web" / "auth" / "store.py"
+    try:
+        return Path(source).resolve() == expected
+    except OSError:
+        return False
+
+
 def grant_from_session(session: Any, tenant_id: str) -> OperatorGrant:
     """Build a grant from the authenticated session record, never from a request name.
 
-    An object that merely has the same attributes is not a session. There is no
-    HTTP route that calls DeviceStore.issue; a future route must pass the
-    SessionRecord returned by the server-side auth store after the cookie and
-    CSRF checks, and must not read the operator name from the request body.
+    An object that merely has the same attributes is not a session. The console
+    route must pass the SessionRecord returned by the server-side auth store
+    after the cookie and CSRF checks, and must not read the operator name from
+    the request body.
     """
-    if not isinstance(session, SessionRecord):
+    if not _is_project_session(session):
         raise RepairDenied("operator session is required")
     session_id = str(session.session_id or "")
     operator_id = str(session.operator_id or "")

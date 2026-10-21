@@ -710,6 +710,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/devices":
             self.handle_device_list()
             return
+        if path == "/api/repair/device":
+            self.handle_repair_device_summary()
+            return
         static_file = resolve_static(self.config.static_dir, path)
         if static_file is None:
             self.send_error_json(404, "not found")
@@ -791,6 +794,14 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_device_report()
         elif path == "/api/devices/revoke":
             self.handle_device_revoke()
+        elif path == "/api/repair/device/enrol":
+            self.handle_repair_device_enrol()
+        elif path == "/api/repair/device/issue":
+            self.handle_repair_device_issue()
+        elif path == "/api/repair/device/accept":
+            self.handle_repair_device_accept()
+        elif path == "/api/repair/device/revoke":
+            self.handle_repair_device_revoke()
         else:
             self.send_error_json(404, "not found")
 
@@ -1132,6 +1143,190 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._refresh_endpoint()
         self.send_json(200, {"revoked": True, "remote_control": False})
+
+    def _repair_device_store(self):
+        """Signed diagnostic jobs for this loopback computer. None when unconfigured."""
+        raw = os.environ.get("REPAIR_DEVICE_STATE", "").strip()
+        if not raw:
+            return None
+        from windows_repair.device_store import DeviceStore
+
+        path = Path(raw)
+        current = getattr(self.server, "repair_device_store", None)
+        try:
+            resolved = path.resolve()
+        except OSError:
+            self.server.repair_device_error = "device state file is not usable"  # type: ignore[attr-defined]
+            return None
+        if current is not None and current.path == resolved:
+            self.server.repair_device_error = ""  # type: ignore[attr-defined]
+            return current
+        try:
+            store = DeviceStore(path)
+        except Exception:
+            self.server.repair_device_store = None  # type: ignore[attr-defined]
+            self.server.repair_device_error = "device state file is not usable"  # type: ignore[attr-defined]
+            return None
+        self.server.repair_device_store = store  # type: ignore[attr-defined]
+        self.server.repair_device_error = ""  # type: ignore[attr-defined]
+        return store
+
+    def _repair_denied(self, exc: Exception) -> None:
+        message = getattr(exc, "message", "") or "device job was refused"
+        lowered = message.casefold()
+        status = 403 if "authoris" in lowered or "session" in lowered or "approval" in lowered else 400
+        self.send_error_json(status, message)
+
+    def handle_repair_device_summary(self) -> None:
+        if self.require_operator(Permission.CONNECTORS_VIEW, mutating=False) is None:
+            return
+        if not self._loopback_client():
+            self.send_error_json(403, "device routes are only available on the loopback console")
+            return
+        if self.require_key() is None:
+            return
+        store = self._repair_device_store()
+        if store is None:
+            self.send_error_json(503, getattr(self.server, "repair_device_error", "") or "REPAIR_DEVICE_STATE is not configured")
+            return
+        summary = store.summary()
+        summary["repair_authority"] = False
+        summary["remote_control"] = False
+        self.send_json(200, summary)
+
+    def handle_repair_device_enrol(self) -> None:
+        session = self.require_operator(Permission.CONNECTORS_MANAGE, mutating=True)
+        if session is None:
+            return
+        if not self._loopback_client():
+            self.send_error_json(403, "device routes are only available on the loopback console")
+            return
+        if self.require_key() is None:
+            return
+        payload = self.read_json_object(max_bytes=2048)
+        if payload is None:
+            return
+        if any(name in payload for name in ("operator", "tenant_id", "approval_id", "device_secret")):
+            self.send_error_json(400, "operator, tenant, approval, and secret are not taken from the request")
+            return
+        store = self._repair_device_store()
+        if store is None:
+            self.send_error_json(503, getattr(self.server, "repair_device_error", "") or "REPAIR_DEVICE_STATE is not configured")
+            return
+        import secrets as _secrets
+
+        from windows_repair.engine import RepairDenied
+
+        secret = _secrets.token_urlsafe(32)
+        try:
+            device_id = store.enrol(CONSOLE_TENANT, secret)
+        except RepairDenied as exc:
+            self._repair_denied(exc)
+            return
+        self.send_json(200, {
+            "device_id": device_id,
+            "device_secret": secret,
+            "tenant_id": CONSOLE_TENANT,
+            "repair_authority": False,
+            "remote_control": False,
+            "operator": session.username,
+        })
+
+    def handle_repair_device_issue(self) -> None:
+        session = self.require_operator(Permission.CONNECTORS_MANAGE, mutating=True)
+        if session is None:
+            return
+        if not self._loopback_client():
+            self.send_error_json(403, "device routes are only available on the loopback console")
+            return
+        if self.require_key() is None:
+            return
+        payload = self.read_json_object(max_bytes=4096)
+        if payload is None:
+            return
+        if any(name in payload for name in ("operator", "tenant_id", "approval_id")):
+            self.send_error_json(400, "operator, tenant, and approval are not taken from the request")
+            return
+        device_id = payload.get("device_id")
+        procedure_id = payload.get("procedure_id")
+        if not isinstance(device_id, str) or not isinstance(procedure_id, str):
+            self.send_error_json(400, "device_id and procedure_id are required")
+            return
+        store = self._repair_device_store()
+        if store is None:
+            self.send_error_json(503, getattr(self.server, "repair_device_error", "") or "REPAIR_DEVICE_STATE is not configured")
+            return
+        from windows_repair.device_store import grant_from_session
+        from windows_repair.engine import RepairDenied
+
+        try:
+            grant = grant_from_session(session, CONSOLE_TENANT)
+            envelope = store.issue(
+                tenant_id=CONSOLE_TENANT,
+                device_id=device_id,
+                procedure_id=procedure_id,
+                grant=grant,
+            )
+        except RepairDenied as exc:
+            self._repair_denied(exc)
+            return
+        self.send_json(200, envelope)
+
+    def handle_repair_device_accept(self) -> None:
+        if not self._loopback_client():
+            self.send_error_json(403, "device routes are only available on the loopback console")
+            return
+        header = self.headers.get("Authorization", "")
+        secret = header[7:] if header.startswith("Bearer ") else ""
+        payload = self.read_json_object(max_bytes=8192)
+        if payload is None:
+            return
+        store = self._repair_device_store()
+        if store is None:
+            self.send_error_json(503, getattr(self.server, "repair_device_error", "") or "REPAIR_DEVICE_STATE is not configured")
+            return
+        from windows_repair.engine import RepairDenied
+
+        try:
+            result = store.accept(secret, payload)
+        except RepairDenied as exc:
+            self._repair_denied(exc)
+            return
+        result["repair_authority"] = False
+        result["remote_control"] = False
+        self.send_json(200, result)
+
+    def handle_repair_device_revoke(self) -> None:
+        session = self.require_operator(Permission.CONNECTORS_MANAGE, mutating=True)
+        if session is None:
+            return
+        if not self._loopback_client():
+            self.send_error_json(403, "device routes are only available on the loopback console")
+            return
+        if self.require_key() is None:
+            return
+        payload = self.read_json_object(max_bytes=2048)
+        if payload is None:
+            return
+        if any(name in payload for name in ("operator", "tenant_id", "approval_id")):
+            self.send_error_json(400, "operator, tenant, and approval are not taken from the request")
+            return
+        device_id = payload.get("device_id")
+        if not isinstance(device_id, str) or not device_id:
+            self.send_error_json(400, "device_id is required")
+            return
+        store = self._repair_device_store()
+        if store is None:
+            self.send_error_json(503, getattr(self.server, "repair_device_error", "") or "REPAIR_DEVICE_STATE is not configured")
+            return
+        from windows_repair.engine import RepairDenied
+
+        try:
+            store.revoke(CONSOLE_TENANT, device_id)
+        except RepairDenied as exc:
+            self._repair_denied(exc)
+            return
+        self.send_json(200, {"revoked": True, "repair_authority": False, "operator": session.username})
 
     def _agent_model(self) -> OpenAICompatibleClient:
         model_id = self.config.model_id if MODEL_ID_RE.fullmatch(self.config.model_id or "") else None

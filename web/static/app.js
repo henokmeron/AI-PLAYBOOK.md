@@ -84,6 +84,11 @@
     var method = options && options.method ? options.method : "GET";
     var headers = { "Accept": "application/json" };
     if (options && options.body) headers["Content-Type"] = "application/json";
+    if (options && options.headers) {
+      Object.keys(options.headers).forEach(function (name) {
+        headers[name] = options.headers[name];
+      });
+    }
     if (csrfToken && method !== "GET" && method !== "HEAD") {
       headers["X-CSRF-Token"] = csrfToken;
     }
@@ -1316,7 +1321,80 @@
       errorBox.hidden = false;
       errorBox.textContent = errorMessage(error);
     });
+    loadRepairDevice();
   }
+
+  var repairDevice = { id: "", secret: "" };
+
+  function loadRepairDevice() {
+    var node = document.getElementById("repair-device-status");
+    request("/api/repair/device").then(function (body) {
+      var enrolled = repairDevice.id ? " This page can check " + repairDevice.id + "." : "";
+      node.textContent = "Enrolled devices: " + body.device_count +
+        ". Pending jobs: " + body.pending_jobs +
+        ". Accepted jobs: " + body.accepted_jobs +
+        ". Repair authority is off." + enrolled;
+    }).catch(function (error) {
+      node.textContent = errorMessage(error);
+    });
+  }
+
+  document.getElementById("repair-device-enrol").addEventListener("click", function () {
+    var errorBox = document.getElementById("repair-error");
+    errorBox.hidden = true;
+    request("/api/repair/device/enrol", { method: "POST", body: {} }).then(function (body) {
+      repairDevice.id = body.device_id || "";
+      repairDevice.secret = body.device_secret || "";
+      loadRepairDevice();
+    }).catch(function (error) {
+      errorBox.hidden = false;
+      errorBox.textContent = errorMessage(error);
+    });
+  });
+
+  document.getElementById("repair-device-check").addEventListener("click", function () {
+    var errorBox = document.getElementById("repair-error");
+    errorBox.hidden = true;
+    if (!repairDevice.id || !repairDevice.secret) {
+      errorBox.hidden = false;
+      errorBox.textContent = "Enrol this computer in this page first. The secret is not saved after a reload.";
+      return;
+    }
+    request("/api/repair/device/issue", {
+      method: "POST",
+      body: { device_id: repairDevice.id, procedure_id: "win.storage.space" }
+    }).then(function (envelope) {
+      return request("/api/repair/device/accept", {
+        method: "POST",
+        body: envelope,
+        headers: { "Authorization": "Bearer " + repairDevice.secret }
+      });
+    }).then(function (result) {
+      document.getElementById("repair-result").textContent = JSON.stringify(result, null, 2);
+      loadRepairDevice();
+    }).catch(function (error) {
+      errorBox.hidden = false;
+      errorBox.textContent = errorMessage(error);
+    });
+  });
+
+  document.getElementById("repair-device-revoke").addEventListener("click", function () {
+    var errorBox = document.getElementById("repair-error");
+    errorBox.hidden = true;
+    if (!repairDevice.id) {
+      errorBox.hidden = false;
+      errorBox.textContent = "Enrol this computer in this page first.";
+      return;
+    }
+    request("/api/repair/device/revoke", { method: "POST", body: { device_id: repairDevice.id } }).then(function () {
+      repairDevice.id = "";
+      repairDevice.secret = "";
+      loadRepairDevice();
+    }).catch(function (error) {
+      errorBox.hidden = false;
+      errorBox.textContent = errorMessage(error);
+    });
+  });
 
   document.getElementById("repair-live").addEventListener("click", function () {
     var errorBox = document.getElementById("repair-error");

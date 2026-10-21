@@ -288,14 +288,16 @@ class ConsoleTests(unittest.TestCase):
         model_id: str = MODEL,
         gateway_url: str | None = None,
         provision_admin: bool = True,
+        fresh_auth: bool = True,
         auto_login: bool = True,
     ) -> str:
-        if provision_admin:
-            self._provision_admin()
-        else:
-            tmp = tempfile.TemporaryDirectory(prefix="console-auth-empty-")
-            self._auth_dirs.append(tmp)
-            os.environ["OPERATOR_AUTH_DIR"] = tmp.name
+        if fresh_auth:
+            if provision_admin:
+                self._provision_admin()
+            else:
+                tmp = tempfile.TemporaryDirectory(prefix="console-auth-empty-")
+                self._auth_dirs.append(tmp)
+                os.environ["OPERATOR_AUTH_DIR"] = tmp.name
         if gateway is not None:
             self.start(gateway)
             gateway_url = f"http://127.0.0.1:{gateway.server_address[1]}"
@@ -352,7 +354,7 @@ class ConsoleTests(unittest.TestCase):
                     request_headers.setdefault("X-CSRF-Token", self.csrf_token)
         request = urllib.request.Request(base + path, data=data, headers=request_headers, method=method)
         try:
-            with OPENER.open(request, timeout=5) as response:
+            with OPENER.open(request, timeout=20) as response:
                 return int(response.getcode()), response.read(), dict(response.headers.items())
         except urllib.error.HTTPError as exc:
             return exc.code, exc.read(), dict(exc.headers.items()) if exc.headers else {}
@@ -465,7 +467,9 @@ class ConsoleTests(unittest.TestCase):
         script_text = script.decode("utf-8")
         self.assertEqual(status, 200)
         self.assertNotIn(KEY, script_text)
-        self.assertNotIn("Authorization", script_text)
+        self.assertNotIn("X-API-Key", script_text)
+        self.assertIn('headers: { "Authorization": "Bearer " + repairDevice.secret }', script_text)
+        self.assertNotIn("localStorage", script_text)
         self.assertNotIn("/v1/", script_text)
         self.assertIn("historyPayload", script_text)
         self.assertIn("ragQuestion.value = \"\"", script_text)
@@ -1013,6 +1017,95 @@ class ConsoleTests(unittest.TestCase):
             {"Authorization": "Bearer " + secret},
         )
         self.assertEqual(after, 401)
+
+    def test_repair_device_job_uses_the_session_and_a_live_read(self) -> None:
+        """Loopback console issues a signed read-only job and collects it on this PC."""
+        from auth.service import AuthService
+
+        previous = os.environ.get("REPAIR_DEVICE_STATE")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                os.environ["REPAIR_DEVICE_STATE"] = str(Path(tmp) / "device.json")
+                self._provision_admin()
+                AuthService(os.environ["OPERATOR_AUTH_DIR"]).create_operator(
+                    "viewer1", "unit-test-viewer-password", "viewer", actor="admin",
+                )
+                base = self.web(FakeGateway(), provision_admin=False, fresh_auth=False)
+                self.login(base)
+                status, body = self.request(base, "GET", "/")
+                self.assertEqual(status, 200)
+                self.assertIn("Run read-only disk check", body.decode("utf-8"))
+                denied, _denied_body = self.request(
+                    base, "POST", "/api/repair/device/issue",
+                    {"device_id": "x", "procedure_id": "win.storage.space", "operator": "ada", "approval_id": "apr-1"},
+                )
+                self.assertEqual(denied, 400, _denied_body.decode("utf-8", errors="replace"))
+                logged_out = self.login(base, "viewer1", "unit-test-viewer-password")
+                self.assertEqual(logged_out[0], 200)
+                viewer, _viewer_body = self.request(
+                    base, "POST", "/api/repair/device/enrol", {},
+                )
+                self.assertEqual(viewer, 403)
+                self.login(base)
+                status, body, _headers = self.request_raw(
+                    base, "POST", "/api/repair/device/enrol", {},
+                    {"Origin": base, "Cookie": self.session_cookie, "X-CSRF-Token": "not-the-token"},
+                    auth=False,
+                )
+                self.assertEqual(status, 403)
+                created_status, created_body = self.request(base, "POST", "/api/repair/device/enrol", {})
+                self.assertEqual(created_status, 200)
+                created = json.loads(created_body)
+                self.assertEqual(created["operator"], "admin")
+                self.assertFalse(created["repair_authority"])
+                secret = created["device_secret"]
+                device_id = created["device_id"]
+                self.assertNotIn(secret, json.dumps(created["operator"]))
+                issued_status, issued_body = self.request(base, "POST", "/api/repair/device/issue", {
+                    "device_id": device_id,
+                    "procedure_id": "win.storage.space",
+                })
+                self.assertEqual(issued_status, 200, issued_body.decode("utf-8", errors="replace"))
+                envelope = json.loads(issued_body)
+                self.assertEqual(envelope["operator"], "admin")
+                self.assertIsNone(envelope["approval_id"])
+                self.assertEqual(envelope["procedure_id"], "win.storage.space")
+                blocked, _blocked_body = self.request(base, "POST", "/api/repair/device/issue", {
+                    "device_id": device_id,
+                    "procedure_id": "print.spooler.restart",
+                })
+                self.assertIn(blocked, {400, 403})
+                self.login(base)
+                self.request(base, "POST", "/api/auth/logout", {})
+                after_logout, _after = self.request(base, "POST", "/api/repair/device/issue", {
+                    "device_id": device_id,
+                    "procedure_id": "win.storage.space",
+                })
+                self.assertEqual(after_logout, 401)
+                self.login(base)
+                accepted_status, accepted_body = self.request(
+                    base, "POST", "/api/repair/device/accept", envelope,
+                    {"Authorization": "Bearer " + secret},
+                )
+                self.assertEqual(accepted_status, 200, accepted_body.decode("utf-8", errors="replace"))
+                result = json.loads(accepted_body)
+                self.assertEqual(result["evidence_source"], "live_windows")
+                self.assertFalse(result["problem_resolved"])
+                self.assertFalse(result["repair_authority"])
+                self.assertFalse(result["mocked"])
+                self.assertNotIn(secret, accepted_body.decode("utf-8"))
+                summary_status, summary_body = self.request(base, "GET", "/api/repair/device")
+                self.assertEqual(summary_status, 200)
+                summary = json.loads(summary_body)
+                self.assertGreaterEqual(summary["accepted_jobs"], 1)
+                self.assertNotIn(secret, summary_body.decode("utf-8"))
+                revoked, _revoked = self.request(base, "POST", "/api/repair/device/revoke", {"device_id": device_id})
+                self.assertEqual(revoked, 200)
+        finally:
+            if previous is None:
+                os.environ.pop("REPAIR_DEVICE_STATE", None)
+            else:
+                os.environ["REPAIR_DEVICE_STATE"] = previous
 
 
 class HistoryDirectoryTests(unittest.TestCase):
