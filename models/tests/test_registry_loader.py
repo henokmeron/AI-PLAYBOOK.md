@@ -17,15 +17,16 @@ try:
 except ImportError:
     yaml = None  # type: ignore
 
-from registry_loader import (  # noqa: E402
-    get_model,
-    load_registry,
-    public_model_catalog,
-    matching_upstream_model_id,
-    resolve_requested_model,
-    selection_decision,
-    upstream_model_token,
-)
+if yaml is not None:
+    from registry_loader import (  # noqa: E402
+        get_model,
+        load_registry,
+        public_model_catalog,
+        matching_upstream_model_id,
+        resolve_requested_model,
+        selection_decision,
+        upstream_model_token,
+    )
 
 
 @unittest.skipUnless(yaml is not None, "PyYAML is required for registry loader tests")

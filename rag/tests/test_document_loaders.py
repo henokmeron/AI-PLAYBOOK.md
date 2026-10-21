@@ -7,6 +7,9 @@ import unittest
 import zipfile
 from pathlib import Path
 
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from document_loaders import DocumentLoadError, read_document
 from rag_engine import load_chunks, retrieve
 

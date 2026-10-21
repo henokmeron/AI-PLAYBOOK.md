@@ -324,14 +324,19 @@ class AgentDesk:
             try:
                 runner.run(task, cancel)
             finally:
-                with self._lock:
-                    current = self._sessions.get(task_id)
-                    if current is not None:
-                        current["thread"] = None
-                    if self._active_id == task_id:
-                        self._active_id = None
-                self._view(task, trace, running=False)
-                self._pump_queue()
+                # Persist the snapshot before the thread looks idle. On Windows
+                # a history write that overlaps directory cleanup fails the test
+                # and can leave a partial file as the last record.
+                try:
+                    self._view(task, trace, running=False)
+                finally:
+                    with self._lock:
+                        current = self._sessions.get(task_id)
+                        if current is not None:
+                            current["thread"] = None
+                        if self._active_id == task_id:
+                            self._active_id = None
+                    self._pump_queue()
 
         thread = threading.Thread(target=worker, name=f"agent-{task_id[:8]}", daemon=True)
         with self._lock:
