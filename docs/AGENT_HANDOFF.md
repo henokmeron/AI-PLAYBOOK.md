@@ -164,6 +164,12 @@ E2E helper (uses key file; does not print it):
 
 ## Session log (newest first)
 
+### 2026-10-21 — live network, service, and device diagnosis
+
+- Code commit `890883c0cf19f48ae1acb72b61bee052ebac277f` on `origin/main`. Release SHA-256 `f4325b28d29d529a53755f783c78d0776aae7d2f9192e0c5f3fd09084ccd3b24`, 369 files, not on the volume.
+- `windows_repair_diagnose` / `execute` now collects the registered read-only script when no fixture is supplied. Verified on this PC for `net.diagnose`, `win.services.inspect`, and `hw.devices.inventory`. `problem_resolved` stayed false. No service was restarted. Gateway addresses were not included.
+- Microsoft and the H100 Pod were not contacted in this pass.
+
 ### 2026-10-21 — read-only Graph scopes and reliable test runner
 
 - Code commit `7e7ff516fda9abf1d70a136104ffd8c397a22cee` on `origin/main`. Release SHA-256 `e20b686ad8f00f8516face757ae533093b677a88c710f47078caf4bdfb636591`, 369 files, not copied to `/workspace`.
