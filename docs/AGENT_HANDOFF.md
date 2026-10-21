@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-21** (`main` tip `7615fd55e70789ea5387f92b3578c6be8b875233` release SHA-256 `205933b31d77fde5c6c8397f644afc38ec95f3eb88960971ecf1493ac298a52b`; Blackwell pin commit `7037ae9…` recover digest `841a231a…`. Live Blackwell **NOT TESTED**. Volume copy **BLOCKED**. Go-live **NO-GO**.)
+Last updated: **2026-10-21** (release archive extraction hardening is now on GitHub `main`; the new regression tests and full suite are **NOT RUN** in this session. Current local working-tree state, RunPod inventory, and Global Volume contents were not accessible here. Live Blackwell **NOT TESTED**. Volume copy **BLOCKED**. Go-live **NO-GO**.)
 
 ## Only this repository
 
@@ -164,6 +164,15 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-21 — release archive extraction hardening
+
+- Source changes in ops/release/package.py now reject POSIX/Windows traversal, Windows drive/UNC paths, NULs, colon-based alternate data streams, symlinks, hardlinks, devices, FIFOs, and a symlink extraction destination. Regression cases were added to ops/test_release_package.py.
+- **NOT TESTED:** no local checkout/shell was available to this session. A fresh clone failed because this execution environment could not resolve github.com. Earlier suite results predate this patch and must not be attributed to it. Run the targeted test and then python -m ops.run_tests from the canonical clean checkout.
+- GitHub's authenticated connector can read/write the repository. The root README.md lookup returned 404; PLAYBOOK.md is the root project playbook. The local Windows working tree could not be inspected, so preserve any uncommitted changes there; do not assume it is clean or synchronized.
+- RunPod inventory and Global Volume inspection are **BLOCKED / NOT VERIFIED**: no authenticated RunPod browser or SSH key is available in this session. No Pod/paid-resource mutation, model reload, volume write, or Microsoft Graph call occurred. No release archive was created for this increment because the release command could not run in a local checkout.
+- Production remains **NO-GO** until the tests run and live behavior, security, integrations, and acceptance tests are verified.
+
 
 ### 2026-10-21 — Blackwell pin verified; release checksum corrected; offline defects fixed
 
