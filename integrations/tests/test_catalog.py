@@ -6,7 +6,7 @@ import unittest
 
 from integrations.catalog import Effect
 from integrations.errors import ApprovalRequired, AuthenticationError, InvalidRequest, PermissionDenied
-from integrations.microsoft365 import MICROSOFT_365, platform_catalog
+from integrations.microsoft365 import MICROSOFT_365, microsoft_configuration, platform_catalog
 from integrations.tenancy import TenantContext
 
 
@@ -59,7 +59,7 @@ class CatalogTests(unittest.TestCase):
     def test_effects_match_the_approval_rule(self) -> None:
         by_name = {item.name: item for item in MICROSOFT_365.operations}
         self.assertEqual(by_name["search_mail"].effect, Effect.READ)
-        self.assertFalse(by_name["create_mail_draft"].requires_approval)
+        self.assertTrue(by_name["create_mail_draft"].requires_approval)
         self.assertTrue(by_name["send_mail"].requires_approval)
         self.assertTrue(by_name["send_teams_message"].requires_approval)
         described = platform_catalog()[0].describe("acme")[0]
@@ -90,3 +90,27 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(mail["search_mail"]["status"], "mock-tested")
         self.assertEqual(mail["send_mail"]["status"], "unavailable")
         self.assertNotEqual(mail["search_mail"]["status"], "live-tested")
+
+    def test_approval_cannot_enable_send_or_echo_the_client_id(self) -> None:
+        catalog, client = platform_catalog()
+        record = catalog.connection("acme", "microsoft365")
+        record.connected = True
+        record.granted_scopes = frozenset({"mail:write"})
+        params = {"to": "a@example.com", "subject": "Invoice", "body": "Please review."}
+        with self.assertRaises(AuthenticationError) as caught:
+            catalog.execute(_ctx(), "microsoft365", "send_mail", params, authorised=True)
+        self.assertIn("not enabled", str(caught.exception))
+        self.assertEqual(client.network_calls, 0)
+        with self.assertRaises(ApprovalRequired):
+            catalog.execute(_ctx(), "microsoft365", "create_mail_draft", params)
+        with self.assertRaises(AuthenticationError):
+            catalog.execute(_ctx(), "microsoft365", "create_mail_draft", params, authorised=True)
+        self.assertEqual(client.network_calls, 0)
+        secret = "11111111-2222-3333-4444-555555555555"
+        blank = microsoft_configuration({})
+        marked = microsoft_configuration({"MICROSOFT_CLIENT_ID": secret})
+        self.assertEqual(blank["status"], "NOT CONFIGURED")
+        self.assertEqual(blank["client_id"], "absent")
+        self.assertEqual(marked["status"], "configured")
+        self.assertEqual(marked["client_id"], "present")
+        self.assertNotIn(secret, json.dumps(marked))

@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from integrations.approvals import payload_hash
-from integrations.catalog import Catalog
-from integrations.errors import IntegrationError
+from integrations.catalog import Catalog, Effect
+from integrations.errors import AuthenticationError, IntegrationError, InvalidRequest, PermissionDenied
 from integrations.microsoft365 import platform_catalog
 from integrations.tenancy import TenantContext
 
@@ -25,7 +25,7 @@ from .model import ModelClient
 from .redaction import redact
 from .runtime import AgentRunner, CancellationToken
 from .state import EXECUTION_TERMINAL, AgentTask, Budget, ExecutionStatus, TaskState
-from .tools import Tool, ToolError, ToolRegistry
+from .tools import Tool, ToolError, ToolInputError, ToolPermissionError, ToolRegistry
 from .trace import ExecutionTrace
 
 _OBSERVABLE = {
@@ -41,7 +41,7 @@ _PAUSED = frozenset({TaskState.AWAITING_APPROVAL, TaskState.AWAITING_INFORMATION
 
 def _tool(catalog: Catalog, ctx: TenantContext, connector_id: str, operation: str, spec_tool: str,
           summary: str, input_schema: dict[str, Any], output_schema: dict[str, Any],
-          approval: bool) -> Tool:
+          approval: bool, timeout_seconds: float = 20.0) -> Tool:
     grant: dict[str, Any] = {"call_id": None, "arguments": None}
 
     def handler(arguments: dict[str, Any]) -> Any:
@@ -63,6 +63,10 @@ def _tool(catalog: Catalog, ctx: TenantContext, connector_id: str, operation: st
             return catalog.execute(
                 ctx, connector_id, operation, arguments, authorised=authorised,
             )
+        except (PermissionDenied, AuthenticationError) as exc:
+            raise ToolPermissionError(exc.message) from exc
+        except InvalidRequest as exc:
+            raise ToolInputError(exc.message) from exc
         except IntegrationError as exc:
             raise ToolError(exc.message) from exc
 
@@ -74,6 +78,7 @@ def _tool(catalog: Catalog, ctx: TenantContext, connector_id: str, operation: st
         handler=handler,
         idempotent=not approval,
         requires_approval=approval,
+        timeout_seconds=timeout_seconds,
     )
     tool.approval_grant = grant  # type: ignore[attr-defined]
     return tool
@@ -96,7 +101,20 @@ def tools_for(
         from ops_centre.agent_tools import ops_centre_tools
 
         tools.extend(ops_centre_tools(ops_centre))
+    registered: set[str] = set()
+    microsoft = catalog.spec("microsoft365")
+    for operation in microsoft.operations:
+        if operation.name == "send_mail" or operation.effect not in {Effect.READ, Effect.DRAFT}:
+            continue
+        tools.append(_tool(
+            catalog, ctx, microsoft.connector_id, operation.name, operation.tool_name,
+            operation.summary, operation.input_schema, operation.output_schema,
+            operation.requires_approval, timeout_seconds=15.0,
+        ))
+        registered.add(operation.tool_name)
     for spec, operation in catalog.visible_operations(ctx):
+        if operation.tool_name in registered or operation.tool_name == "m365_send_mail":
+            continue
         tools.append(_tool(
             catalog, ctx, spec.connector_id, operation.name, operation.tool_name,
             operation.summary, operation.input_schema, operation.output_schema,

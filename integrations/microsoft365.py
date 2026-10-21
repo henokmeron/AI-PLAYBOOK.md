@@ -6,7 +6,7 @@ Teams plugin is not used here.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
 
 import re
 import urllib.parse
@@ -86,7 +86,7 @@ def _op(
         output_schema=output_schema or _OBJECT_RESULT,
         provider_permissions=permissions,
         tool_name="m365_" + name,
-        requires_approval=effect in {Effect.REVERSIBLE, Effect.CONSEQUENTIAL},
+        requires_approval=effect in {Effect.DRAFT, Effect.REVERSIBLE, Effect.CONSEQUENTIAL},
         idempotent=effect is Effect.READ,
         evidence=evidence,
     )
@@ -135,6 +135,16 @@ MICROSOFT_365 = ConnectorSpec(
             }),
     ),
 )
+
+
+def microsoft_configuration(env: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Report whether an application id is present. The id itself is never returned."""
+    source = env or {}
+    present = bool(str(source.get("MICROSOFT_CLIENT_ID", "")).strip())
+    return {
+        "status": "configured" if present else "NOT CONFIGURED",
+        "client_id": "present" if present else "absent",
+    }
 
 
 def _clip(value: Any, limit: int) -> str:

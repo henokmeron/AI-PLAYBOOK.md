@@ -51,8 +51,10 @@ class OperationSpec:
             raise ValueError(f"{self.name} input schema must be an object")
         if self.effect in _APPROVED_EFFECTS and not self.requires_approval:
             raise ValueError(f"{self.name} changes external state and must require approval")
-        if self.effect in {Effect.READ, Effect.DRAFT} and self.requires_approval:
-            raise ValueError(f"{self.name} is not an external change and must not require approval")
+        if self.effect is Effect.DRAFT and not self.requires_approval:
+            raise ValueError(f"{self.name} drafts must require approval")
+        if self.effect is Effect.READ and self.requires_approval:
+            raise ValueError(f"{self.name} is a read and must not require approval")
 
 
 @dataclass(frozen=True)
@@ -201,4 +203,6 @@ class Catalog:
             raise ApprovalRequired(
                 f"{connector_id}.{op.name} requires approval of these exact arguments"
             )
+        if op.evidence == "unavailable":
+            raise AuthenticationError(f"{connector_id}.{op.name} is not enabled. No request was sent.")
         return self._performer(connector_id, op.name, params)

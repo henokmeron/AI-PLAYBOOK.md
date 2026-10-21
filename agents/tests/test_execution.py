@@ -163,22 +163,29 @@ class ApprovalAndScopeTests(unittest.TestCase):
         self.assertIn("No request was sent", str(caught.exception))
         self.assertEqual(client.network_calls, 0)
 
-    def test_mail_tools_stay_hidden_without_mail_read(self) -> None:
+    def test_mail_tools_are_registered_and_denied_without_mail_read(self) -> None:
+        from agents.tools import ToolPermissionError
+
         catalog, client = platform_catalog()
         record = catalog.connection("local-console", "microsoft365")
         record.connected = True
         record.granted_scopes = frozenset()
         ctx = TenantContext.create("local-console", "console-user", [])
         names = [tool.name for tool in tools_for(catalog, ctx)]
-        self.assertNotIn("m365_search_mail", names)
+        self.assertIn("m365_search_mail", names)
         self.assertNotIn("m365_send_mail", names)
+        denied = next(tool for tool in tools_for(catalog, ctx) if tool.name == "m365_search_mail")
+        with self.assertRaises(ToolPermissionError):
+            denied.handler({"query": "invoice"})
         record.granted_scopes = frozenset({"mail:read"})
         names = [tool.name for tool in tools_for(catalog, ctx)]
         self.assertIn("m365_search_mail", names)
         self.assertIn("m365_read_mail", names)
         self.assertNotIn("m365_send_mail", names)
         other = TenantContext.create("other-co", "outsider@example.com", [])
-        self.assertNotIn("m365_search_mail", [tool.name for tool in tools_for(catalog, other)])
+        outsider = next(tool for tool in tools_for(catalog, other) if tool.name == "m365_search_mail")
+        with self.assertRaises(ToolPermissionError):
+            outsider.handler({"query": "invoice"})
         self.assertEqual(client.network_calls, 0)
 
     def test_malicious_document_does_not_leak_into_the_operator_view(self) -> None:

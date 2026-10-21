@@ -22,7 +22,8 @@ class WorkspaceTests(unittest.TestCase):
         self.assertIn("classify_it_issue", names)
         self.assertIn("check_platform_health", names)
         self.assertIn("apply_safe_remediation", names)
-        self.assertNotIn("m365_search_mail", names)
+        self.assertIn("m365_search_mail", names)
+        self.assertNotIn("m365_send_mail", names)
 
     def test_public_view_omits_hidden_reasoning(self) -> None:
         desk = AgentDesk()
@@ -48,7 +49,7 @@ class WorkspaceTests(unittest.TestCase):
         desk = AgentDesk(catalog, ctx)
         names = [tool.name for tool in tools_for(catalog, ctx)]
         self.assertIn("m365_send_teams_message", names)
-        self.assertNotIn("m365_search_mail", names)
+        self.assertIn("m365_search_mail", names)
         model = ScriptedModel([json.dumps({
             "action": "tool",
             "tool": "m365_send_teams_message",
@@ -84,7 +85,8 @@ class WorkspaceTests(unittest.TestCase):
         names = [tool.name for tool in tools_for(catalog, ctx, retriever)]
         self.assertIn("search_documents", names)
         self.assertIn("calculator", names)
-        self.assertNotIn("m365_search_mail", names)
+        self.assertIn("m365_search_mail", names)
+        self.assertNotIn("m365_send_mail", names)
         hidden = retriever.retrieve("secret pricing", "")
         self.assertEqual(hidden["status"], "abstained")
         self.assertNotIn("999", json.dumps(hidden))
