@@ -122,6 +122,49 @@ class GraphRuntimeTests(unittest.TestCase):
         self.assertEqual(calls, ["search_mail"])
         self.assertEqual(client.network_calls, 0)
 
+    def test_teams_files_sharepoint_and_azure_tools_are_callable(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        def perform(connector, operation, params):
+            calls.append((connector, operation))
+            if connector == "azure":
+                return {"status": "ok", "items": [{"id": "sub-1", "name": "Pay-As-You-Go"}]}
+            return {"status": "ok", "items": [{"id": "row-1", "name": "Invoice"}]}
+
+        catalog, client = platform_catalog()
+        catalog._performer = perform  # noqa: SLF001
+        for connector_id, scopes in (
+            ("microsoft365", frozenset({"teams:read", "files:read", "sites:read", "mail:read", "mail:write"})),
+            ("azure", frozenset({"azure:read"})),
+        ):
+            record = catalog.connection("local-console", connector_id)
+            record.connected = True
+            record.granted_scopes = scopes
+        tools = tools_for(catalog, _ctx())
+        names = {tool.name for tool in tools}
+        self.assertIn("m365_search_teams_messages", names)
+        self.assertIn("m365_search_files", names)
+        self.assertIn("m365_search_sharepoint", names)
+        self.assertIn("azure_list_subscriptions", names)
+        self.assertNotIn("m365_send_mail", names)
+        self.assertNotIn("m365_send_teams_message", names)
+        runner, _model = runner_for([
+            tool_call("m365_search_teams_messages", query="invoice"),
+            tool_call("m365_search_files", query="invoice"),
+            tool_call("m365_search_sharepoint", query="Finance"),
+            tool_call("azure_list_subscriptions"),
+            final("I listed the connected Microsoft resources."),
+        ], tools=tools)
+        task = runner.run(runner.new_task("Find Microsoft resources."))
+        self.assertEqual(task.state, TaskState.FINAL)
+        self.assertEqual(calls, [
+            ("microsoft365", "search_teams_messages"),
+            ("microsoft365", "search_files"),
+            ("microsoft365", "search_sharepoint"),
+            ("azure", "list_subscriptions"),
+        ])
+        self.assertEqual(client.network_calls, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

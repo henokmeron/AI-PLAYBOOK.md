@@ -13,7 +13,7 @@ import urllib.parse
 
 from .catalog import Catalog, ConnectorSpec, Effect, OperationSpec
 from .endpoint import ENDPOINT, DeviceRegistry, EndpointService
-from .errors import AuthenticationError, InvalidRequest, NotFound
+from .errors import AuthenticationError, InvalidRequest, NotFound, PermissionDenied
 from .microsoft_oauth import MicrosoftOAuth
 
 _MESSAGE_ID = re.compile(r"[A-Za-z0-9_+=/\-]{8,512}\Z")
@@ -125,7 +125,7 @@ MICROSOFT_365 = ConnectorSpec(
             "properties": {"message_id": {"type": "string", "minLength": 8, "maxLength": 512}},
         }, _MAIL_RESULT, evidence="mock-tested"),
         _op("create_mail_draft", "Create an unsent mail draft.", Effect.DRAFT, "mail:write",
-            ("Mail.ReadWrite",), _MESSAGE),
+            ("Mail.ReadWrite",), _MESSAGE, _OBJECT_RESULT, "mock-tested"),
         _op("send_mail", "Send an email.", Effect.CONSEQUENTIAL, "mail:write", ("Mail.Send",), _MESSAGE),
         _op(
             "search_teams_messages",
@@ -289,6 +289,8 @@ class Microsoft365Client:
         assert self.oauth is not None
         if self.oauth.has_mail_read():
             granted.add("mail:read")
+        if self.oauth.has_graph_scope("Mail.ReadWrite"):
+            granted.add("mail:write")
         if self.oauth.has_graph_scope("Chat.Read"):
             granted.add("teams:read")
         if self.oauth.has_graph_scope("Files.Read"):
@@ -297,7 +299,10 @@ class Microsoft365Client:
             granted.add("sites:read")
         record.granted_scopes = frozenset(granted)
         if granted:
-            record.detail = "Read-only Microsoft Graph is connected. Sending mail is not available."
+            record.detail = (
+                "Microsoft Graph is connected for reads and unsent drafts. "
+                "Sending mail and Azure changes are not available."
+            )
         else:
             record.detail = "Signed in, but no read scopes were granted for mail, Teams, or files."
         azure.connected = self.oauth.has_azure_read()
@@ -322,9 +327,51 @@ class Microsoft365Client:
             return self._search_files(str(params.get("query", "")))
         if operation == "search_sharepoint":
             return self._search_sharepoint(str(params.get("query", "")))
+        if operation == "create_mail_draft":
+            return self._create_mail_draft(
+                str(params.get("to", "")),
+                str(params.get("subject", "")),
+                str(params.get("body", "")),
+            )
+        if operation in {"send_mail", "send_teams_message", "update_calendar_event"}:
+            raise PermissionDenied(
+                f"Microsoft 365 {operation} is disabled. No request was sent."
+            )
         raise AuthenticationError(
             f"Microsoft 365 {operation} is not enabled. No request was sent."
         )
+
+    def _create_mail_draft(self, to: str, subject: str, body: str) -> dict[str, Any]:
+        recipient = to.strip()
+        if "@" not in recipient or len(recipient) < 3:
+            raise InvalidRequest("draft recipient is not usable")
+        cleaned_subject = " ".join(subject.split())
+        cleaned_body = body.strip()
+        if not cleaned_subject or not cleaned_body:
+            raise InvalidRequest("draft subject and body are required")
+        if self.oauth is None or self.oauth.bundle is None:
+            raise AuthenticationError("Microsoft 365 is not connected. No request was sent.")
+        before = self.oauth.graph_calls
+        try:
+            payload = self.oauth.graph_post(
+                "/me/messages",
+                {
+                    "subject": cleaned_subject[:200],
+                    "body": {"contentType": "Text", "content": cleaned_body[:8000]},
+                    "toRecipients": [{"emailAddress": {"address": recipient[:200]}}],
+                },
+                required_scope="Mail.ReadWrite",
+            )
+        finally:
+            self.network_calls += self.oauth.graph_calls - before
+        draft_id = str(payload.get("id") or "")
+        if not draft_id:
+            raise InvalidRequest("Microsoft Graph did not return a draft id.")
+        return {
+            "status": "ok",
+            "detail": "Unsent draft created. Mail was not sent.",
+            "items": [_item(draft_id, cleaned_subject, recipient[:200], str(payload.get("webLink") or ""))],
+        }
 
     def _search_mail(self, query: str) -> dict[str, Any]:
         cleaned = " ".join(query.replace("\\", " ").replace('"', " ").split())

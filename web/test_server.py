@@ -1196,6 +1196,45 @@ class ConsoleTests(unittest.TestCase):
                 os.environ["REPAIR_DEVICE_STATE"] = previous
 
 
+    def test_director_schedule_is_configured_and_run_by_an_operator(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            previous = os.environ.get("DIRECTOR_SCHEDULE_FILE")
+            os.environ["DIRECTOR_SCHEDULE_FILE"] = str(Path(tmp) / "director-schedule.json")
+            try:
+                base = self.web(None)
+                status, body = self.request(base, "GET", "/api/ops/director/schedule")
+                self.assertEqual(status, 200)
+                payload = json.loads(body.decode("utf-8"))
+                self.assertFalse(payload["schedule"]["enabled"])
+                configured, configured_body = self.request(
+                    base,
+                    "POST",
+                    "/api/ops/director/schedule",
+                    {"enabled": True, "interval_seconds": 300},
+                )
+                self.assertEqual(configured, 200)
+                schedule = json.loads(configured_body.decode("utf-8"))["schedule"]
+                self.assertTrue(schedule["enabled"])
+                self.assertEqual(schedule["interval_seconds"], 300)
+                ran, ran_body = self.request(base, "POST", "/api/ops/director/schedule/run", {})
+                self.assertEqual(ran, 200)
+                result = json.loads(ran_body.decode("utf-8"))
+                self.assertIn("report", result)
+                self.assertEqual(
+                    result["schedule"]["last_outcome"],
+                    result["report"]["overall"].lower().replace(" ", "_"),
+                )
+                self.session_cookie = ""
+                self.csrf_token = ""
+                denied, _ = self.request(base, "POST", "/api/ops/director/schedule", {"enabled": False})
+                self.assertIn(denied, {401, 403})
+            finally:
+                if previous is None:
+                    os.environ.pop("DIRECTOR_SCHEDULE_FILE", None)
+                else:
+                    os.environ["DIRECTOR_SCHEDULE_FILE"] = previous
+
+
 class HistoryDirectoryTests(unittest.TestCase):
     def test_history_stays_off_a_normal_workspace_disk(self) -> None:
         previous = os.environ.pop("AGENT_HISTORY_DIR", None)

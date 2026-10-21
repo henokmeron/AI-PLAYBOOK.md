@@ -44,20 +44,22 @@ class WorkspaceTests(unittest.TestCase):
         catalog, client = platform_catalog()
         record = catalog.connection("acme", "microsoft365")
         record.connected = True
-        record.granted_scopes = frozenset({"teams:write"})
+        record.granted_scopes = frozenset({"mail:write", "mail:read"})
         ctx = TenantContext.create("acme", "worker@example.com", [])
         desk = AgentDesk(catalog, ctx)
         names = [tool.name for tool in tools_for(catalog, ctx)]
-        self.assertIn("m365_send_teams_message", names)
+        self.assertIn("m365_create_mail_draft", names)
         self.assertIn("m365_search_mail", names)
+        self.assertNotIn("m365_send_mail", names)
+        self.assertNotIn("m365_send_teams_message", names)
         model = ScriptedModel([json.dumps({
             "action": "tool",
-            "tool": "m365_send_teams_message",
-            "arguments": {"conversation_id": "chat-1", "body": "Ship the note."},
+            "tool": "m365_create_mail_draft",
+            "arguments": {"to": "a@example.com", "subject": "Note", "body": "Ship the note."},
         })])
-        view = desk.start("Send the note.", model)
+        view = desk.start("Draft the note.", model)
         self.assertEqual(view["state"], "awaiting_approval")
-        self.assertEqual(view["pending_approval"]["tool"], "m365_send_teams_message")
+        self.assertEqual(view["pending_approval"]["tool"], "m365_create_mail_draft")
         self.assertEqual(client.network_calls, 0)
         decided = desk.decide(
             view["task_id"], False, "reviewer@example.com", view["pending_approval"]["call_id"],
@@ -69,22 +71,22 @@ class WorkspaceTests(unittest.TestCase):
         catalog, client = platform_catalog()
         record = catalog.connection("acme", "microsoft365")
         record.connected = True
-        record.granted_scopes = frozenset({"teams:write"})
+        record.granted_scopes = frozenset({"mail:write", "mail:read"})
         ctx = TenantContext.create("acme", "worker@example.com", [])
         desk = AgentDesk(catalog, ctx)
         model = ScriptedModel([
             json.dumps({
                 "action": "tool",
-                "tool": "m365_send_teams_message",
-                "arguments": {"conversation_id": "chat-1", "body": "Ship the note."},
+                "tool": "m365_create_mail_draft",
+                "arguments": {"to": "a@example.com", "subject": "Note", "body": "Ship the note."},
             }),
             json.dumps({
                 "action": "final",
-                "answer": "The message was not sent.",
+                "answer": "The draft was not created.",
             }),
         ])
         view = desk.start(
-            "Send the note.", model, started_by="worker@example.com",
+            "Draft the note.", model, started_by="worker@example.com",
         )
         self.assertEqual(view["state"], "awaiting_approval")
         call_id = view["pending_approval"]["call_id"]

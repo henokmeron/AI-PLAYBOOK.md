@@ -44,6 +44,7 @@ SCOPES = (
     "offline_access",
     "User.Read",
     "Mail.Read",
+    "Mail.ReadWrite",
     "Chat.Read",
     "Files.Read",
     "Sites.Read.All",
@@ -52,9 +53,9 @@ SCOPES = (
 GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
 ARM_ROOT = "https://management.azure.com"
 PERMISSIONS_NOTE = (
-    "Sign-in identifies the account and requests read-only Graph access for mail, "
-    "Teams chats, OneDrive, and SharePoint. Azure inventory needs a separate ARM consent. "
-    "It does not request permission to send mail or change Azure resources."
+    "Sign-in identifies the account and requests Graph access for mail reads, "
+    "unsent mail drafts, Teams chats, OneDrive, and SharePoint. Azure inventory needs "
+    "a separate ARM consent. It does not request Mail.Send or permission to change Azure resources."
 )
 # The browser may choose one of these. It cannot supply an arbitrary directory.
 SIGN_IN_ACCOUNTS = (
@@ -402,6 +403,53 @@ class MicrosoftOAuth:
         if status >= 500:
             raise TransientError("Microsoft Graph did not return the data.")
         raise AuthenticationError("Microsoft Graph did not return the data.")
+
+    def graph_post(
+        self,
+        path: str,
+        body: dict[str, Any],
+        *,
+        required_scope: str,
+    ) -> dict[str, Any]:
+        """Create a Graph object. Never used for Mail.Send or Azure writes."""
+        if required_scope == "Mail.Send":
+            raise PermissionDenied("Mail.Send is not available. No Microsoft Graph request was sent.")
+        token = self.access_token()
+        if not self.has_graph_scope(required_scope):
+            raise PermissionDenied(
+                f"{required_scope} is not granted. No Microsoft Graph request was sent."
+            )
+        payload_bytes = json.dumps(body).encode("utf-8")
+        self.graph_calls += 1
+        status, payload = self._transport(
+            "POST",
+            GRAPH_ROOT + path,
+            {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            payload_bytes,
+        )
+        if status in {200, 201} and isinstance(payload, dict):
+            return payload
+        if status == 401:
+            raise AuthenticationError(
+                "Microsoft rejected the saved sign-in. Connect the account again. No Graph data was returned."
+            )
+        if status == 403:
+            raise PermissionDenied(
+                f"Microsoft refused this write. {required_scope} is missing. No Graph data was returned."
+            )
+        if status == 404:
+            raise NotFound("Microsoft Graph did not find that item.")
+        if status == 429:
+            raise RateLimited("Microsoft Graph is throttling this request.")
+        if status == 400:
+            raise InvalidRequest("Microsoft Graph rejected the draft.")
+        if status >= 500:
+            raise TransientError("Microsoft Graph did not accept the draft.")
+        raise AuthenticationError("Microsoft Graph did not accept the draft.")
 
     def arm_get(self, path: str, query: dict[str, str] | None = None) -> dict[str, Any]:
         """Read-only Azure Resource Manager call. Never mutates Azure resources."""

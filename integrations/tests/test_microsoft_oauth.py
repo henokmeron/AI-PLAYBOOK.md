@@ -35,7 +35,7 @@ class Transport:
                 "refresh_token": REFRESH,
                 "expires_in": 3600,
                 "scope": (
-                    "Mail.Read User.Read Chat.Read Files.Read Sites.Read.All "
+                    "Mail.Read Mail.ReadWrite User.Read Chat.Read Files.Read Sites.Read.All "
                     "https://management.azure.com/user_impersonation"
                 ),
             }
@@ -48,6 +48,12 @@ class Transport:
                 "from": {"emailAddress": {"address": "supplier@example.com"}},
                 "bodyPreview": "Amount due 10",
                 "webLink": "https://outlook.office.com/mail/id",
+            }
+        if method == "POST" and url.rstrip("/").endswith("/me/messages"):
+            return 201, {
+                "id": "AAMkDraft1",
+                "subject": "Invoice",
+                "webLink": "https://outlook.office.com/mail/draft",
             }
         if "/me/messages" in url:
             return 200, {"value": [{
@@ -94,6 +100,7 @@ class OAuthTests(unittest.TestCase):
         self.assertTrue(url.startswith("https://login.microsoftonline.com/common/oauth2/v2.0/authorize?"))
         self.assertIn("code_challenge_method=S256", url)
         self.assertIn("Mail.Read", url)
+        self.assertIn("Mail.ReadWrite", url)
         self.assertNotIn("client_secret", url)
         self.assertNotIn("Mail.Send", url)
         self.assertIn("prompt=select_account", url)
@@ -150,7 +157,7 @@ class OAuthTests(unittest.TestCase):
             catalog.execute(ctx, "microsoft365", "send_mail", {
                 "to": "a@example.com", "subject": "Hi", "body": "Send this now",
             })
-        with self.assertRaises(AuthenticationError) as caught:
+        with self.assertRaises(PermissionDenied) as caught:
             catalog.execute(ctx, "microsoft365", "send_mail", {
                 "to": "a@example.com", "subject": "Hi", "body": "Send this now",
             }, authorised=True)
@@ -449,6 +456,38 @@ class OAuthTests(unittest.TestCase):
         self.assertGreaterEqual(client.network_calls, 5)
         status = microsoft_configuration({})
         self.assertEqual(status["status"], "NOT CONFIGURED")
+
+    def test_approved_draft_is_created_and_mail_is_not_sent(self) -> None:
+        transport = Transport()
+        oauth = MicrosoftOAuth(client_id=CLIENT, transport=transport, clock=lambda: 1_000.0)
+        url = oauth.authorization_url()
+        self.assertIn("Mail.ReadWrite", url)
+        self.assertNotIn("Mail.Send", url)
+        state = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["state"][0]
+        oauth.complete("code-1", state)
+        catalog, ctx = _desk_parts(oauth)
+        draft = catalog.execute(
+            ctx,
+            "microsoft365",
+            "create_mail_draft",
+            {"to": "a@example.com", "subject": "Invoice", "body": "Draft only"},
+            authorised=True,
+        )
+        self.assertEqual(draft["status"], "ok")
+        self.assertIn("not sent", draft["detail"].casefold())
+        self.assertEqual(draft["items"][0]["id"], "AAMkDraft1")
+        posts = [call for call in transport.calls if call[0] == "POST" and call[1].endswith("/me/messages")]
+        self.assertEqual(len(posts), 1)
+        before = len(transport.calls)
+        with self.assertRaises(PermissionDenied):
+            catalog.execute(
+                ctx,
+                "microsoft365",
+                "send_mail",
+                {"to": "a@example.com", "subject": "Invoice", "body": "Send"},
+                authorised=True,
+            )
+        self.assertEqual(len(transport.calls), before)
 
 
 def limited_calls(transport: Transport) -> list:

@@ -106,6 +106,8 @@ def tools_for(
     for operation in microsoft.operations:
         if operation.name == "send_mail" or operation.effect not in {Effect.READ, Effect.DRAFT}:
             continue
+        if operation.evidence == "unavailable":
+            continue
         tools.append(_tool(
             catalog, ctx, microsoft.connector_id, operation.name, operation.tool_name,
             operation.summary, operation.input_schema, operation.output_schema,
@@ -114,6 +116,8 @@ def tools_for(
         registered.add(operation.tool_name)
     for spec, operation in catalog.visible_operations(ctx):
         if operation.tool_name in registered or operation.tool_name == "m365_send_mail":
+            continue
+        if operation.effect not in {Effect.READ, Effect.DRAFT}:
             continue
         tools.append(_tool(
             catalog, ctx, spec.connector_id, operation.name, operation.tool_name,

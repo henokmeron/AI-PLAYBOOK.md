@@ -97,7 +97,7 @@ class CatalogTests(unittest.TestCase):
         record.connected = True
         record.granted_scopes = frozenset({"mail:write"})
         params = {"to": "a@example.com", "subject": "Invoice", "body": "Please review."}
-        with self.assertRaises(AuthenticationError) as caught:
+        with self.assertRaises(PermissionDenied) as caught:
             catalog.execute(_ctx(), "microsoft365", "send_mail", params, authorised=True)
         self.assertIn("not enabled", str(caught.exception))
         self.assertEqual(client.network_calls, 0)

@@ -680,6 +680,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/ops/director":
             self.handle_ops_director()
             return
+        if path == "/api/ops/director/schedule":
+            self.handle_ops_director_schedule_get()
+            return
         if path == "/api/repair/procedures":
             self.handle_repair_procedures()
             return
@@ -770,6 +773,10 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_ops_incident_note()
         elif path == "/api/ops/refresh":
             self.handle_ops_refresh()
+        elif path == "/api/ops/director/schedule":
+            self.handle_ops_director_schedule_configure()
+        elif path == "/api/ops/director/schedule/run":
+            self.handle_ops_director_schedule_run()
         elif path == "/api/repair/plan":
             self.handle_repair_plan()
         elif path == "/api/repair/execute":
@@ -1845,6 +1852,73 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:  # noqa: BLE001 — still return a report if the desk snapshot fails
             report = build_report(ops)
         self.send_json(200, report)
+
+    def handle_ops_director_schedule_get(self) -> None:
+        if self.require_operator(Permission.OPS_VIEW, mutating=False) is None:
+            return
+        if self.require_key() is None:
+            return
+        from ops_centre.director_schedule import DirectorSchedule, DirectorScheduleError
+
+        try:
+            self.send_json(200, {"schedule": DirectorSchedule().status()})
+        except DirectorScheduleError as exc:
+            self.send_error_json(503, str(exc))
+
+    def handle_ops_director_schedule_configure(self) -> None:
+        session = self.require_operator(Permission.OPS_ALERT_WRITE, mutating=True)
+        if session is None:
+            return
+        if self.require_key() is None:
+            return
+        payload = self.read_json_object(max_bytes=1024)
+        if payload is None:
+            return
+        enabled = payload.get("enabled")
+        if not isinstance(enabled, bool):
+            self.send_error_json(400, "enabled must be a boolean")
+            return
+        interval = payload.get("interval_seconds")
+        if interval is not None and not isinstance(interval, int):
+            self.send_error_json(400, "interval_seconds must be an integer")
+            return
+        from ops_centre.director_schedule import DirectorSchedule, DirectorScheduleError
+
+        try:
+            status = DirectorSchedule().configure(enabled=enabled, interval_seconds=interval)
+        except DirectorScheduleError as exc:
+            self.send_error_json(400, str(exc))
+            return
+        self._ops().record_event(
+            event_type="director.schedule.configure",
+            component="director",
+            outcome="configured",
+            severity="info",
+            actor=session.username,
+            summary=f"Director schedule enabled={enabled}",
+            detail={"enabled": enabled, "interval_seconds": status.get("interval_seconds")},
+        )
+        self.send_json(200, {"schedule": status})
+
+    def handle_ops_director_schedule_run(self) -> None:
+        session = self.require_operator(Permission.OPS_ALERT_WRITE, mutating=True)
+        if session is None:
+            return
+        if self.require_key() is None:
+            return
+        from ops_centre.director_schedule import DirectorSchedule, DirectorScheduleError
+
+        ops = self._ops()
+        try:
+            schedule = DirectorSchedule()
+            report = schedule.run_due(ops, force=True)
+        except DirectorScheduleError as exc:
+            self.send_error_json(503, str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001 — surface the durable failure to the operator
+            self.send_error_json(500, f"Director schedule failed: {type(exc).__name__}")
+            return
+        self.send_json(200, {"schedule": schedule.status(), "report": report})
 
     def handle_ops_refresh(self) -> None:
         session = self.require_operator(Permission.OPS_VIEW, mutating=True)

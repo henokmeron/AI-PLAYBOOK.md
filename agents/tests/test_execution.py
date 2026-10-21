@@ -139,17 +139,17 @@ class ApprovalAndScopeTests(unittest.TestCase):
         catalog, client = platform_catalog()
         record = catalog.connection("acme", "microsoft365")
         record.connected = True
-        record.granted_scopes = frozenset({"teams:write"})
+        record.granted_scopes = frozenset({"mail:write", "mail:read"})
         ctx = TenantContext.create("acme", "worker@example.com", [])
         desk = AgentDesk(catalog, ctx)
         model = ScriptedModel([json.dumps({
             "action": "tool",
-            "tool": "m365_send_teams_message",
-            "arguments": {"conversation_id": "chat-1", "body": "Ship the note."},
+            "tool": "m365_create_mail_draft",
+            "arguments": {"to": "a@example.com", "subject": "Note", "body": "Ship the note."},
         })])
-        view = desk.start("Send the note.", model)
+        view = desk.start("Draft the note.", model)
         self.assertEqual(view["execution"], "awaiting_approval")
-        self.assertEqual(view["pending_approval"]["tool"], "m365_send_teams_message")
+        self.assertEqual(view["pending_approval"]["tool"], "m365_create_mail_draft")
         with self.assertRaises(ValueError):
             desk.decide(view["task_id"], True, "reviewer@example.com", "not-the-call")
         self.assertEqual(client.network_calls, 0)
@@ -157,9 +157,9 @@ class ApprovalAndScopeTests(unittest.TestCase):
             view["task_id"], False, "reviewer@example.com", view["pending_approval"]["call_id"],
         )["execution"] != "awaiting_approval", True)
         self.assertEqual(client.network_calls, 0)
-        loose = next(tool for tool in tools_for(catalog, ctx) if tool.name == "m365_send_teams_message")
+        loose = next(tool for tool in tools_for(catalog, ctx) if tool.name == "m365_create_mail_draft")
         with self.assertRaises(ToolError) as caught:
-            loose.handler({"conversation_id": "chat-1", "body": "Ship the note."})
+            loose.handler({"to": "a@example.com", "subject": "Note", "body": "Ship the note."})
         self.assertIn("No request was sent", str(caught.exception))
         self.assertEqual(client.network_calls, 0)
 

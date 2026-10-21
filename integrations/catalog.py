@@ -115,6 +115,8 @@ class Catalog:
         for spec in self._specs.values():
             granted = self.granted_scopes(ctx, spec.connector_id)
             for operation in spec.operations:
+                if operation.evidence == "unavailable":
+                    continue
                 if operation.scope in granted:
                     visible.append((spec, operation))
         return visible
@@ -204,5 +206,5 @@ class Catalog:
                 f"{connector_id}.{op.name} requires approval of these exact arguments"
             )
         if op.evidence == "unavailable":
-            raise AuthenticationError(f"{connector_id}.{op.name} is not enabled. No request was sent.")
+            raise PermissionDenied(f"{connector_id}.{op.name} is not enabled. No request was sent.")
         return self._performer(connector_id, op.name, params)
