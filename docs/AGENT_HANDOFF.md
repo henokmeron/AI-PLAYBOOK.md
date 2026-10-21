@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-21** (Blackwell pin `7037ae9eff56d7694ca79c335f90e445bdf1fdc1` release SHA-256 `841a231a8e01ebe83b4fd6a79e315b0a54f76c8581b01fbc936d5e5074b64d13`. Live Blackwell **NOT TESTED**. Volume copy **BLOCKED**. Entra **NOT CONFIGURED**. Go-live **NO-GO**.)
+Last updated: **2026-10-21** (`main` tip `7615fd55e70789ea5387f92b3578c6be8b875233` release SHA-256 `205933b31d77fde5c6c8397f644afc38ec95f3eb88960971ecf1493ac298a52b`; Blackwell pin commit `7037ae9…` recover digest `841a231a…`. Live Blackwell **NOT TESTED**. Volume copy **BLOCKED**. Go-live **NO-GO**.)
 
 ## Only this repository
 
