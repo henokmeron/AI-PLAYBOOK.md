@@ -231,6 +231,27 @@ def _repair_jobs(verified_at: str | None) -> dict[str, Any]:
         )
 
 
+def _stored_operator(item: Any) -> tuple[str, str, bool] | None:
+    """Match a row the auth store can load. The password hash is not returned."""
+    if not isinstance(item, dict):
+        return None
+    try:
+        operator_id = str(item["operator_id"]).strip()
+        username = str(item["username"]).strip()
+        password_hash = str(item["password_hash"])
+        role = str(item["role"])
+        disabled = bool(item.get("disabled", False))
+    except (KeyError, TypeError, ValueError):
+        return None
+    from web.auth.passwords import scrypt_hash_well_formed
+
+    if not operator_id or not username or role not in {"admin", "operator", "viewer"}:
+        return None
+    if not scrypt_hash_well_formed(password_hash):
+        return None
+    return operator_id, role, disabled
+
+
 def _operator_auth(verified_at: str | None) -> dict[str, Any]:
     """Report whether named operators are provisioned. Never copy password hashes."""
     try:
@@ -244,6 +265,14 @@ def _operator_auth(verified_at: str | None) -> dict[str, Any]:
             checked_at=verified_at,
         )
     path = default_auth_dir() / "operators.json"
+    if path.is_symlink():
+        return _component(
+            "operator_auth",
+            "DEGRADED",
+            evidence=["operators.json is a symlink"],
+            detail="A linked operator file is not a provisioned account store. The link target was not read.",
+            checked_at=verified_at,
+        )
     if not path.is_file():
         return _component(
             "operator_auth",
@@ -271,14 +300,16 @@ def _operator_auth(verified_at: str | None) -> dict[str, Any]:
             detail="The operator file is not usable. Privileged console APIs fail closed.",
             checked_at=verified_at,
         )
-    active = 0
-    admins = 0
+    loaded: dict[str, tuple[str, bool]] = {}
     for item in rows:
-        if not isinstance(item, dict) or item.get("disabled"):
+        parsed = _stored_operator(item)
+        if parsed is None:
             continue
-        active += 1
-        if item.get("role") == "admin":
-            admins += 1
+        operator_id, role, disabled = parsed
+        loaded[operator_id] = (role, disabled)
+    active_rows = [(role, disabled) for role, disabled in loaded.values() if not disabled]
+    active = len(active_rows)
+    admins = sum(1 for role, _disabled in active_rows if role == "admin")
     if admins < 1:
         return _component(
             "operator_auth",

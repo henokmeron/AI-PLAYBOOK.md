@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from ops_centre.director import FORBIDDEN_CAPABILITIES, READ_ONLY_TOOLS, build_report
 from ops_centre.service import OpsCentre, OpsCentreConfig
+from web.auth.passwords import hash_password
 
 
 def _health(services: list[dict]) -> dict:
@@ -115,7 +116,7 @@ class DirectorReportTests(unittest.TestCase):
             centre = self._centre(tmp)
             auth_dir = Path(tmp) / "auth"
             auth_dir.mkdir()
-            secret_hash = "scrypt$16384$8$1$c2FsdA$ZGlnZXN0"
+            secret_hash = hash_password("not-the-reported-secret-value")
             (auth_dir / "operators.json").write_text(
                 json.dumps({"operators": [{
                     "operator_id": "abc",
@@ -152,6 +153,71 @@ class DirectorReportTests(unittest.TestCase):
             self.assertEqual(auth["state"], "HEALTHY")
             self.assertNotIn(secret_hash, json.dumps(report))
             self.assertNotIn("ada", json.dumps(auth))
+
+    def test_unusable_operator_file_is_not_healthy(self) -> None:
+        secret = "plaintext-must-not-print"
+        with tempfile.TemporaryDirectory() as tmp:
+            centre = self._centre(tmp)
+            auth_dir = Path(tmp) / "auth"
+            auth_dir.mkdir()
+            path = auth_dir / "operators.json"
+            snapshot = _health([
+                {"name": "qwen", "state": "healthy", "verified_at": "2026-10-18T22:00:00Z", "http_status": 200, "detail": "ok"},
+            ])
+
+            def report_for(rows: list[dict]) -> dict:
+                path.write_text(json.dumps({"operators": rows}), encoding="utf-8")
+                with patch.object(centre.health, "snapshot", return_value=snapshot):
+                    with patch.dict(os.environ, {"OPERATOR_AUTH_DIR": str(auth_dir)}, clear=False):
+                        return build_report(centre)
+
+            missing = report_for([{"role": "admin", "disabled": False, "password_hash": secret}])
+            auth = next(c for c in missing["components"] if c["name"] == "operator_auth")
+            self.assertEqual(auth["state"], "DEGRADED")
+            self.assertNotIn(secret, json.dumps(missing))
+
+            usable = {
+                "operator_id": "abc",
+                "username": "ada",
+                "password_hash": hash_password("another-unprinted-password"),
+                "role": "admin",
+                "disabled": False,
+            }
+            replaced = report_for([
+                usable,
+                {**usable, "role": "viewer", "disabled": True},
+            ])
+            auth = next(c for c in replaced["components"] if c["name"] == "operator_auth")
+            self.assertEqual(auth["state"], "DEGRADED")
+            self.assertNotIn(usable["password_hash"], json.dumps(replaced))
+
+            plain = report_for([{
+                "operator_id": "abc",
+                "username": "ada",
+                "password_hash": secret,
+                "role": "admin",
+                "disabled": False,
+            }])
+            auth = next(c for c in plain["components"] if c["name"] == "operator_auth")
+            self.assertEqual(auth["state"], "DEGRADED")
+            self.assertNotIn(secret, json.dumps(plain))
+
+            real = Path.is_symlink
+
+            def fake_symlink(self: Path) -> bool:
+                if self == path:
+                    return True
+                return real(self)
+
+            path.write_text(json.dumps({"operators": [usable]}), encoding="utf-8")
+            with patch.object(Path, "is_symlink", fake_symlink):
+                with patch.object(centre.health, "snapshot", return_value=snapshot):
+                    with patch.dict(os.environ, {"OPERATOR_AUTH_DIR": str(auth_dir)}, clear=False):
+                        linked = build_report(centre)
+            auth = next(c for c in linked["components"] if c["name"] == "operator_auth")
+            self.assertEqual(auth["state"], "DEGRADED")
+            self.assertIn("symlink", " ".join(auth["evidence"]))
+            self.assertNotIn(usable["password_hash"], json.dumps(linked))
 
 
 if __name__ == "__main__":

@@ -55,23 +55,41 @@ def hash_password(password: str) -> str:
 DUMMY_PASSWORD_HASH = hash_password("not-a-real-operator-password")
 
 
+def scrypt_hash_well_formed(encoded: str) -> bool:
+    """True when the stored string is a bounded scrypt hash. The secret is not returned."""
+    parts = _scrypt_parts(encoded)
+    if parts is None:
+        return False
+    _n, _r, _p, salt, expected = parts
+    return bool(salt) and bool(expected)
+
+
+def _scrypt_parts(encoded: str) -> tuple[int, int, int, bytes, bytes] | None:
+    if not isinstance(encoded, str):
+        return None
+    try:
+        scheme, n_s, r_s, p_s, salt_b64, digest_b64 = encoded.split("$")
+        if scheme != "scrypt":
+            return None
+        n, r, p = int(n_s), int(r_s), int(p_s)
+        salt = base64.urlsafe_b64decode(salt_b64.encode("ascii"))
+        expected = base64.urlsafe_b64decode(digest_b64.encode("ascii"))
+    except (ValueError, TypeError):
+        return None
+    if n < 2**12 or n > 2**20 or r < 1 or r > 16 or p < 1 or p > 4:
+        return None
+    return n, r, p, salt, expected
+
+
 def verify_password(password: str, encoded: str) -> bool:
     if not isinstance(password, str) or not isinstance(encoded, str):
         return False
     if len(password) > _MAX_PASSWORD_CHARS:
         return False
-    try:
-        scheme, n_s, r_s, p_s, salt_b64, digest_b64 = encoded.split("$")
-        if scheme != "scrypt":
-            return False
-        n, r, p = int(n_s), int(r_s), int(p_s)
-        salt = base64.urlsafe_b64decode(salt_b64.encode("ascii"))
-        expected = base64.urlsafe_b64decode(digest_b64.encode("ascii"))
-    except (ValueError, TypeError):
+    parts = _scrypt_parts(encoded)
+    if parts is None:
         return False
-    # Bound work factor so a corrupted file cannot force huge CPU use.
-    if n < 2**12 or n > 2**20 or r < 1 or r > 16 or p < 1 or p > 4:
-        return False
+    n, r, p, salt, expected = parts
     try:
         actual = hashlib.scrypt(
             password.encode("utf-8"),
