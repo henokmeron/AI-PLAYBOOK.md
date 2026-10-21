@@ -57,6 +57,7 @@ class ReleasePackageTests(unittest.TestCase):
         for path in (
             r"C:\\Windows\\system.ini",
             r"C:relative\\secret.txt",
+            r"file.txt:alternate-stream",
             r"folder\\..\\secret.txt",
             r"\\\\server\\share\\secret.txt",
         ):
