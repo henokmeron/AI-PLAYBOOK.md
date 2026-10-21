@@ -117,7 +117,9 @@ candidates:
         supports CUDA 13 (~580+). Driver 570 / CUDA 12.8 hosts fail at engine start
         with cudaHostGetDevicePointer / insufficient driver. Redeploy on a newer
         driver host with the same Global Volume; do not expect the cu130 archives
-        alone to fix a 570 host.
+        alone to fix a 570 host. The saved A100 archive is torch 2.13.0+cu126 and
+        does not include compute capability 12.0. RTX PRO 6000 Blackwell uses
+        runtime profile qwen-vllm-blackwell-cu130 and must not replace this archive.
 
   - id: mistral-large-4
     family: mistral-large-4
@@ -169,7 +171,25 @@ runtime_profiles:
     notes: >
       Archive present on Global Volume. Restore with ops/restore-qwen-runtime.sh when
       /tmp/vllm-qwen-env is absent. Needs LD_LIBRARY_PATH for nvidia cu13 libs at serve time.
-      Do not replace Gemma env.
+      Do not replace Gemma env. This archive does not support compute capability 12.0.
+
+  qwen-vllm-blackwell-cu130:
+    description: >
+      Separate Qwen runtime for compute capability 12.0 (RTX PRO 6000 Blackwell).
+      Never installs into the A100 or Gemma environments.
+    python_env: /tmp/vllm-qwen-blackwell-env
+    install_hint: >
+      bash ops/install-qwen-blackwell-env.sh
+    torch: "2.13.0+cu130"
+    torch_backend: cu130
+    minimum_compute_capability: "12.0"
+    minimum_driver_major: 580
+    serve: bash ops/start-qwen-blackwell.sh
+    notes: >
+      Official vLLM GPU install selects this with --torch-backend=cu130, then
+      vllm download-kernels. The saved /workspace/runtime-setup/qwen-vllm archive
+      stays the A100 runtime. Live Blackwell inference is not recorded until
+      start-qwen-blackwell.sh --serve and --infer succeed on that GPU.
 
 selection_policy:
   prefer:
