@@ -17,7 +17,14 @@ from integrations.endpoint import (
     normalise_report,
     permissions_are_private,
 )
-from integrations.endpoint_worker import collect_registered_checks, console_origin, summarise_live_check
+from integrations.endpoint_worker import (
+    collect_registered_checks,
+    console_origin,
+    read_secret_file,
+    summarise_live_check,
+    write_secret_file,
+)
+from integrations.state_guard import assert_private
 from integrations.errors import AuthenticationError, InvalidRequest, RateLimited
 from integrations.tenancy import TenantContext
 
@@ -305,6 +312,23 @@ class EndpointTests(unittest.TestCase):
                 collected_at_unix=1_000,
                 checks=[self._check(collected_at_unix=1_000 + 301)],
             ))
+
+
+class WorkerSecretFileTests(unittest.TestCase):
+    def test_secret_file_is_private_on_this_windows_pc(self) -> None:
+        if os.name != "nt":
+            self.skipTest("Windows ACL check was not executed on this operating system")
+        secret = "device-secret-value-which-is-long-enough"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "device.secret"
+            write_secret_file(path, secret)
+            assert_private(path)
+            self.assertEqual(read_secret_file(path), secret)
+            open_path = Path(tmp) / "open.secret"
+            open_path.write_text(secret, encoding="utf-8")
+            with self.assertRaises(InvalidRequest) as refused:
+                read_secret_file(open_path)
+            self.assertIn("not private", str(refused.exception))
 
 
 if __name__ == "__main__":

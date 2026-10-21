@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 
 from integrations.endpoint import _CHECK_PROCEDURES, assert_safe_state_path, collect_local_diagnostics
 from integrations.errors import InvalidRequest
+from integrations.state_guard import StatePermissionError, assert_private, restrict_private
 
 _DIAGNOSTIC_KEYS = (
     "os_family", "os_version", "disk_free_bytes", "disk_total_bytes",
@@ -83,15 +84,22 @@ def write_secret_file(path: Path, value: str) -> None:
     descriptor = os.open(safe, flags, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
         handle.write(value)
-    if os.name == "posix":
-        os.chmod(safe, 0o600)
+    try:
+        restrict_private(safe)
+    except StatePermissionError as exc:
+        try:
+            safe.unlink()
+        except OSError:
+            pass
+        raise InvalidRequest("device secret file could not be made private") from exc
 
 
 def read_secret_file(path: Path) -> str:
     safe = assert_safe_state_path(path)
-    info = safe.lstat()
-    if os.name == "posix" and info.st_mode & 0o077:
-        raise InvalidRequest("device secret file permissions are too open")
+    try:
+        assert_private(safe)
+    except StatePermissionError as exc:
+        raise InvalidRequest("device secret file is not private") from exc
     value = safe.read_text(encoding="utf-8").strip()
     if len(value) < 32:
         raise InvalidRequest("device secret file is not usable")
