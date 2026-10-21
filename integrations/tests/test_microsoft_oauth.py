@@ -14,7 +14,13 @@ from agents.model import ScriptedModel
 from agents.workspace import AgentDesk, tools_for
 from integrations.errors import ApprovalRequired, AuthenticationError, InvalidRequest, PermissionDenied, TransientError
 from integrations.microsoft365 import microsoft_configuration, platform_catalog
-from integrations.microsoft_oauth import MicrosoftOAuth, _challenge, validate_redirect
+from integrations.microsoft_oauth import (
+    MicrosoftOAuth,
+    _challenge,
+    load_client_id,
+    validate_redirect,
+)
+from integrations.state_guard import restrict_private
 from integrations.tenancy import TenantContext
 
 CLIENT = str(uuid.UUID("11111111-2222-3333-4444-555555555555"))
@@ -94,15 +100,41 @@ class OAuthTests(unittest.TestCase):
             oauth.authorization_url()
         self.assertNotIn("access_token", json.dumps(oauth.public_status()))
 
+    def test_client_id_file_is_private_and_not_printed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            path = directory / "microsoft-client-id"
+            restrict_private(directory)
+            path.write_text(CLIENT + "\n", encoding="utf-8")
+            restrict_private(path)
+            loaded = load_client_id({
+                "MICROSOFT_CLIENT_ID": "",
+                "MICROSOFT_CLIENT_ID_FILE": str(path),
+            })
+            self.assertEqual(loaded, CLIENT)
+            oauth = MicrosoftOAuth.from_env({
+                "MICROSOFT_CLIENT_ID": "",
+                "MICROSOFT_CLIENT_ID_FILE": str(path),
+                "MICROSOFT_TOKEN_FILE": str(directory / "token.json"),
+            })
+            self.assertTrue(oauth.configured())
+            self.assertNotIn(CLIENT, json.dumps(oauth.public_status()))
+            path.write_text("not-a-uuid\n", encoding="utf-8")
+            with self.assertRaises(InvalidRequest):
+                load_client_id({"MICROSOFT_CLIENT_ID_FILE": str(path)})
+
     def test_authorization_url_uses_pkce_and_no_client_secret(self) -> None:
         oauth = MicrosoftOAuth(client_id=CLIENT, transport=Transport())
         url = oauth.authorization_url()
         self.assertTrue(url.startswith("https://login.microsoftonline.com/common/oauth2/v2.0/authorize?"))
         self.assertIn("code_challenge_method=S256", url)
         self.assertIn("Mail.Read", url)
-        self.assertIn("Mail.ReadWrite", url)
+        self.assertNotIn("Mail.ReadWrite", url)
         self.assertNotIn("client_secret", url)
         self.assertNotIn("Mail.Send", url)
+        draft_url = oauth.authorization_url(access="draft")
+        self.assertIn("Mail.ReadWrite", draft_url)
+        self.assertNotIn("Mail.Send", draft_url)
         self.assertIn("prompt=select_account", url)
         work = oauth.authorization_url("work")
         personal = oauth.authorization_url("personal")
@@ -460,7 +492,7 @@ class OAuthTests(unittest.TestCase):
     def test_approved_draft_is_created_and_mail_is_not_sent(self) -> None:
         transport = Transport()
         oauth = MicrosoftOAuth(client_id=CLIENT, transport=transport, clock=lambda: 1_000.0)
-        url = oauth.authorization_url()
+        url = oauth.authorization_url(access="draft")
         self.assertIn("Mail.ReadWrite", url)
         self.assertNotIn("Mail.Send", url)
         state = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["state"][0]

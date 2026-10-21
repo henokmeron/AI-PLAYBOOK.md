@@ -1011,9 +1011,11 @@ class Handler(BaseHTTPRequestHandler):
     def handle_microsoft_start(self) -> None:
         if self.require_operator(Permission.CONNECTORS_MANAGE, mutating=False) is None:
             return
-        account = (parse_qs(urlsplit(self.path).query).get("account") or ["any"])[0]
+        query = parse_qs(urlsplit(self.path).query)
+        account = (query.get("account") or ["any"])[0]
+        access = (query.get("access") or ["read"])[0]
         try:
-            target = self.server.oauth.authorization_url(account)  # type: ignore[attr-defined]
+            target = self.server.oauth.authorization_url(account, access=access)  # type: ignore[attr-defined]
         except InvalidRequest as exc:
             self.send_error_json(400, exc.message)
             return

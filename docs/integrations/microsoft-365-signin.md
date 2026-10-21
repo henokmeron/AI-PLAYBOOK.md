@@ -1,8 +1,10 @@
 # Microsoft 365 read-only sign-in
 
-Checked again on 2026-10-21 from this workstation. No browser Microsoft
-session was available to the agent, `MICROSOFT_CLIENT_ID` was unset, and no
-Graph call was made. The connectors stay **NOT CONFIGURED**.
+Checked again on 2026-10-21 from this workstation. Cursor browser Local
+Storage showed visits to `portal.azure.com` and `console.runpod.io`, but this
+agent has no tool that can click or drive that browser session, and the
+Cookies database was locked. `MICROSOFT_CLIENT_ID` was unset. No Graph call
+was made. The connectors stay **NOT CONFIGURED**.
 
 This is the first real Microsoft connection. It is not connected. No Entra
 application was created, no application id is stored in this repository, no
@@ -55,7 +57,7 @@ In the application manifest, set:
 - `allowPublicClient` to `true`
 - `replyUrlsWithType` to one entry whose `url` is `http://127.0.0.1:18080/api/microsoft/callback` and whose `type` is `InstalledClient`
 
-Add delegated Microsoft Graph permissions:
+Add delegated Microsoft Graph permissions for the initial read-only sign-in:
 
 - `User.Read`
 - `Mail.Read`
@@ -63,19 +65,28 @@ Add delegated Microsoft Graph permissions:
 - `Files.Read`
 - `Sites.Read.All` (may require admin consent)
 
-For read-only Azure inventory, also add the Azure Service Management delegated
-permission `user_impersonation`. Do not add `Mail.Send`, `Mail.ReadWrite`,
+Add `Mail.ReadWrite` only when unsent drafts are required. The console requests
+that scope through `/api/microsoft/start?access=draft`, not on the default
+read-only sign-in. For read-only Azure inventory, also add the Azure Service
+Management delegated permission `user_impersonation`. Do not add `Mail.Send`,
 `Files.ReadWrite`, or Azure write roles. Do not paste the Application (client)
 ID into chat or into a file in this repository.
 
-Until `MICROSOFT_CLIENT_ID` is set and an account consents, the connectors stay
-**NOT CONFIGURED**. Offline contract tests use an in-memory transport and are
-not a live Microsoft connection.
+Until `MICROSOFT_CLIENT_ID` or a private `MICROSOFT_CLIENT_ID_FILE` is set and
+an account consents, the connectors stay **NOT CONFIGURED**. Offline contract
+tests use an in-memory transport and are not a live Microsoft connection.
 
-Copy the Application (client) ID and set it as `MICROSOFT_CLIENT_ID` in the
-console process environment when the restart below is approved. Leave
-`MICROSOFT_TENANT` as `common` unless the organisation requires one directory.
-Leave `MICROSOFT_TOKEN_FILE` at `/tmp/microsoft-365-token.json`.
+Copy the Application (client) ID into the console process as
+`MICROSOFT_CLIENT_ID`, or into a mode-0600 file pointed to by
+`MICROSOFT_CLIENT_ID_FILE` under `/tmp` (never under the repo or `/workspace`).
+Leave `MICROSOFT_TENANT` as `common` unless the organisation requires one
+directory. Leave `MICROSOFT_TOKEN_FILE` at `/tmp/microsoft-365-token.json`.
+
+Print the portal checklist without secrets:
+
+```bash
+python scripts/entra_app_manifest.py
+```
 
 ## Agent documents
 

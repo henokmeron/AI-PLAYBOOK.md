@@ -37,25 +37,28 @@ from .errors import (
 from .state_guard import StatePermissionError, assert_private, restrict_private
 
 AZURE_SCOPE = "https://management.azure.com/user_impersonation"
-SCOPES = (
+# Initial sign-in is read-only. Mail.ReadWrite is requested only for an unsent draft.
+READ_SCOPES = (
     "openid",
     "profile",
     "email",
     "offline_access",
     "User.Read",
     "Mail.Read",
-    "Mail.ReadWrite",
     "Chat.Read",
     "Files.Read",
     "Sites.Read.All",
     AZURE_SCOPE,
 )
+DRAFT_SCOPES = READ_SCOPES + ("Mail.ReadWrite",)
+# Kept for older imports and status rows. Prefer READ_SCOPES / DRAFT_SCOPES.
+SCOPES = READ_SCOPES
 GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
 ARM_ROOT = "https://management.azure.com"
 PERMISSIONS_NOTE = (
-    "Sign-in identifies the account and requests Graph access for mail reads, "
-    "unsent mail drafts, Teams chats, OneDrive, and SharePoint. Azure inventory needs "
-    "a separate ARM consent. It does not request Mail.Send or permission to change Azure resources."
+    "Sign-in identifies the account and requests read-only Graph access for mail, "
+    "Teams chats, OneDrive, SharePoint, and Azure inventory. Creating an unsent mail "
+    "draft needs a second consent for Mail.ReadWrite. Mail.Send and Azure writes stay off."
 )
 # The browser may choose one of these. It cannot supply an arbitrary directory.
 SIGN_IN_ACCOUNTS = (
@@ -140,10 +143,10 @@ def scope_names(scope: str) -> set[str]:
     return names
 
 
-def assert_safe_token_path(value: Path) -> Path:
-    """Tokens stay in a private file, never in git and never on the shared volume."""
+def assert_safe_config_path(value: Path, *, label: str) -> Path:
+    """Keep Microsoft config off the source tree and the shared volume."""
     if not value.is_absolute():
-        raise InvalidRequest("Microsoft token file must be an absolute path")
+        raise InvalidRequest(f"Microsoft {label} must be an absolute path")
     resolved = value.resolve()
     repo = Path(__file__).resolve().parents[1]
     forbidden = [repo]
@@ -151,8 +154,53 @@ def assert_safe_token_path(value: Path) -> Path:
         forbidden.append(Path("/workspace"))
     for root in forbidden:
         if resolved == root or root in resolved.parents:
-            raise InvalidRequest("Microsoft token file must stay off the source tree and the shared volume")
+            raise InvalidRequest(f"Microsoft {label} must stay off the source tree and the shared volume")
     return resolved
+
+
+def assert_safe_token_path(value: Path) -> Path:
+    """Tokens stay in a private file, never in git and never on the shared volume."""
+    return assert_safe_config_path(value, label="token file")
+
+
+def load_client_id(environ: dict[str, str] | None = None) -> str:
+    """Read the Entra application id from the environment or a private file.
+
+    The value is configuration, not a password. It is still kept out of Git and
+    out of the shared volume. The file contents are never logged here.
+    """
+    source = os.environ if environ is None else environ
+    direct = source.get("MICROSOFT_CLIENT_ID", "").strip()
+    if direct:
+        return validate_client_id(direct)
+    raw_path = source.get("MICROSOFT_CLIENT_ID_FILE", "").strip()
+    if not raw_path:
+        return ""
+    path = assert_safe_config_path(Path(raw_path), label="client id file")
+    if path.is_symlink():
+        raise InvalidRequest("Microsoft client id file must not be a symbolic link")
+    if not path.is_file():
+        return ""
+    try:
+        assert_private(path)
+    except StatePermissionError as exc:
+        raise InvalidRequest("Microsoft client id file is not private") from exc
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise InvalidRequest("Microsoft client id file could not be read") from exc
+    if not text:
+        return ""
+    return validate_client_id(text.splitlines()[0].strip())
+
+
+def scopes_for(access: str = "read") -> tuple[str, ...]:
+    choice = (access or "read").strip().casefold()
+    if choice in {"", "read", "readonly", "read-only"}:
+        return READ_SCOPES
+    if choice in {"draft", "mail_draft", "mail-draft"}:
+        return DRAFT_SCOPES
+    raise InvalidRequest("Microsoft sign-in access must be read or draft")
 
 
 @dataclass
@@ -198,7 +246,7 @@ class MicrosoftOAuth:
         if not path and os.name == "posix":
             path = "/tmp/microsoft-365-token.json"
         return cls(
-            client_id=source.get("MICROSOFT_CLIENT_ID", ""),
+            client_id=load_client_id(dict(source)),
             tenant=source.get("MICROSOFT_TENANT", "common"),
             redirect_uri=source.get(
                 "MICROSOFT_REDIRECT_URI", "http://127.0.0.1:18080/api/microsoft/callback"
@@ -261,19 +309,22 @@ class MicrosoftOAuth:
             "accounts": self.account_choices(),
             "permissions": PERMISSIONS_NOTE,
             "redirect_uri": self.redirect_uri if self.configured() else None,
-            "provider_scopes": list(SCOPES) if self.configured() else [],
+            "provider_scopes": list(READ_SCOPES) if self.configured() else [],
+            "draft_scopes": list(DRAFT_SCOPES) if self.configured() else [],
             "setup": "" if self.configured() else (
-                "Sign-in needs the Entra application id in MICROSOFT_CLIENT_ID. "
-                "The buttons stay unavailable until that id is set. No account is connected."
+                "Sign-in needs the Entra application id in MICROSOFT_CLIENT_ID "
+                "or MICROSOFT_CLIENT_ID_FILE. The buttons stay unavailable until that "
+                "id is set. No account is connected."
             ),
         }
 
-    def authorization_url(self, account: str | None = None) -> str:
+    def authorization_url(self, account: str | None = None, *, access: str = "read") -> str:
         if not self.configured():
             raise AuthenticationError(self.public_status()["setup"])
         client_id = validate_client_id(self.client_id)
         redirect = validate_redirect(self.redirect_uri)
         tenant = validate_tenant(self.tenant_for_account(account))
+        scopes = scopes_for(access)
         verifier = secrets.token_urlsafe(64)
         state = secrets.token_urlsafe(32)
         now = self._clock()
@@ -289,7 +340,7 @@ class MicrosoftOAuth:
             "response_type": "code",
             "redirect_uri": redirect,
             "response_mode": "query",
-            "scope": " ".join(SCOPES),
+            "scope": " ".join(scopes),
             "state": state,
             "code_challenge": _challenge(verifier),
             "code_challenge_method": "S256",
@@ -349,11 +400,12 @@ class MicrosoftOAuth:
             if not self.bundle.refresh_token:
                 self.disconnect()
                 raise AuthenticationError("Microsoft sign-in expired. Connect the account again.")
+            refresh_scope = self.bundle.scope.strip() or " ".join(READ_SCOPES)
             refreshed = self._token({
                 "client_id": validate_client_id(self.client_id),
                 "grant_type": "refresh_token",
                 "refresh_token": self.bundle.refresh_token,
-                "scope": " ".join(SCOPES),
+                "scope": refresh_scope,
             })
             self.bundle.access_token = refreshed["access_token"]
             self.bundle.refresh_token = refreshed.get("refresh_token", self.bundle.refresh_token)

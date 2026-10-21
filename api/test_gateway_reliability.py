@@ -147,11 +147,20 @@ class GatewayReliabilityTests(unittest.TestCase):
             request.add_header("Authorization", f"Bearer {API_KEY}")
         for key, value in (headers or {}).items():
             request.add_header(key, value)
-        try:
-            with urllib.request.urlopen(request, timeout=10) as response:
-                return response.status, json.loads(response.read()), dict(response.headers)
-        except urllib.error.HTTPError as exc:
-            return exc.code, json.loads(exc.read() or b"{}"), dict(exc.headers)
+        last_error: Exception | None = None
+        for _attempt in range(2):
+            try:
+                with urllib.request.urlopen(request, timeout=10) as response:
+                    return response.status, json.loads(response.read()), dict(response.headers)
+            except urllib.error.HTTPError as exc:
+                return exc.code, json.loads(exc.read() or b"{}"), dict(exc.headers)
+            except (ConnectionAbortedError, ConnectionResetError, TimeoutError, OSError) as exc:
+                # Windows can abort a loopback socket when many ThreadingHTTPServer
+                # instances share one process. Retry once before failing the case.
+                last_error = exc
+                continue
+        assert last_error is not None
+        raise last_error
 
     def upload(self, collection: str, filename: str, content: bytes, **extra):
         return self.call("POST", "/v1/rag/documents", {
