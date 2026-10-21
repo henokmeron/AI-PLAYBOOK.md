@@ -29,6 +29,14 @@ MAX_XLSX_SHEETS = 50
 MAX_XLSX_ROWS_PER_SHEET = 100_000
 MAX_XLSX_COLUMNS_PER_SHEET = 512
 WORD_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+# Numeric workbook cells are prefixed with this so a weekly calculation can tell
+# them from the same words typed into a note, a string cell, or a file name.
+_CALC_MARK = "\uE000"
+
+
+def strip_calculation_marker(text: str) -> str:
+    """Remove the numeric-cell marker from untrusted text."""
+    return text.replace(_CALC_MARK, "")
 
 
 class DocumentLoadError(ValueError):
@@ -85,7 +93,7 @@ def _read_utf8(path: Path) -> str:
     if len(raw) > MAX_INPUT_BYTES:
         raise DocumentLoadError(f"{path} exceeds the {MAX_INPUT_BYTES}-byte input limit")
     try:
-        return raw.decode("utf-8-sig")
+        return strip_calculation_marker(raw.decode("utf-8-sig"))
     except UnicodeDecodeError as exc:
         raise DocumentLoadError(f"{path} is not valid UTF-8 text") from exc
 
@@ -210,7 +218,7 @@ def _read_pdf_segments(path: Path) -> list[Segment]:
                 raise DocumentLoadError(
                     f"could not extract text from page {page_number} of {path.name}"
                 ) from exc
-            text = text.strip()
+            text = strip_calculation_marker(text.strip())
             if text:
                 page_text = f"[Page {page_number}]\n{text}"
                 total_chars += len(page_text)
@@ -328,14 +336,18 @@ def describe_weekly_from_stored(
 
 
 _STORED_DISPLAY_RE = re.compile(
-    r"stored=(?P<stored>-?[0-9]+(?:\.[0-9]+)?)"
+    re.escape(_CALC_MARK)
+    + r"stored=(?P<stored>-?[0-9]+(?:\.[0-9]+)?)"
     r"(?:;\s*displayed=(?P<displayed>£-?[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?))?",
     re.IGNORECASE,
 )
 
 
 def build_weekly_calculation_aid(evidence_texts: list[str], days: int = 7) -> str:
-    """Build deterministic weekly notes from stored=/displayed= evidence cells."""
+    """Build weekly notes from numeric workbook cells only.
+
+    A stored= phrase in a note, a string cell, or a file name is not a cell.
+    """
     lines: list[str] = []
     seen: set[str] = set()
     for block in evidence_texts:
@@ -397,8 +409,8 @@ def render_xlsx_cell_value(value: object, number_format: str | None = None) -> s
         parts = [f"stored={stored_text}", f"displayed={display}", f"calculation_basis=stored {stored_text}"]
         if display_amount is not None and display_amount != stored:
             parts.append("note=displayed_is_rounded_presentation_only_not_calculation_input")
-        return "; ".join(parts)
-    text = str(value).strip()
+        return _CALC_MARK + "; ".join(parts)
+    text = strip_calculation_marker(str(value).strip())
     return text
 
 
@@ -498,7 +510,9 @@ def _read_xlsx(path: Path) -> str:
                 raise DocumentLoadError(
                     f"worksheet {sheet.title!r} in {path.name} exceeds the column limit"
                 )
-            sheet_label = f"Sheet: {sheet.title} (state: {sheet.sheet_state})"
+            sheet_label = (
+                f"Sheet: {strip_calculation_marker(str(sheet.title))} (state: {sheet.sheet_state})"
+            )
             output.append(sheet_label)
             # Buffer rows so multi-line headers (title / age bands / units) can be
             # stacked before the first numeric data row instead of freezing on row 1.
@@ -660,16 +674,18 @@ def read_document(path: Path) -> str:
         raise DocumentLoadError(f"cannot inspect {path}: {exc}") from exc
     if input_size > MAX_INPUT_BYTES:
         raise DocumentLoadError(f"{path} exceeds the {MAX_INPUT_BYTES}-byte input limit")
-    if suffix in TEXT_EXTENSIONS:
-        return _read_utf8(path)
-    if suffix == ".csv":
-        return _read_csv(path)
-    if suffix in {".html", ".htm"}:
-        return _read_html(path)
-    if suffix == ".docx":
-        return _read_docx(path)
-    if suffix == ".pdf":
-        return _read_pdf(path)
     if suffix == ".xlsx":
         return _read_xlsx(path)
-    raise DocumentLoadError(f"unsupported document type: {suffix}")
+    if suffix in TEXT_EXTENSIONS:
+        text = _read_utf8(path)
+    elif suffix == ".csv":
+        text = _read_csv(path)
+    elif suffix in {".html", ".htm"}:
+        text = _read_html(path)
+    elif suffix == ".docx":
+        text = _read_docx(path)
+    elif suffix == ".pdf":
+        text = _read_pdf(path)
+    else:
+        raise DocumentLoadError(f"unsupported document type: {suffix}")
+    return strip_calculation_marker(text)
