@@ -1396,7 +1396,7 @@
     errorBox.hidden = true;
     if (!repairDevice.id) {
       errorBox.hidden = false;
-      errorBox.textContent = "Enrol this computer in this page first.";
+      errorBox.textContent = "Enrol an endpoint in this page first. Revoking does not run a collector on this computer.";
       return;
     }
     request("/api/repair/device/revoke", { method: "POST", body: { device_id: repairDevice.id } }).then(function () {
