@@ -1,10 +1,14 @@
 """Console reload decisions. These tests do not open a socket or signal a process."""
 from __future__ import annotations
 
+import io
+import json
+import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
-from ops.release.console_deploy import DeployRefusal, assess_replacement, decide
+from ops.release.console_deploy import DeployRefusal, assess_replacement, decide, main, operators_provisioned
 
 _RELEASE = Path(__file__).resolve().parent / "release"
 
@@ -60,12 +64,36 @@ class ConsoleDeployTests(unittest.TestCase):
 
     def test_shell_checks_operators_before_it_stops_the_console(self) -> None:
         text = (_RELEASE / "deploy-console-only.sh").read_text(encoding="utf-8")
-        operators = text.index('OPS_READY=no')
+        operators = text.index("--operators-file")
         kill = text.index('kill "$P8080"')
         assess = text.index("--assess")
         self.assertLess(operators, kill)
         self.assertLess(kill, assess)
-        self.assertIn("--operators-ready", text)
+        self.assertNotIn('if [[ -f "$OPERATOR_AUTH_DIR/operators.json" ]]', text)
+
+    def test_empty_or_disabled_operator_file_is_not_provisioned(self) -> None:
+        secret = "hash-must-not-print"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "operators.json"
+            self.assertFalse(operators_provisioned(path))
+            path.write_text("{", encoding="utf-8")
+            self.assertFalse(operators_provisioned(path))
+            path.write_text(json.dumps({"operators": []}), encoding="utf-8")
+            self.assertFalse(operators_provisioned(path))
+            path.write_text(json.dumps({"operators": [{
+                "operator_id": "a", "username": "ada", "password_hash": secret, "disabled": True,
+            }]}), encoding="utf-8")
+            self.assertFalse(operators_provisioned(path))
+            path.write_text(json.dumps({"operators": [{
+                "operator_id": "a", "username": "ada", "password_hash": secret, "disabled": False,
+            }]}), encoding="utf-8")
+            self.assertTrue(operators_provisioned(path))
+            output = io.StringIO()
+            with redirect_stdout(output):
+                code = main(["--operators-file", str(path)])
+            self.assertEqual(code, 0)
+            self.assertEqual(output.getvalue().strip(), "yes")
+            self.assertNotIn(secret, output.getvalue())
 
     def test_missing_console_pid_does_not_become_a_restart(self) -> None:
         with self.assertRaises(DeployRefusal):

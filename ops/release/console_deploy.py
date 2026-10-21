@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 QWEN_PORT = 8002
 GATEWAY_PORT = 8010
@@ -31,6 +32,14 @@ def _pids(value: str) -> list[int]:
             raise DeployRefusal("a process id was not a number; nothing was stopped")
         rows.append(int(part))
     return rows
+
+
+def operators_provisioned(path: Path) -> bool:
+    """True only when the file has an enabled operator. Hashes are not returned."""
+    from ops.preflight import active_operator_count
+
+    count = active_operator_count(path)
+    return isinstance(count, int) and count >= 1
 
 
 def assess_replacement(*, qwen_health: int, gateway_health: int, console_health: int) -> str:
@@ -81,8 +90,9 @@ def decide(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Check a console-only reload. Does not stop any process.")
     parser.add_argument("--approved", choices=("yes", "no"), default="no")
-    parser.add_argument("--health-8002", type=int, required=True)
-    parser.add_argument("--health-8010", type=int, required=True)
+    parser.add_argument("--operators-file", default="")
+    parser.add_argument("--health-8002", type=int)
+    parser.add_argument("--health-8010", type=int)
     parser.add_argument("--pid-8002", default="")
     parser.add_argument("--pid-8010", default="")
     parser.add_argument("--pid-8080", default="")
@@ -90,6 +100,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--assess", action="store_true")
     parser.add_argument("--health-8080", type=int, default=0)
     args = parser.parse_args(argv)
+    if args.operators_file:
+        print("yes" if operators_provisioned(Path(args.operators_file)) else "no")
+        return 0
+    if args.health_8002 is None or args.health_8010 is None:
+        print("ERROR: health codes are required", file=sys.stderr)
+        return 2
     if args.assess:
         print(assess_replacement(
             qwen_health=args.health_8002,

@@ -50,10 +50,14 @@ P8080="$(pids_for 8080)"
 #   OPERATOR_AUTH_DIR=/tmp/console-operators \
 #     python3 "$REPO_ROOT/scripts/provision_console_operator.py" create-admin --username <name>
 OPERATOR_AUTH_DIR="${OPERATOR_AUTH_DIR:-/tmp/console-operators}"
-OPS_READY=no
-if [[ -f "$OPERATOR_AUTH_DIR/operators.json" ]]; then
-  OPS_READY=yes
-fi
+OPS_READY="$(
+  python3 "$REPO_ROOT/ops/release/console_deploy.py" \
+    --operators-file "$OPERATOR_AUTH_DIR/operators.json" || true
+)"
+case "$OPS_READY" in
+  yes) ;;
+  *) OPS_READY=no ;;
+esac
 
 DECISION="$(
   python3 "$REPO_ROOT/ops/release/console_deploy.py" \
