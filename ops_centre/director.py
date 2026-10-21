@@ -2,7 +2,8 @@
 
 This report is built from Operations Centre probes and stored events.
 It does not call a language model, start services, or run shell commands.
-There is no scheduler in this repository; run the report when you need it.
+A durable schedule file can run the report on an interval. The schedule never
+starts the model or paid services.
 """
 from __future__ import annotations
 
@@ -35,6 +36,19 @@ FORBIDDEN_CAPABILITIES = (
     "bypass_approval",
     "read_secrets",
 )
+
+def _scheduler_status() -> dict[str, Any]:
+    try:
+        from .director_schedule import DirectorSchedule, DirectorScheduleError
+
+        return DirectorSchedule().status()
+    except Exception as exc:  # noqa: BLE001 — report stays useful when the schedule file is missing
+        return {
+            "available": False,
+            "enabled": False,
+            "reason": f"Director schedule is not usable ({type(exc).__name__}). Use the manual command.",
+        }
+
 
 _STATE = {
     "healthy": "HEALTHY",
@@ -565,10 +579,7 @@ def build_report(centre: OpsCentre, *, desk: Any | None = None) -> dict[str, Any
         "kind": "director_report",
         "overall": overall,
         "verified_at": verified_at,
-        "scheduler": {
-            "available": False,
-            "reason": "No job runner or cron integration exists in this repository. Use the manual command.",
-        },
+        "scheduler": _scheduler_status(),
         "model_explanation": None,
         "hypotheses": [],
         "hypothesis_note": "This report does not add model-written guesses. Empty hypotheses means none were generated.",

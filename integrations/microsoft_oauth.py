@@ -36,8 +36,26 @@ from .errors import (
 )
 from .state_guard import StatePermissionError, assert_private, restrict_private
 
-SCOPES = ("openid", "profile", "email", "offline_access", "User.Read", "Mail.Read")
+AZURE_SCOPE = "https://management.azure.com/user_impersonation"
+SCOPES = (
+    "openid",
+    "profile",
+    "email",
+    "offline_access",
+    "User.Read",
+    "Mail.Read",
+    "Chat.Read",
+    "Files.Read",
+    "Sites.Read.All",
+    AZURE_SCOPE,
+)
 GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
+ARM_ROOT = "https://management.azure.com"
+PERMISSIONS_NOTE = (
+    "Sign-in identifies the account and requests read-only Graph access for mail, "
+    "Teams chats, OneDrive, and SharePoint. Azure inventory needs a separate ARM consent. "
+    "It does not request permission to send mail or change Azure resources."
+)
 # The browser may choose one of these. It cannot supply an arbitrary directory.
 SIGN_IN_ACCOUNTS = (
     (
@@ -58,10 +76,6 @@ SIGN_IN_ACCOUNTS = (
         "Sign in with a personal Microsoft account",
         "Only a personal account, such as Outlook, Hotmail, or Live.",
     ),
-)
-PERMISSIONS_NOTE = (
-    "Sign-in identifies the account and requests read-only mailbox access. "
-    "It does not request permission to send mail."
 )
 _TENANT_RE = re.compile(
     r"(?:common|organizations|consumers|"
@@ -239,6 +253,10 @@ class MicrosoftOAuth:
             "status": status,
             "account": account,
             "mail_read": self.has_mail_read(),
+            "chat_read": self.has_graph_scope("Chat.Read"),
+            "files_read": self.has_graph_scope("Files.Read"),
+            "sites_read": self.has_graph_scope("Sites.Read.All"),
+            "azure_read": self.has_azure_read(),
             "accounts": self.account_choices(),
             "permissions": PERMISSIONS_NOTE,
             "redirect_uri": self.redirect_uri if self.configured() else None,
@@ -289,7 +307,14 @@ class MicrosoftOAuth:
         return scope_names(self.bundle.scope)
 
     def has_mail_read(self) -> bool:
-        return "mail.read" in self.delegated_scopes()
+        return self.has_graph_scope("Mail.Read")
+
+    def has_graph_scope(self, name: str) -> bool:
+        return name.rsplit("/", 1)[-1].casefold() in self.delegated_scopes()
+
+    def has_azure_read(self) -> bool:
+        scopes = self.delegated_scopes()
+        return "user_impersonation" in scopes or AZURE_SCOPE.casefold() in scopes
 
     def complete(self, code: str, state: str) -> TokenBundle:
         with self._lock:
@@ -337,10 +362,18 @@ class MicrosoftOAuth:
             self._save()
         return self.bundle.access_token
 
-    def graph_get(self, path: str, query: dict[str, str] | None = None) -> dict[str, Any]:
+    def graph_get(
+        self,
+        path: str,
+        query: dict[str, str] | None = None,
+        *,
+        required_scope: str = "Mail.Read",
+    ) -> dict[str, Any]:
         token = self.access_token()
-        if not self.has_mail_read():
-            raise PermissionDenied("Mail.Read is not granted. No mailbox request was sent.")
+        if not self.has_graph_scope(required_scope):
+            raise PermissionDenied(
+                f"{required_scope} is not granted. No Microsoft Graph request was sent."
+            )
         url = GRAPH_ROOT + path
         if query:
             url += "?" + urllib.parse.urlencode(query)
@@ -354,19 +387,53 @@ class MicrosoftOAuth:
             return payload
         if status == 401:
             raise AuthenticationError(
-                "Microsoft rejected the saved sign-in. Connect the account again. No mailbox data was returned."
+                "Microsoft rejected the saved sign-in. Connect the account again. No Graph data was returned."
             )
         if status == 403:
-            raise PermissionDenied("Microsoft refused this read. Mail.Read is missing. No mailbox data was returned.")
+            raise PermissionDenied(
+                f"Microsoft refused this read. {required_scope} is missing. No Graph data was returned."
+            )
         if status == 404:
-            raise NotFound("Microsoft Graph did not find that message.")
+            raise NotFound("Microsoft Graph did not find that item.")
         if status == 429:
-            raise RateLimited("Microsoft Graph is throttling mailbox reads.")
+            raise RateLimited("Microsoft Graph is throttling this read.")
         if status == 400:
-            raise InvalidRequest("Microsoft Graph rejected the mailbox query.")
+            raise InvalidRequest("Microsoft Graph rejected the query.")
         if status >= 500:
-            raise TransientError("Microsoft Graph did not return the mailbox data.")
-        raise AuthenticationError("Microsoft Graph did not return the mailbox data.")
+            raise TransientError("Microsoft Graph did not return the data.")
+        raise AuthenticationError("Microsoft Graph did not return the data.")
+
+    def arm_get(self, path: str, query: dict[str, str] | None = None) -> dict[str, Any]:
+        """Read-only Azure Resource Manager call. Never mutates Azure resources."""
+        if not self.has_azure_read():
+            raise PermissionDenied(
+                "Azure inventory is NOT CONFIGURED. ARM user_impersonation was not granted. "
+                "No Azure request was sent."
+            )
+        token = self.access_token()
+        url = ARM_ROOT + path
+        if query:
+            url += "?" + urllib.parse.urlencode(query)
+        self.graph_calls += 1
+        status, payload = self._transport("GET", url, {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        }, None)
+        if status == 200 and isinstance(payload, dict):
+            return payload
+        if status == 401:
+            raise AuthenticationError(
+                "Azure rejected the saved sign-in. Connect the account again. No Azure data was returned."
+            )
+        if status == 403:
+            raise PermissionDenied("Azure refused this inventory read. No Azure data was returned.")
+        if status == 404:
+            raise NotFound("Azure did not find that resource.")
+        if status == 429:
+            raise RateLimited("Azure is throttling inventory reads.")
+        if status >= 500:
+            raise TransientError("Azure did not return the inventory data.")
+        raise AuthenticationError("Azure did not return the inventory data.")
 
     def disconnect(self) -> None:
         self.bundle = None

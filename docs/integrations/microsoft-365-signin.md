@@ -51,14 +51,22 @@ In the application manifest, set:
 - `allowPublicClient` to `true`
 - `replyUrlsWithType` to one entry whose `url` is `http://127.0.0.1:18080/api/microsoft/callback` and whose `type` is `InstalledClient`
 
-Add delegated Microsoft Graph permissions and nothing else:
+Add delegated Microsoft Graph permissions:
 
 - `User.Read`
 - `Mail.Read`
+- `Chat.Read`
+- `Files.Read`
+- `Sites.Read.All` (may require admin consent)
 
-Do not add `Mail.Send`, `Mail.ReadWrite`, `Files.ReadWrite`, or admin consent
-for the whole tenant. Do not paste the Application (client) ID into chat or
-into a file in this repository.
+For read-only Azure inventory, also add the Azure Service Management delegated
+permission `user_impersonation`. Do not add `Mail.Send`, `Mail.ReadWrite`,
+`Files.ReadWrite`, or Azure write roles. Do not paste the Application (client)
+ID into chat or into a file in this repository.
+
+Until `MICROSOFT_CLIENT_ID` is set and an account consents, the connectors stay
+**NOT CONFIGURED**. Offline contract tests use an in-memory transport and are
+not a live Microsoft connection.
 
 Copy the Application (client) ID and set it as `MICROSOFT_CLIENT_ID` in the
 console process environment when the restart below is approved. Leave

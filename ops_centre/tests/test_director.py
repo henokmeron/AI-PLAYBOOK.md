@@ -36,8 +36,13 @@ class DirectorReportTests(unittest.TestCase):
                 {"name": "console", "state": "healthy", "verified_at": "2026-10-18T22:00:00Z", "http_status": 200, "detail": "connection=ready"},
                 {"name": "disk", "state": "healthy", "verified_at": "2026-10-18T22:00:00Z", "detail": "free"},
             ])
+            schedule = str(Path(tmp) / "director-schedule.json")
             with patch.object(centre.health, "snapshot", return_value=snapshot):
-                with patch.dict(os.environ, {"OPERATOR_AUTH_DIR": tmp}, clear=False):
+                with patch.dict(
+                    os.environ,
+                    {"OPERATOR_AUTH_DIR": tmp, "DIRECTOR_SCHEDULE_FILE": schedule},
+                    clear=False,
+                ):
                     os.environ.pop("MICROSOFT_CLIENT_ID", None)
                     os.environ.pop("RAG_DOCS_DIR", None)
                     report = build_report(centre)
@@ -47,7 +52,8 @@ class DirectorReportTests(unittest.TestCase):
             self.assertTrue(any("qwen" in item for item in model["evidence"]))
             self.assertIsNone(report["model_explanation"])
             self.assertEqual(report["hypotheses"], [])
-            self.assertFalse(report["scheduler"]["available"])
+            self.assertTrue(report["scheduler"]["available"])
+            self.assertFalse(report["scheduler"]["enabled"])
             self.assertTrue(all(item["executed"] is False for item in report["recommendations"]))
 
     def test_missing_integrations_are_not_configured(self) -> None:

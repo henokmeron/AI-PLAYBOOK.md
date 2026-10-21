@@ -1,6 +1,6 @@
 # Implementation status
 
-Checked 2026-10-21. The release archive contains code commit `7230bb1af926ce649471a603aa8527dd69db5d83`. This note is not inside that archive. A row is not “working in production” unless the Deployed column has evidence. Unit tests are not a second physical computer. A push is not a deployment. Missing configuration is **NOT CONFIGURED** or **UNKNOWN**, never **HEALTHY**. Go-live is **NO-GO**.
+Checked 2026-10-21. Working tree continues from `e7ca9b70768b3fec2a71c1f8dd5d50cc64ee692b`. The previous release archive remains `7230bb1af926ce649471a603aa8527dd69db5d83` until the next code package. A row is not “working in production” unless the Deployed column has evidence. Unit tests are not a second physical computer. A push is not a deployment. Missing configuration is **NOT CONFIGURED** or **UNKNOWN**, never **HEALTHY**. Go-live is **NO-GO**.
 
 | Capability | In code | Tested locally | Real Windows | Real external service | GitHub `main` | Deployed |
 | --- | --- | --- | --- | --- | --- | --- |

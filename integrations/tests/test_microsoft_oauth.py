@@ -13,7 +13,7 @@ from pathlib import Path
 from agents.model import ScriptedModel
 from agents.workspace import AgentDesk, tools_for
 from integrations.errors import ApprovalRequired, AuthenticationError, InvalidRequest, PermissionDenied, TransientError
-from integrations.microsoft365 import platform_catalog
+from integrations.microsoft365 import microsoft_configuration, platform_catalog
 from integrations.microsoft_oauth import MicrosoftOAuth, _challenge, validate_redirect
 from integrations.tenancy import TenantContext
 
@@ -34,7 +34,10 @@ class Transport:
                 "access_token": self.access,
                 "refresh_token": REFRESH,
                 "expires_in": 3600,
-                "scope": "Mail.Read User.Read",
+                "scope": (
+                    "Mail.Read User.Read Chat.Read Files.Read Sites.Read.All "
+                    "https://management.azure.com/user_impersonation"
+                ),
             }
         if url.startswith("https://graph.microsoft.com/v1.0/me?"):
             return 200, {"mail": "owner@example.com", "displayName": "Owner"}
@@ -54,6 +57,26 @@ class Transport:
                 "bodyPreview": "Amount due 10",
                 "webLink": "https://outlook.office.com/mail/id",
             }]}
+        if "/me/chats" in url:
+            return 200, {"value": [{"id": "chat-1", "topic": "Invoice review", "chatType": "group"}]}
+        if "/me/drive/root/search" in url:
+            return 200, {"value": [{
+                "id": "file-1",
+                "name": "invoice.xlsx",
+                "webUrl": "https://contoso-my.sharepoint.com/invoice.xlsx",
+                "size": 12,
+            }]}
+        if "/sites?" in url or url.rstrip("/").endswith("/sites"):
+            return 200, {"value": [{
+                "id": "site-1",
+                "displayName": "Finance",
+                "webUrl": "https://contoso.sharepoint.com/sites/finance",
+                "description": "Finance site",
+            }]}
+        if "management.azure.com/subscriptions" in url and "/resources" in url:
+            return 200, {"value": [{"id": "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1", "name": "vm1", "type": "Microsoft.Compute/virtualMachines"}]}
+        if "management.azure.com/subscriptions" in url:
+            return 200, {"value": [{"subscriptionId": "11111111-2222-3333-4444-555555555555", "displayName": "Pay-As-You-Go", "state": "Enabled"}]}
         return 500, {}
 
 
@@ -218,7 +241,7 @@ class OAuthTests(unittest.TestCase):
         record.granted_scopes = frozenset({"mail:read"})
         with self.assertRaises(PermissionDenied) as missing:
             catalog.execute(ctx, "microsoft365", "search_mail", {"query": "invoice"})
-        self.assertIn("No mailbox request was sent", str(missing.exception))
+            self.assertIn("No Microsoft Graph request was sent", str(missing.exception))
         self.assertFalse(any("/me/messages" in call[1] for call in transport.calls))
 
     def test_message_id_is_encoded_and_an_empty_search_is_honest(self) -> None:
@@ -393,6 +416,39 @@ class OAuthTests(unittest.TestCase):
                 "to": "a@example.com", "subject": "Hi", "body": "Send this now",
             }, authorised=True)
         self.assertEqual(len(transport.calls), before)
+
+    def test_teams_files_sharepoint_and_azure_reads_are_mocked(self) -> None:
+        transport = Transport()
+        oauth = MicrosoftOAuth(client_id=CLIENT, transport=transport, clock=lambda: 1_000.0)
+        url = oauth.authorization_url()
+        self.assertIn("Chat.Read", url)
+        self.assertIn("Files.Read", url)
+        self.assertIn("Sites.Read.All", url)
+        self.assertIn("management.azure.com", url)
+        self.assertNotIn("Mail.Send", url)
+        state = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["state"][0]
+        oauth.complete("code-1", state)
+        catalog, client = platform_catalog(oauth)
+        client.apply(catalog, "local-console")
+        ctx = TenantContext.create("local-console", "console-user", [])
+        teams = catalog.execute(ctx, "microsoft365", "search_teams_messages", {"query": "Invoice"})
+        self.assertEqual(teams["items"][0]["name"], "Invoice review")
+        files = catalog.execute(ctx, "microsoft365", "search_files", {"query": "invoice"})
+        self.assertEqual(files["items"][0]["name"], "invoice.xlsx")
+        sites = catalog.execute(ctx, "microsoft365", "search_sharepoint", {"query": "Finance"})
+        self.assertEqual(sites["items"][0]["name"], "Finance")
+        subs = catalog.execute(ctx, "azure", "list_subscriptions", {})
+        self.assertEqual(subs["items"][0]["name"], "Pay-As-You-Go")
+        resources = catalog.execute(
+            ctx,
+            "azure",
+            "list_resources",
+            {"subscription_id": "11111111-2222-3333-4444-555555555555"},
+        )
+        self.assertEqual(resources["items"][0]["name"], "vm1")
+        self.assertGreaterEqual(client.network_calls, 5)
+        status = microsoft_configuration({})
+        self.assertEqual(status["status"], "NOT CONFIGURED")
 
 
 def limited_calls(transport: Transport) -> list:
