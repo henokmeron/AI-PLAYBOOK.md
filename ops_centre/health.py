@@ -61,7 +61,9 @@ def _http_probe(url: str, timeout: float) -> dict[str, Any]:
     try:
         with opener.open(request, timeout=timeout) as response:
             code = int(getattr(response, "status", 0) or 0)
-            body = response.read(400).decode("utf-8", errors="replace")
+            # /api/status is larger than a few hundred bytes. A short read makes
+            # json.loads fail and the console looks degraded while it is healthy.
+            body = response.read(16384).decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
         exc.close()
         redirected = int(exc.code) in {301, 302, 303, 307, 308}

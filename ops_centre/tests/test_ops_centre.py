@@ -127,6 +127,40 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(hits["secret"], 0)
         self.assertNotIn("secret", result["detail"])
 
+    def test_status_body_longer_than_400_bytes_stays_valid_json(self) -> None:
+        payload = {
+            "ui": "ok",
+            "connection": "ready",
+            "detail": "gateway " + ("ready " * 80),
+        }
+        encoded = json.dumps(payload).encode("utf-8")
+        self.assertGreater(len(encoded), 400)
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+            def log_message(self, _format: str, *_args: object) -> None:
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = server.server_address[1]
+            result = _http_probe(f"http://127.0.0.1:{port}/api/status", 2.0)
+        finally:
+            server.shutdown()
+            server.server_close()
+        self.assertTrue(result["ok"])
+        parsed = json.loads(result["body"])
+        self.assertEqual(parsed["connection"], "ready")
+        self.assertGreater(len(result["body"].encode("utf-8")), 400)
+
 
 class DetectionAlertIncidentTests(unittest.TestCase):
     def test_pipeline(self) -> None:
