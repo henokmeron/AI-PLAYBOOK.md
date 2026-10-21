@@ -12,3 +12,5 @@ Method: Cursor computer-use browser against `console.runpod.io` / `www.runpod.io
 | Paid-resource mutations | None |
 
 Blackwell release of `7037ae9eff56d7694ca79c335f90e445bdf1fdc1` remains local only: SHA-256 `841a231a8e01ebe83b4fd6a79e315b0a54f76c8581b01fbc936d5e5074b64d13`.
+
+Screenshot evidence (login redirect / no session): `/opt/cursor/artifacts/runpod-console-login-blocked-2026-10-21.webp` from [Discover computerUse browser tools](bc-278ed5fb-9655-5b8d-a056-76d8a346cef0).
