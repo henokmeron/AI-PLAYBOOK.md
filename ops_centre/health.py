@@ -9,25 +9,66 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlsplit
 
 from .models import ServiceHealth, ServiceState, Verification
 from .store import utc_now
 
 ProbeFn = Callable[[str, float], dict[str, Any]]
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost"})
+
+
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        raise urllib.error.HTTPError(req.full_url, code, "redirect refused", headers, fp)
+
+
+def require_loopback_http(value: str) -> str:
+    """Accept only http://127.0.0.1 or http://localhost with a port. The input is not returned."""
+    parsed = urlsplit(value.strip())
+    host = (parsed.hostname or "").lower()
+    path = parsed.path or "/"
+    if (
+        parsed.scheme != "http"
+        or host not in _LOOPBACK_HOSTS
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or parsed.port is None
+        or not path.startswith("/")
+        or "\\" in path
+        or ".." in path.split("/")
+    ):
+        raise ValueError("probe URL is not loopback http")
+    return f"http://{host}:{parsed.port}{path}"
 
 
 def _http_probe(url: str, timeout: float) -> dict[str, Any]:
     started = time.monotonic()
-    request = urllib.request.Request(url, method="GET")
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 — configured loopback
+        target = require_loopback_http(url)
+    except ValueError:
+        return {
+            "ok": False,
+            "http_status": 0,
+            "detail": "probe URL is not loopback http",
+            "latency_ms": 0,
+            "body": "",
+        }
+    request = urllib.request.Request(target, method="GET")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _RefuseRedirects)
+    try:
+        with opener.open(request, timeout=timeout) as response:
             code = int(getattr(response, "status", 0) or 0)
             body = response.read(400).decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
+        exc.close()
+        redirected = int(exc.code) in {301, 302, 303, 307, 308}
         return {
             "ok": False,
             "http_status": int(exc.code),
-            "detail": f"HTTP {exc.code}",
+            "detail": "redirect refused" if redirected else f"HTTP {exc.code}",
             "latency_ms": int((time.monotonic() - started) * 1000),
             "body": "",
         }
@@ -81,7 +122,19 @@ class HealthAggregator:
         interpret: Callable[[dict[str, Any]], tuple[str, str]] | None = None,
     ) -> ServiceHealth:
         verified_at = utc_now()
-        result = self._probe(url, self._timeout)
+        try:
+            target = require_loopback_http(url)
+        except ValueError:
+            return ServiceHealth(
+                name=name,
+                state=ServiceState.UNAVAILABLE.value,
+                verification=Verification.OBSERVED.value,
+                verified_at=verified_at,
+                http_status=0,
+                detail="probe URL is not loopback http",
+                check_kind=check_kind,
+            )
+        result = self._probe(target, self._timeout)
         if interpret is None:
             state = ServiceState.HEALTHY.value if result.get("ok") else ServiceState.UNAVAILABLE.value
             detail = str(result.get("detail") or "")

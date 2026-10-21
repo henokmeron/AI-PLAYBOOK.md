@@ -1,13 +1,16 @@
 """Unit tests for the Operations Centre (no GPU / no Pod)."""
 from __future__ import annotations
 
+import json
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
 from ops_centre.detections import run_detections
-from ops_centre.health import HealthAggregator
+from ops_centre.health import HealthAggregator, _http_probe
 from ops_centre.models import AlertStatus
 from ops_centre.service import OpsCentre, OpsCentreConfig
 from ops_centre.store import EventStore
@@ -63,6 +66,66 @@ class HealthTests(unittest.TestCase):
         names = {s["name"]: s for s in snap["services"]}
         self.assertEqual(names["qwen"]["state"], "unavailable")
         self.assertEqual(names["gateway_ready"]["state"], "degraded")
+
+    def test_off_loopback_probe_is_not_healthy_and_is_not_called(self) -> None:
+        secret = "secret-token-must-not-print"
+        called: list[str] = []
+
+        def probe(url: str, _timeout: float) -> dict:
+            called.append(url)
+            if secret in url or "example.com" in url:
+                raise AssertionError("off-loopback probe was called")
+            return {"ok": True, "http_status": 200, "detail": "ok", "latency_ms": 1, "body": '{"connection":"ready"}'}
+
+        agg = HealthAggregator(
+            qwen_url=f"http://example.com/health?token={secret}",
+            gateway_live_url="http://127.0.0.1:8010/livez",
+            gateway_ready_url="http://127.0.0.1:8010/readyz",
+            console_url="http://127.0.0.1:8080/api/status",
+            probe=probe,
+        )
+        snap = agg.snapshot()
+        names = {s["name"]: s for s in snap["services"]}
+        self.assertEqual(names["qwen"]["state"], "unavailable")
+        self.assertEqual(names["qwen"]["detail"], "probe URL is not loopback http")
+        self.assertNotIn(secret, json.dumps(snap))
+        self.assertNotIn("example.com", json.dumps(snap))
+        self.assertTrue(called)
+        self.assertTrue(all(url.startswith("http://127.0.0.1:") for url in called))
+
+    def test_redirect_is_refused_without_reading_the_target(self) -> None:
+        hits = {"secret": 0}
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802
+                if self.path == "/secret":
+                    hits["secret"] += 1
+                    body = b"hidden"
+                    self.send_response(200)
+                else:
+                    body = b""
+                    self.send_response(302)
+                    self.send_header("Location", f"http://127.0.0.1:{self.server.server_address[1]}/secret")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, _format: str, *_args: object) -> None:
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = server.server_address[1]
+            result = _http_probe(f"http://127.0.0.1:{port}/health", 2.0)
+        finally:
+            server.shutdown()
+            server.server_close()
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["detail"], "redirect refused")
+        self.assertEqual(hits["secret"], 0)
+        self.assertNotIn("secret", result["detail"])
 
 
 class DetectionAlertIncidentTests(unittest.TestCase):
