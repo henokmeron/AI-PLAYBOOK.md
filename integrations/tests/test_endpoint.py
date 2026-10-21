@@ -177,6 +177,9 @@ class EndpointTests(unittest.TestCase):
         with self.assertRaises(InvalidRequest):
             console_origin("http://user:secret@127.0.0.1:8080")
         self.assertEqual(console_origin("http://127.0.0.1:8080"), "http://127.0.0.1:8080")
+        self.assertEqual(console_origin("https://console.example:443"), "https://console.example:443")
+        with self.assertRaises(InvalidRequest):
+            console_origin("http://console.example:443")
 
     def _check(self, procedure_id: str = "win.storage.space", **overrides):
         payload = {
@@ -329,6 +332,109 @@ class WorkerSecretFileTests(unittest.TestCase):
             with self.assertRaises(InvalidRequest) as refused:
                 read_secret_file(open_path)
             self.assertIn("not private", str(refused.exception))
+
+
+class WorkerTransportTests(unittest.TestCase):
+    def test_tls_context_keeps_certificate_checks(self) -> None:
+        from integrations.endpoint_worker import tls_context
+        import ssl
+        context = tls_context()
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(context.check_hostname)
+
+    def test_redirect_and_timeout_fail_closed(self) -> None:
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        from integrations.endpoint_worker import _post
+
+        class Redirect(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                self.send_response(302)
+                self.send_header("Location", "http://127.0.0.1/elsewhere")
+                self.end_headers()
+
+            def log_message(self, format_string: str, *args: object) -> None:
+                return
+
+        class Slow(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                import time
+                time.sleep(1.5)
+                self.send_response(200)
+                self.end_headers()
+
+            def log_message(self, format_string: str, *args: object) -> None:
+                return
+
+        redirect_server = ThreadingHTTPServer(("127.0.0.1", 0), Redirect)
+        slow_server = ThreadingHTTPServer(("127.0.0.1", 0), Slow)
+        threads = [
+            threading.Thread(target=redirect_server.serve_forever, daemon=True),
+            threading.Thread(target=slow_server.serve_forever, daemon=True),
+        ]
+        for thread in threads:
+            thread.start()
+        try:
+            redirect_origin = f"http://127.0.0.1:{redirect_server.server_address[1]}"
+            with self.assertRaises(InvalidRequest) as redirected:
+                _post(redirect_origin, "/api/repair/device/check-in", {})
+            self.assertIn("refused", str(redirected.exception))
+            slow_origin = f"http://127.0.0.1:{slow_server.server_address[1]}"
+            with self.assertRaises(InvalidRequest) as timed:
+                _post(slow_origin, "/api/repair/device/check-in", {}, timeout=0.2)
+            self.assertIn("could not be reached", str(timed.exception))
+        finally:
+            redirect_server.shutdown()
+            slow_server.shutdown()
+            redirect_server.server_close()
+            slow_server.server_close()
+
+    def test_self_signed_https_is_rejected(self) -> None:
+        import subprocess
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        openssl = Path(r"C:\Program Files\Git\usr\bin\openssl.exe")
+        if not openssl.is_file():
+            self.skipTest("openssl is not available to mint a test certificate")
+        from integrations.endpoint_worker import _post
+
+        class Ok(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                body = b'{"ok":true}'
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format_string: str, *args: object) -> None:
+                return
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cert = Path(tmp) / "cert.pem"
+            key = Path(tmp) / "key.pem"
+            minted = subprocess.run(
+                [str(openssl), "req", "-x509", "-newkey", "rsa:2048", "-keyout", str(key),
+                 "-out", str(cert), "-days", "1", "-nodes", "-subj", "/CN=localhost"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if minted.returncode != 0:
+                self.fail(minted.stderr)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), Ok)
+            context = __import__("ssl").SSLContext(__import__("ssl").PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(cert, key)
+            server.socket = context.wrap_socket(server.socket, server_side=True)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                origin = f"https://127.0.0.1:{server.server_address[1]}"
+                with self.assertRaises(InvalidRequest) as rejected:
+                    _post(origin, "/api/repair/device/check-in", {}, timeout=5)
+                self.assertIn("certificate", str(rejected.exception))
+            finally:
+                server.shutdown()
+                server.server_close()
 
 
 if __name__ == "__main__":

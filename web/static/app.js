@@ -1329,11 +1329,20 @@
   function loadRepairDevice() {
     var node = document.getElementById("repair-device-status");
     request("/api/repair/device").then(function (body) {
-      var enrolled = repairDevice.id ? " This page can check " + repairDevice.id + "." : "";
+      var jobs = Array.isArray(body.jobs) ? body.jobs : [];
+      var latest = jobs.length ? jobs[jobs.length - 1] : null;
+      var evidence = latest
+        ? " Latest job " + (latest.lifecycle || "unknown") +
+          " on " + (latest.device_id || "unknown device") +
+          ", evidence " + (latest.evidence_source || "none") +
+          ", collected by " + (latest.collected_by || "nobody yet") + "."
+        : " No job has been stored.";
       node.textContent = "Enrolled devices: " + body.device_count +
         ". Pending jobs: " + body.pending_jobs +
         ". Accepted jobs: " + body.accepted_jobs +
-        ". Repair authority is off." + enrolled;
+        ". Last seen: " + (body.last_seen == null ? "never" : body.last_seen) +
+        ". Repair authority is off." + evidence +
+        " Results are reported by the endpoint worker, not collected by this page.";
     }).catch(function (error) {
       node.textContent = errorMessage(error);
     });
@@ -1344,7 +1353,15 @@
     errorBox.hidden = true;
     request("/api/repair/device/enrol", { method: "POST", body: {} }).then(function (body) {
       repairDevice.id = body.device_id || "";
-      repairDevice.secret = body.device_secret || "";
+      repairDevice.secret = "";
+      document.getElementById("repair-result").textContent =
+        "Save this endpoint credential now. It is not shown again and it is not a console login.\n" +
+        JSON.stringify({
+          device_id: body.device_id,
+          tenant_id: body.tenant_id,
+          device_secret: body.device_secret,
+          mac_key: body.mac_key
+        }, null, 2);
       loadRepairDevice();
     }).catch(function (error) {
       errorBox.hidden = false;
@@ -1352,25 +1369,21 @@
     });
   });
 
-  document.getElementById("repair-device-check").addEventListener("click", function () {
+  document.getElementById("repair-device-issue").addEventListener("click", function () {
     var errorBox = document.getElementById("repair-error");
     errorBox.hidden = true;
-    if (!repairDevice.id || !repairDevice.secret) {
+    if (!repairDevice.id) {
       errorBox.hidden = false;
-      errorBox.textContent = "Enrol this computer in this page first. The secret is not saved after a reload.";
+      errorBox.textContent = "Enrol an endpoint in this page first. Issuing a job does not run the collector here.";
       return;
     }
     request("/api/repair/device/issue", {
       method: "POST",
       body: { device_id: repairDevice.id, procedure_id: "win.storage.space" }
     }).then(function (envelope) {
-      return request("/api/repair/device/accept", {
-        method: "POST",
-        body: envelope,
-        headers: { "Authorization": "Bearer " + repairDevice.secret }
-      });
-    }).then(function (result) {
-      document.getElementById("repair-result").textContent = JSON.stringify(result, null, 2);
+      document.getElementById("repair-result").textContent =
+        "Issued " + envelope.procedure_id + " for " + envelope.device_id +
+        ". The endpoint worker collects it. This page did not run the check.";
       loadRepairDevice();
     }).catch(function (error) {
       errorBox.hidden = false;

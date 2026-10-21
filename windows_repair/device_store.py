@@ -5,9 +5,9 @@ The state file must stay outside the source tree.
 
 The in-process lock is not enough when two processes open the same file.
 Each public operation also holds a lock file, reloads, and writes back before
-releasing it. Collectors must not call back into the store: the lock is not
-re-entrant. The intended deployment is one loopback process; the file lock is
-the backstop that stops a second process collecting the same job.
+releasing it. The collector must not call back into the store: the lock is not
+re-entrant. The console records a result. It does not run the collector.
+The endpoint worker collects on the enrolled computer, then submits the result.
 
 Permission failures raise. They are not ignored. On Windows the ACL is set and
 read back. That ACL does not stop an administrator with take-ownership or
@@ -33,7 +33,7 @@ from integrations.state_guard import CrossProcessLock, StateLockError, StatePerm
 from web.auth.store import SessionRecord
 
 from .engine import RepairDenied
-from .providers import LIVE_PROCEDURES, LiveWindowsProvider
+from .providers import LIVE_PROCEDURES
 
 _READ_ONLY = tuple(LIVE_PROCEDURES)
 STALE_AFTER_SECONDS = 86400
@@ -47,6 +47,37 @@ _SEAL = object()
 
 def _canonical(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+_RESULT_SOURCES = frozenset({"live_windows", "unavailable", "mock", "fixture"})
+_SIGNATURE_FIELDS = frozenset({"signature", "device_signature", "result_signature"})
+
+
+def job_body(envelope: dict[str, Any]) -> dict[str, Any]:
+    """Fields covered by the server signature and the device signature."""
+    return {key: value for key, value in envelope.items() if key not in _SIGNATURE_FIELDS}
+
+
+def result_signing_view(result: dict[str, Any], procedure_id: str) -> dict[str, Any]:
+    """The result fields the device signs. A repair claim is not one of them."""
+    status = str(result.get("status") or "collected")[:40]
+    ok = bool(result.get("ok")) if "ok" in result else status == "collected"
+    source = result.get("evidence_source")
+    if source not in _RESULT_SOURCES:
+        source = "unavailable"
+    stamp = result.get("collected_at_unix")
+    if isinstance(stamp, bool) or not isinstance(stamp, (int, float)):
+        stamp = None
+    else:
+        stamp = int(stamp)
+    return {
+        "collected_at_unix": stamp,
+        "collected_by": "endpoint_worker",
+        "evidence_source": source,
+        "ok": ok,
+        "procedure_id": procedure_id,
+        "status": status,
+    }
 
 
 class OperatorGrant:
@@ -201,6 +232,7 @@ class DeviceStore:
             "device_id": device_id,
             "tenant_id": tenant_id,
             "secret_hash": hashlib.sha256(secret.encode("utf-8")).hexdigest(),
+            "mac_key": secrets.token_hex(32),
             "revoked": False,
             "repair_authority": False,
             "last_seen": None,
@@ -256,7 +288,7 @@ class DeviceStore:
             raise RepairDenied("device jobs cannot carry a repair approval")
         if procedure_id not in _READ_ONLY:
             raise RepairDenied("procedure is not a read-only device diagnostic")
-        self._device(tenant_id, device_id)
+        device = self._device(tenant_id, device_id)
         now = self._clock()
         body = {
             "job_id": uuid.uuid4().hex,
@@ -271,7 +303,9 @@ class DeviceStore:
             "expires_at": now + self._ttl,
         }
         signed = dict(body)
-        signed["signature"] = hmac.new(self._key, _canonical(body), hashlib.sha256).hexdigest()
+        digest = _canonical(body)
+        signed["device_signature"] = hmac.new(bytes.fromhex(device["mac_key"]), digest, hashlib.sha256).hexdigest()
+        signed["signature"] = hmac.new(self._key, digest, hashlib.sha256).hexdigest()
         self.jobs.append(signed)
         self.job_states[body["job_id"]] = {
             "lifecycle": "issued",
@@ -283,12 +317,111 @@ class DeviceStore:
         self._save()
         return signed
 
-    def accept(self, secret: str, envelope: dict[str, Any], *, provider: Any | None = None) -> dict[str, Any]:
+    def mac_key(self, device_id: str) -> str:
+        """Signing key delivered once at enrolment. Later status calls must not use this."""
         with self._exclusive():
-            return self._accept(secret, envelope, provider=provider)
+            device = self.devices.get(device_id)
+            if device is None:
+                raise RepairDenied("device is not enrolled for this organisation")
+            return str(device["mac_key"])
 
-    def _accept(self, secret: str, envelope: dict[str, Any], *, provider: Any | None) -> dict[str, Any]:
-        body = {k: v for k, v in envelope.items() if k != "signature"}
+    def accept(self, secret: str, envelope: dict[str, Any], *, provider: Any | None = None, result: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Record a result the endpoint already collected.
+
+        Passing a provider runs that collector in this process and is only for
+        a test or a worker that is this process. The console HTTP route must
+        call record_result and must not pass a provider.
+        """
+        if result is None and provider is None:
+            raise RepairDenied("the console does not run the endpoint collector")
+        if provider is not None and result is not None:
+            raise RepairDenied("the endpoint submits one result")
+        if provider is not None:
+            prepared = self.prepare_collection(secret, envelope)
+            from integrations.endpoint_worker import execute_assigned_job
+
+            result = execute_assigned_job(
+                envelope,
+                device_id=prepared["device_id"],
+                tenant_id=prepared["tenant_id"],
+                mac_key=prepared["mac_key"],
+                provider=provider,
+                now=self._clock(),
+            )
+        return self.record_result(secret, envelope, result or {})
+
+    def prepare_collection(self, secret: str, envelope: dict[str, Any]) -> dict[str, str]:
+        """Reject a job the worker must not run. Does not collect and does not consume the nonce."""
+        with self._exclusive():
+            device = self._authorise(secret, envelope, consume=False)
+            return {
+                "device_id": device["device_id"],
+                "tenant_id": device["tenant_id"],
+                "mac_key": device["mac_key"],
+            }
+
+    def record_result(self, secret: str, envelope: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+        """Store a worker result. This method never calls a collector."""
+        with self._exclusive():
+            return self._record(secret, envelope, result)
+
+    def pending_jobs(self, secret: str) -> list[dict[str, Any]]:
+        """Issued jobs for the authenticated device only."""
+        with self._exclusive():
+            device = self._device_for_secret(secret)
+            if device is None:
+                raise RepairDenied("device authentication failed")
+            if device["revoked"]:
+                raise RepairDenied("device credential is revoked")
+            device["last_seen"] = self._clock()
+            rows = []
+            for job in self.jobs:
+                if str(job.get("device_id") or "") != device["device_id"]:
+                    continue
+                lifecycle = self._lifecycle_of(job)
+                if lifecycle != "issued":
+                    continue
+                if self._clock() >= float(job.get("expires_at") or 0):
+                    self._set_lifecycle(str(job.get("job_id") or ""), "expired", expired_at=self._clock(), save=False)
+                    continue
+                rows.append({key: value for key, value in job.items() if key != "mac_key"})
+            self._save()
+            return rows
+
+    def check_in(self, secret: str) -> dict[str, Any]:
+        with self._exclusive():
+            device = self._device_for_secret(secret)
+            if device is None:
+                raise RepairDenied("device authentication failed")
+            if device["revoked"]:
+                raise RepairDenied("device credential is revoked")
+            device["last_seen"] = self._clock()
+            pending = 0
+            for job in self.jobs:
+                if str(job.get("device_id") or "") == device["device_id"] and self._lifecycle_of(job) == "issued":
+                    pending += 1
+            self._audit("check-in", device["tenant_id"], device["device_id"], "seen", None)
+            self._save()
+            return {
+                "device_id": device["device_id"],
+                "tenant_id": device["tenant_id"],
+                "pending_jobs": pending,
+                "last_seen": device["last_seen"],
+                "repair_authority": False,
+                "remote_control": False,
+            }
+
+    def _device_for_secret(self, secret: str) -> dict[str, Any] | None:
+        digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+        for device in self.devices.values():
+            if hmac.compare_digest(digest, str(device.get("secret_hash") or "")):
+                return device
+        return None
+
+    def _authorise(self, secret: str, envelope: dict[str, Any], *, consume: bool) -> dict[str, Any]:
+        body = job_body(envelope)
+        if any(name in body for name in ("command", "shell", "argv", "script")):
+            raise RepairDenied("endpoint jobs cannot carry a command")
         expected = hmac.new(self._key, _canonical(body), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected, str(envelope.get("signature") or "")):
             raise RepairDenied("job signature is invalid")
@@ -296,8 +429,7 @@ class DeviceStore:
         stored = next((job for job in self.jobs if str(job.get("job_id")) == job_id), None)
         if stored is None:
             raise RepairDenied("job is not authorised")
-        stored_body = {key: value for key, value in stored.items() if key != "signature"}
-        if _canonical(stored_body) != _canonical(body):
+        if _canonical(job_body(stored)) != _canonical(body):
             raise RepairDenied("job does not match the issued job")
         if "lifecycle" in body:
             raise RepairDenied("device job lifecycle is not taken from the payload")
@@ -305,71 +437,90 @@ class DeviceStore:
             raise RepairDenied("device jobs cannot carry a repair approval")
         if str(body.get("procedure_id") or "") not in _READ_ONLY:
             raise RepairDenied("this device job is not a read-only diagnostic")
-        current = str((self.job_states.get(job_id) or {}).get("lifecycle") or "issued")
-        if current == "accepted":
-            raise RepairDenied("job replay rejected")
-        if current == "rejected":
-            raise RepairDenied("job was rejected")
-        if current == "expired":
-            raise RepairDenied("job expired")
-        if current == "failed":
-            raise RepairDenied("job already failed")
-        device_id = str(envelope.get("device_id") or "")
-        tenant_id = str(envelope.get("tenant_id") or "")
+        device_id = str(body.get("device_id") or "")
+        tenant_id = str(body.get("tenant_id") or "")
         device = self.devices.get(device_id)
         if device is None or device["tenant_id"] != tenant_id:
             self._reject(job_id, tenant_id, device_id, "unauthorised")
         assert device is not None
+        device_mac = hmac.new(bytes.fromhex(str(device["mac_key"])), _canonical(body), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(device_mac, str(envelope.get("device_signature") or "")):
+            raise RepairDenied("job signature is invalid")
         if device["revoked"]:
             self._reject(job_id, device["tenant_id"], device["device_id"], "revoked")
-        digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
-        if not hmac.compare_digest(digest, device["secret_hash"]):
+        secret_digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+        if not hmac.compare_digest(secret_digest, device["secret_hash"]):
             self._reject(job_id, device["tenant_id"], device["device_id"], "unauthorised")
-        if self._clock() >= float(envelope["expires_at"]):
+        current = str((self.job_states.get(job_id) or {}).get("lifecycle") or "issued")
+        if current == "accepted" and consume:
+            return device
+        if self._clock() >= float(body["expires_at"]):
             self._set_lifecycle(job_id, "expired", expired_at=self._clock())
             raise RepairDenied("job expired")
-        nonce = str(envelope["nonce"])
-        if nonce in self.nonces:
+        nonce = str(body["nonce"])
+        if current == "accepted":
+            raise RepairDenied("job replay rejected")
+        if current in {"rejected", "expired", "failed"}:
+            raise RepairDenied("job was rejected" if current == "rejected" else f"job {current}")
+        if nonce in self.nonces and current != "accepted":
             self._set_lifecycle(job_id, "rejected", rejected_at=self._clock(), reason="replay", save=False)
             self._audit("reject", tenant_id, device_id, "replay", None, job_id=job_id)
             self._save()
             raise RepairDenied("job replay rejected")
-        procedure_id = str(envelope["procedure_id"])
-        if procedure_id not in _READ_ONLY:
-            raise RepairDenied("this device job is not a read-only diagnostic")
+        if not consume:
+            if (self.job_states.get(job_id) or {}).get("in_flight"):
+                raise RepairDenied("job is already being collected")
+            self._set_lifecycle(job_id, "issued", in_flight=True)
+        return device
+
+    def _record(self, secret: str, envelope: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(result, dict):
+            raise RepairDenied("endpoint result is not usable")
+        if any(name in result for name in ("command", "shell", "argv", "script")):
+            raise RepairDenied("endpoint results cannot carry a command")
+        device = self._authorise(secret, envelope, consume=True)
+        body = job_body(envelope)
+        job_id = str(body["job_id"])
+        procedure_id = str(body["procedure_id"])
+        view = result_signing_view(result, procedure_id)
+        expected_result = hmac.new(bytes.fromhex(str(device["mac_key"])), _canonical(view), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected_result, str(result.get("result_signature") or "")):
+            raise RepairDenied("result signature is invalid")
+        current = str((self.job_states.get(job_id) or {}).get("lifecycle") or "issued")
+        digest = hashlib.sha256(_canonical(view)).hexdigest()
+        if current == "accepted":
+            stored_digest = str((self.job_states.get(job_id) or {}).get("result_digest") or "")
+            if stored_digest and hmac.compare_digest(stored_digest, digest):
+                previous = dict((self.job_states.get(job_id) or {}).get("public_result") or view)
+                previous["duplicate"] = True
+                previous["problem_resolved"] = False
+                previous["repair_authority"] = False
+                return previous
+            raise RepairDenied("job replay rejected")
+        nonce = str(body["nonce"])
+        if nonce in self.nonces:
+            raise RepairDenied("job replay rejected")
         self.nonces.append(nonce)
         device["last_seen"] = self._clock()
-        collector = provider or LiveWindowsProvider()
-        try:
-            result = collector.collect(procedure_id)
-        except Exception as exc:  # noqa: BLE001 — a failed read must not look like a healthy accept
-            result = {
-                "evidence_source": "unavailable",
-                "ok": False,
-                "status": "failed",
-                "problem_resolved": False,
-                "detail": type(exc).__name__,
-            }
-        if not isinstance(result, dict):
-            result = {
-                "evidence_source": "unavailable",
-                "ok": False,
-                "status": "failed",
-                "problem_resolved": False,
-                "detail": "unreadable collector result",
-            }
-        result = dict(result)
-        fresh, stamp, age = self._evidence_clock(result)
-        result["job_id"] = envelope["job_id"]
-        result["device_id"] = device["device_id"]
-        result["tenant_id"] = device["tenant_id"]
-        result["operator"] = envelope.get("operator")
-        result["evidence_fresh"] = fresh
-        if stamp is not None:
-            result["collected_at_unix"] = stamp
-        result["problem_resolved"] = False
-        status = str(result.get("status") or "done")
-        ok = bool(result.get("ok")) if "ok" in result else status == "collected"
+        fresh, stamp, age = self._evidence_clock(view)
+        public = dict(view)
+        public["job_id"] = job_id
+        public["device_id"] = device["device_id"]
+        public["tenant_id"] = device["tenant_id"]
+        public["operator"] = body.get("operator")
+        public["evidence_fresh"] = fresh
+        public["collected_at_unix"] = stamp
+        public["problem_resolved"] = False
+        public["repair_authority"] = False
+        public["remote_control"] = False
+        public["duplicate"] = False
+        if "mocked" in result:
+            public["mocked"] = bool(result["mocked"])
+        detail = result.get("detail")
+        if isinstance(detail, str) and detail:
+            public["detail"] = " ".join(detail.split())[:120]
+        status = str(public["status"])
+        ok = bool(public["ok"])
         failed = (not ok) or status in _FAILED_OUTCOMES
         outcome = "failed" if failed else status
         self._set_lifecycle(
@@ -378,23 +529,29 @@ class DeviceStore:
             accepted_at=device["last_seen"],
             status=outcome[:40],
             ok=ok,
-            problem_resolved=bool(result.get("problem_resolved")),
-            evidence_source=str(result.get("evidence_source") or "")[:40],
+            problem_resolved=False,
+            evidence_source=str(public["evidence_source"])[:40],
             evidence_fresh=fresh,
             collected_at_unix=stamp,
             evidence_age_seconds=age,
+            collected_by="endpoint_worker",
+            result_digest=digest,
+            public_result=public,
+            in_flight=False,
             save=False,
         )
+        if isinstance(result.get("result_signature"), str):
+            public["result_signature"] = result["result_signature"]
         self._audit(
             "accept",
             device["tenant_id"],
             device["device_id"],
             outcome[:40],
-            envelope.get("operator"),
+            body.get("operator"),
             job_id=job_id,
         )
         self._save()
-        return result
+        return public
 
     def summary(self) -> dict[str, Any]:
         with self._exclusive():
@@ -443,7 +600,27 @@ class DeviceStore:
             "stale_evidence_jobs": stale_evidence,
             "evidence_collected_at": newest_stamp,
             "evidence_age_seconds": evidence_age,
+            "jobs": self._public_jobs(),
+            "collector": "endpoint_worker",
         }
+
+    def _public_jobs(self) -> list[dict[str, Any]]:
+        rows = []
+        for job in self.jobs[-20:]:
+            state = self.job_states.get(str(job.get("job_id") or "")) or {}
+            rows.append({
+                "job_id": job.get("job_id"),
+                "device_id": job.get("device_id"),
+                "procedure_id": job.get("procedure_id"),
+                "lifecycle": state.get("lifecycle") or "issued",
+                "evidence_source": state.get("evidence_source"),
+                "collected_at_unix": state.get("collected_at_unix"),
+                "collected_by": state.get("collected_by"),
+                "ok": state.get("ok"),
+                "problem_resolved": False if state.get("lifecycle") else None,
+                "status": state.get("status"),
+            })
+        return rows
 
     def _reject(self, job_id: str, tenant_id: str, device_id: str, reason: str) -> None:
         self._set_lifecycle(job_id, "rejected", rejected_at=self._clock(), reason=reason, save=False)
@@ -658,7 +835,15 @@ class DeviceStore:
         self.job_states = dict(states) if isinstance(states, dict) else {}
         self.nonces = [str(item) for item in nonces]
         self.audit = list(audit) if isinstance(audit, list) else []
-        if raw.get("version") != 2 or "key" in raw or not sidecar.is_file():
+        missing_mac = False
+        for device in self.devices.values():
+            if not isinstance(device, dict):
+                continue
+            mac = device.get("mac_key")
+            if not isinstance(mac, str) or len(mac) != 64:
+                device["mac_key"] = secrets.token_hex(32)
+                missing_mac = True
+        if missing_mac or raw.get("version") != 2 or "key" in raw or not sidecar.is_file():
             self._save()
 
 
@@ -683,6 +868,9 @@ def dev_self_test(path: Path) -> dict[str, Any]:
         "local-test",
     )
     envelope = store.issue(tenant_id="local-test", device_id=device_id, procedure_id="win.storage.space", grant=grant)
-    result = store.accept(secret, envelope)
+    from .providers import LiveWindowsProvider
+
+    result = store.accept(secret, envelope, provider=LiveWindowsProvider())
+    result["collected_on"] = "this-process"
     result["repair_authority"] = False
     return result

@@ -468,7 +468,7 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertNotIn(KEY, script_text)
         self.assertNotIn("X-API-Key", script_text)
-        self.assertIn('headers: { "Authorization": "Bearer " + repairDevice.secret }', script_text)
+        self.assertNotIn("/api/repair/device/accept", script_text)
         self.assertNotIn("localStorage", script_text)
         self.assertNotIn("/v1/", script_text)
         self.assertIn("historyPayload", script_text)
@@ -1019,7 +1019,7 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(after, 401)
 
     def test_repair_device_job_uses_the_session_and_a_live_read(self) -> None:
-        """Loopback console issues a signed read-only job and collects it on this PC."""
+        """The console issues a job. A separate worker process collects it."""
         from auth.service import AuthService
 
         previous = os.environ.get("REPAIR_DEVICE_STATE")
@@ -1034,7 +1034,9 @@ class ConsoleTests(unittest.TestCase):
                 self.login(base)
                 status, body = self.request(base, "GET", "/")
                 self.assertEqual(status, 200)
-                self.assertIn("Run read-only disk check", body.decode("utf-8"))
+                page = body.decode("utf-8")
+                self.assertIn("endpoint worker", page)
+                self.assertNotIn("Run read-only disk check", page)
                 denied, _denied_body = self.request(
                     base, "POST", "/api/repair/device/issue",
                     {"device_id": "x", "procedure_id": "win.storage.space", "operator": "ada", "approval_id": "apr-1"},
@@ -1083,24 +1085,92 @@ class ConsoleTests(unittest.TestCase):
                 })
                 self.assertEqual(after_logout, 401)
                 self.login(base)
-                accepted_status, accepted_body = self.request(
+                refused, refused_body = self.request(
                     base, "POST", "/api/repair/device/accept", envelope,
                     {"Authorization": "Bearer " + secret},
                 )
-                self.assertEqual(accepted_status, 200, accepted_body.decode("utf-8", errors="replace"))
-                result = json.loads(accepted_body)
-                self.assertEqual(result["evidence_source"], "live_windows")
-                self.assertFalse(result["problem_resolved"])
-                self.assertFalse(result["repair_authority"])
-                self.assertFalse(result["mocked"])
-                self.assertNotIn(secret, accepted_body.decode("utf-8"))
+                self.assertEqual(refused, 400, refused_body.decode("utf-8", errors="replace"))
+                self.assertIn("does not run the endpoint collector", refused_body.decode("utf-8"))
+                lone_status, lone_body, _lone_headers = self.request_raw(
+                    base, "POST", "/api/repair/device/issue",
+                    {"device_id": device_id, "procedure_id": "win.storage.space"},
+                    {"Authorization": "Bearer " + secret, "Origin": base},
+                    auth=False,
+                )
+                self.assertEqual(lone_status, 401, lone_body.decode("utf-8", errors="replace"))
+                from integrations.endpoint_worker import write_job_credential
+                credential_path = Path(tmp) / "endpoint.json"
+                write_job_credential(credential_path, {
+                    "device_id": device_id,
+                    "tenant_id": created["tenant_id"],
+                    "device_secret": secret,
+                    "mac_key": created["mac_key"],
+                })
+                marker = Path(tmp) / "collector-pid.txt"
+                import subprocess
+                import sys
+                marker_env = os.environ.copy()
+                marker_env["ENDPOINT_COLLECTOR_MARKER"] = str(marker)
+                marked = subprocess.run(
+                    [sys.executable, "-m", "integrations.endpoint_worker", "jobs",
+                     "--console", base, "--credential", str(credential_path)],
+                    cwd=str(Path(__file__).resolve().parents[1]),
+                    env=marker_env,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+                self.assertEqual(marked.returncode, 0, marked.stderr)
+                self.assertNotEqual(int(marker.read_text(encoding="utf-8")), os.getpid())
                 summary_status, summary_body = self.request(base, "GET", "/api/repair/device")
                 self.assertEqual(summary_status, 200)
                 summary = json.loads(summary_body)
                 self.assertGreaterEqual(summary["accepted_jobs"], 1)
+                self.assertEqual(summary["collector"], "endpoint_worker")
+                self.assertNotIn(secret, summary_body.decode("utf-8"))
+                self.assertNotIn(created["mac_key"], summary_body.decode("utf-8"))
+                latest = summary["jobs"][-1]
+                self.assertEqual(latest["evidence_source"], "mock")
+                self.assertEqual(latest["collected_by"], "endpoint_worker")
+                self.assertFalse(latest["problem_resolved"])
+                from unittest.mock import patch
+                from windows_repair.providers import LiveWindowsProvider
+
+                def console_must_not_collect(self, procedure_id):  # noqa: ANN001
+                    raise AssertionError("console host collected " + procedure_id)
+
+                issued_live, issued_live_body = self.request(base, "POST", "/api/repair/device/issue", {
+                    "device_id": device_id,
+                    "procedure_id": "win.storage.space",
+                })
+                self.assertEqual(issued_live, 200, issued_live_body.decode("utf-8", errors="replace"))
+                with patch.object(LiveWindowsProvider, "collect", console_must_not_collect):
+                    live = subprocess.run(
+                        [sys.executable, "-m", "integrations.endpoint_worker", "jobs",
+                         "--console", base, "--credential", str(credential_path)],
+                        cwd=str(Path(__file__).resolve().parents[1]),
+                        env=os.environ.copy(),
+                        capture_output=True,
+                        text=True,
+                        timeout=40,
+                        check=False,
+                    )
+                self.assertEqual(live.returncode, 0, live.stderr)
+                summary_status, summary_body = self.request(base, "GET", "/api/repair/device")
+                live_job = json.loads(summary_body)["jobs"][-1]
+                self.assertEqual(live_job["evidence_source"], "live_windows")
+                self.assertEqual(live_job["collected_by"], "endpoint_worker")
+                self.assertFalse(live_job["problem_resolved"])
                 self.assertNotIn(secret, summary_body.decode("utf-8"))
                 revoked, _revoked = self.request(base, "POST", "/api/repair/device/revoke", {"device_id": device_id})
                 self.assertEqual(revoked, 200)
+                denied_device, denied_body = self.request(
+                    base, "POST", "/api/repair/device/check-in", {},
+                    {"Authorization": "Bearer " + secret},
+                )
+                self.assertIn(denied_device, {400, 403})
+                self.assertNotIn(secret, denied_body.decode("utf-8"))
         finally:
             if previous is None:
                 os.environ.pop("REPAIR_DEVICE_STATE", None)

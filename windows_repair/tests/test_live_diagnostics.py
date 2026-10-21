@@ -197,8 +197,9 @@ class WindowsIntegrationTests(unittest.TestCase):
         self.assertGreater(int(storage["collected_at_unix"]), int(time.time()) - 180)
 
     def test_enrolled_device_runs_one_live_read_only_job(self) -> None:
-        """Local live check on this PC through an enrolled job. Not a customer endpoint."""
+        """In-process live check on this PC. The separate-process proof is the console worker test."""
         import time
+        from windows_repair.providers import LiveWindowsProvider
 
         with tempfile.TemporaryDirectory() as tmp:
             store = DeviceStore(Path(tmp) / "device.json")
@@ -210,7 +211,7 @@ class WindowsIntegrationTests(unittest.TestCase):
                 procedure_id="win.storage.space",
                 grant=_ada("local-test"),
             )
-            result = store.accept(secret, envelope)
+            result = store.accept(secret, envelope, provider=LiveWindowsProvider())
             self.assertEqual(result["evidence_source"], "live_windows")
             self.assertFalse(result["mocked"])
             self.assertFalse(result["problem_resolved"])
@@ -736,8 +737,8 @@ def _cross_process_accept(path: str, secret: str, envelope: dict, marker: str, n
 
     try:
         store = _Store(Path(path), clock=lambda: now, ttl=30)
-        store.accept(secret, envelope, provider=_Slow())
-        queue.put("accepted")
+        result = store.accept(secret, envelope, provider=_Slow())
+        queue.put("duplicate" if result.get("duplicate") else "accepted")
     except _Denied as exc:
         queue.put("denied:" + str(exc))
     except Exception as exc:
@@ -885,7 +886,11 @@ class DeviceStoreGuardTests(unittest.TestCase):
             resigned["procedure_id"] = "print.spooler.restart"
             resigned["approval_id"] = "apr-1"
             resigned["lifecycle"] = "accepted"
-            body = {key_name: value for key_name, value in resigned.items() if key_name != "signature"}
+            body = {
+                key_name: value
+                for key_name, value in resigned.items()
+                if key_name not in {"signature", "device_signature"}
+            }
             resigned["signature"] = hmac.new(key, _canonical(body), hashlib.sha256).hexdigest()
             with self.assertRaises(RepairDenied) as mismatched:
                 store.accept(secret, resigned, provider=_MustNotRun())
@@ -910,7 +915,12 @@ class DeviceStoreGuardTests(unittest.TestCase):
             result = store.accept(secret, envelope, provider=_Lie())
             self.assertFalse(result["problem_resolved"])
             self.assertTrue(result["mocked"])
+            self.assertEqual(result["collected_by"], "endpoint_worker")
             self.assertFalse(store.job_states[envelope["job_id"]]["problem_resolved"])
+            duplicate = store.record_result(secret, envelope, result)
+            self.assertTrue(duplicate["duplicate"])
+            self.assertFalse(duplicate["problem_resolved"])
+            self.assertEqual(store.nonces.count(envelope["nonce"]), 1)
 
     def test_two_processes_cannot_both_collect(self) -> None:
         import multiprocessing

@@ -800,6 +800,12 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_repair_device_issue()
         elif path == "/api/repair/device/accept":
             self.handle_repair_device_accept()
+        elif path == "/api/repair/device/jobs":
+            self.handle_repair_device_jobs()
+        elif path == "/api/repair/device/result":
+            self.handle_repair_device_result()
+        elif path == "/api/repair/device/check-in":
+            self.handle_repair_device_check_in()
         elif path == "/api/repair/device/revoke":
             self.handle_repair_device_revoke()
         else:
@@ -1226,10 +1232,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, {
             "device_id": device_id,
             "device_secret": secret,
+            "mac_key": store.mac_key(device_id),
             "tenant_id": CONSOLE_TENANT,
             "repair_authority": False,
             "remote_control": False,
             "operator": session.username,
+            "delivery": "one-time",
         })
 
     def handle_repair_device_issue(self) -> None:
@@ -1272,14 +1280,30 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_json(200, envelope)
 
-    def handle_repair_device_accept(self) -> None:
-        if not self._loopback_client():
-            self.send_error_json(403, "device routes are only available on the loopback console")
-            return
+    def _device_bearer(self) -> str | None:
+        """Device routes accept a loopback HTTP test client or a TLS connection.
+
+        This console process does not terminate TLS. A plain HTTP peer that is
+        not loopback is refused, because device credentials must not travel in
+        the clear off this machine.
+        """
+        host = str(self.client_address[0] if self.client_address else "")
+        secure = bool(getattr(self.request, "context", None) or getattr(self.server, "ssl_context", None))
+        if host not in {"127.0.0.1", "::1"} and not secure:
+            self.send_error_json(403, "device credentials are not accepted over plain HTTP from a remote address")
+            return None
         header = self.headers.get("Authorization", "")
-        secret = header[7:] if header.startswith("Bearer ") else ""
-        payload = self.read_json_object(max_bytes=8192)
-        if payload is None:
+        if not header.startswith("Bearer ") or len(header) <= 7:
+            self.send_error_json(401, "device authentication required")
+            return None
+        return header[7:]
+
+    def handle_repair_device_accept(self) -> None:
+        self.send_error_json(400, "the console does not run the endpoint collector")
+
+    def handle_repair_device_jobs(self) -> None:
+        secret = self._device_bearer()
+        if secret is None:
             return
         store = self._repair_device_store()
         if store is None:
@@ -1288,13 +1312,58 @@ class Handler(BaseHTTPRequestHandler):
         from windows_repair.engine import RepairDenied
 
         try:
-            result = store.accept(secret, payload)
+            jobs = store.pending_jobs(secret)
         except RepairDenied as exc:
             self._repair_denied(exc)
             return
-        result["repair_authority"] = False
-        result["remote_control"] = False
-        self.send_json(200, result)
+        self.send_json(200, {"jobs": jobs, "repair_authority": False, "remote_control": False})
+
+    def handle_repair_device_check_in(self) -> None:
+        secret = self._device_bearer()
+        if secret is None:
+            return
+        store = self._repair_device_store()
+        if store is None:
+            self.send_error_json(503, getattr(self.server, "repair_device_error", "") or "REPAIR_DEVICE_STATE is not configured")
+            return
+        from windows_repair.engine import RepairDenied
+
+        try:
+            status = store.check_in(secret)
+        except RepairDenied as exc:
+            self._repair_denied(exc)
+            return
+        self.send_json(200, status)
+
+    def handle_repair_device_result(self) -> None:
+        secret = self._device_bearer()
+        if secret is None:
+            return
+        payload = self.read_json_object(max_bytes=65536)
+        if payload is None:
+            return
+        job = payload.get("job")
+        result = payload.get("result")
+        if not isinstance(job, dict) or not isinstance(result, dict):
+            self.send_error_json(400, "job and result are required")
+            return
+        if any(name in payload for name in ("operator", "approval_id", "command", "shell")):
+            self.send_error_json(400, "operator, approval, and commands are not taken from the request")
+            return
+        store = self._repair_device_store()
+        if store is None:
+            self.send_error_json(503, getattr(self.server, "repair_device_error", "") or "REPAIR_DEVICE_STATE is not configured")
+            return
+        from windows_repair.engine import RepairDenied
+
+        try:
+            recorded = store.record_result(secret, job, result)
+        except RepairDenied as exc:
+            self._repair_denied(exc)
+            return
+        recorded["repair_authority"] = False
+        recorded["remote_control"] = False
+        self.send_json(200, recorded)
 
     def handle_repair_device_revoke(self) -> None:
         session = self.require_operator(Permission.CONNECTORS_MANAGE, mutating=True)
