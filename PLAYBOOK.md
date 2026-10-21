@@ -1166,3 +1166,9 @@ Research should lead to a decision, not a pile of links. Every research report s
 - **Git / release:** commit `7037ae9eff56d7694ca79c335f90e445bdf1fdc1` on `origin/main`. Recover with SHA-256 `841a231a8e01ebe83b4fd6a79e315b0a54f76c8581b01fbc936d5e5074b64d13` (`git archive --format=tar.gz` of that commit; 370 members). Do not use the earlier `2c5bab93…` digest. Volume copy not verified.
 - **NOT TESTED:** no RTX PRO 6000 (compute capability 12.0) was available. `install-qwen-blackwell-env.sh --install`, `--check`, `--serve`, and `--infer` were not run on GPU. Do not claim Blackwell inference works.
 - **BLOCKED / next:** obtain a CC 12.0 host with driver ≥575 without stopping the working H100 stack; run install → check → serve → infer; keep go-live **NO-GO** until live E2E, Entra, and endpoint controls are verified.
+
+### 2026-10-21 — Release archive extraction hardening
+
+- **Implemented in source:** ops/release/package.py now validates archive paths across POSIX and Windows conventions, rejects Windows drive/UNC paths, backslash traversal, NULs and colon-based alternate data streams, and refuses symlink/hardlink/device/FIFO members. Recovery also refuses a symlink destination and still requires a matching SHA-256 and empty destination.
+- **Regression tests added:** ops/test_release_package.py covers Windows path forms and symlink/hardlink members. These tests have **NOT RUN** in this session; the available environment could not resolve github.com for a clean clone, and no local checkout/test runner is exposed here. Do not label the release recovery as tested until the repository suite runs.
+- **Operational boundary:** no RunPod account inventory, Global Volume inspection/copy, model load, Microsoft Graph call, or paid-resource mutation was performed. Production remains **NO-GO** until live acceptance and integrations are verified.
