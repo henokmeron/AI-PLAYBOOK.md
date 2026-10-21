@@ -344,6 +344,20 @@ class ApprovalAndResumeTests(unittest.TestCase):
         self.assertEqual(log, [{"to": "ops@example.com", "body": "hello"}])
         self.assertIn("approval_decision", runner.trace.kinds())
 
+    def test_changed_arguments_are_not_approved(self) -> None:
+        log: list = []
+        runner, _ = runner_for(
+            [tool_call("send_message", to="ops@example.com", body="hello"), final("sent")],
+            tools=[send_tool(log)],
+        )
+        task = runner.run(runner.new_task("notify ops"))
+        task.pending_approval.arguments["body"] = "send the other note"
+        with self.assertRaises(ValueError) as caught:
+            runner.resolve_approval(task, approved=True, approver="henok")
+        self.assertIn("changed", str(caught.exception))
+        self.assertEqual(log, [])
+        self.assertEqual(task.state, TaskState.AWAITING_APPROVAL)
+
     def test_denied_approval_is_observed_and_not_executed(self) -> None:
         log: list = []
         runner, model = runner_for(

@@ -14,11 +14,14 @@ Safety properties enforced here rather than trusted to the model:
 from __future__ import annotations
 
 import concurrent.futures
+import copy
 import json
 import threading
 import time
 import uuid
 from typing import Any, Callable
+
+from integrations.approvals import payload_hash
 
 from .model import ModelClient, ModelError
 from .it_support import (
@@ -179,6 +182,8 @@ class AgentRunner:
         pending = task.pending_approval
         if call_id is not None and call_id != pending.call_id:
             raise ValueError("approval does not match the pending action")
+        if pending.arguments_digest and payload_hash(pending.arguments) != pending.arguments_digest:
+            raise ValueError("approval arguments changed after they were requested")
         task.pending_approval = None
         decision = "approved" if approved else "denied"
         task.record.approvals.append({
@@ -427,9 +432,11 @@ class AgentRunner:
             self._tool_failure(task, call_id, name, exc.category, exc.message)
             return
         if tool.requires_approval:
+            frozen = copy.deepcopy(arguments)
             task.pending_approval = PendingApproval(
-                call_id=call_id, tool=name, arguments=arguments,
+                call_id=call_id, tool=name, arguments=frozen,
                 reason=f"{name} is a consequential action and needs human approval",
+                arguments_digest=payload_hash(frozen),
             )
             task.record.plan.append(f"Wait for approval of {name}.")
             task.record.approvals.append({

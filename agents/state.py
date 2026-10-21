@@ -150,12 +150,25 @@ class Usage:
     output_validation_failures: int = 0
 
 
+def _pending_approval(pending: dict[str, Any] | None) -> PendingApproval | None:
+    if not pending:
+        return None
+    return PendingApproval(
+        call_id=str(pending["call_id"]),
+        tool=str(pending["tool"]),
+        arguments=dict(pending.get("arguments") or {}),
+        reason=str(pending.get("reason") or ""),
+        arguments_digest=str(pending.get("arguments_digest") or ""),
+    )
+
+
 @dataclass
 class PendingApproval:
     call_id: str
     tool: str
     arguments: dict[str, Any]
     reason: str
+    arguments_digest: str = ""
 
 
 @dataclass
@@ -262,7 +275,7 @@ class AgentTask:
             usage=Usage(**data["usage"]),
             messages=list(data["messages"]),
             call_history=list(data["call_history"]),
-            pending_approval=PendingApproval(**pending) if pending else None,
+            pending_approval=_pending_approval(pending),
             pending_question=data.get("pending_question"),
             output_schema=data.get("output_schema"),
             final_answer=data.get("final_answer"),
