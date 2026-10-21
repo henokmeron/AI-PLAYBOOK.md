@@ -412,26 +412,42 @@ class ConsoleTests(unittest.TestCase):
         status, body = self.request(base, "POST", "/api/repair/printer/request", {
             "tenant_id": "local-test", "device_id": "this-pc", "requester": "console-operator",
         })
+        self.assertEqual(status, 400)
+        self.assertIn("signed-in operator", body.decode("utf-8"))
+        status, body = self.request(base, "POST", "/api/repair/printer/request", {
+            "tenant_id": "local-test", "device_id": "this-pc", "requester": self.ADMIN_USER,
+        })
         requested = json.loads(body)
         self.assertEqual(status, 200)
         approval_id = requested["approval_id"]
         status, body = self.request(base, "POST", "/api/repair/printer/execute", {
-            "tenant_id": "local-test", "device_id": "this-pc", "approval_id": approval_id, "operator": "console-operator",
+            "tenant_id": "local-test", "device_id": "this-pc", "approval_id": approval_id, "operator": self.ADMIN_USER,
         })
         blocked = json.loads(body)
         self.assertEqual(blocked["status"], "approval_rejected")
         self.assertFalse(blocked["executed"])
         status, body = self.request(base, "POST", "/api/repair/printer/approve", {
-            "tenant_id": "local-test", "approval_id": approval_id, "approver": "console-operator",
-        })
-        self.assertEqual(json.loads(body)["status"], "approval_rejected")
-        status, body = self.request(base, "POST", "/api/repair/printer/approve", {
             "tenant_id": "local-test", "approval_id": approval_id, "approver": "console-reviewer",
         })
+        self.assertEqual(status, 400)
+        self.assertIn("signed-in operator", body.decode("utf-8"))
+        status, body = self.request(base, "POST", "/api/repair/printer/approve", {
+            "tenant_id": "local-test", "approval_id": approval_id, "approver": self.ADMIN_USER,
+        })
+        self.assertEqual(json.loads(body)["status"], "approval_rejected")
+        status, created = self.request(base, "POST", "/api/auth/operators", {
+            "username": "reviewer", "password": "unit-test-reviewer-password", "role": "operator",
+        })
+        self.assertEqual(status, 201, created)
+        self.login(base, "reviewer", "unit-test-reviewer-password")
+        status, body = self.request(base, "POST", "/api/repair/printer/approve", {
+            "tenant_id": "local-test", "approval_id": approval_id, "approver": "reviewer",
+        })
         self.assertEqual(json.loads(body)["status"], "approved")
+        self.login(base)
         status, body = self.request(base, "POST", "/api/repair/printer/execute", {
             "tenant_id": "local-test", "device_id": "this-pc", "approval_id": approval_id,
-            "operator": "console-operator", "fixture": "printer_spooler_stopped",
+            "operator": self.ADMIN_USER, "fixture": "printer_spooler_stopped",
         })
         result = json.loads(body)
         self.assertEqual(status, 200)

@@ -1676,6 +1676,15 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return value
 
+    def _signed_in_label(self, session: SessionRecord, payload: dict, name: str) -> str | None:
+        value = self._repair_label(payload, name)
+        if value is None:
+            return None
+        if value != session.username:
+            self.send_error_json(400, f"{name} must be the signed-in operator")
+            return None
+        return value
+
     def handle_printer_diagnose(self) -> None:
         if self.require_operator(Permission.OPS_VIEW, mutating=True) is None:
             return
@@ -1693,7 +1702,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, report)
 
     def handle_printer_request(self) -> None:
-        if self.require_operator(Permission.AGENT_APPROVE, mutating=True) is None:
+        session = self.require_operator(Permission.AGENT_APPROVE, mutating=True)
+        if session is None:
             return
         if self.require_key() is None:
             return
@@ -1702,13 +1712,16 @@ class Handler(BaseHTTPRequestHandler):
             return
         tenant_id = self._repair_slug(payload, "tenant_id")
         device_id = self._repair_label(payload, "device_id")
-        requester = self._repair_label(payload, "requester")
-        if not tenant_id or not device_id or not requester:
+        if not tenant_id or not device_id:
+            return
+        requester = self._signed_in_label(session, payload, "requester")
+        if not requester:
             return
         self.send_json(200, self._printer_flow().request_restart(tenant_id, device_id, requester))
 
     def handle_printer_approve(self) -> None:
-        if self.require_operator(Permission.AGENT_APPROVE, mutating=True) is None:
+        session = self.require_operator(Permission.AGENT_APPROVE, mutating=True)
+        if session is None:
             return
         if self.require_key() is None:
             return
@@ -1717,13 +1730,16 @@ class Handler(BaseHTTPRequestHandler):
             return
         tenant_id = self._repair_slug(payload, "tenant_id")
         approval_id = self._repair_label(payload, "approval_id")
-        approver = self._repair_label(payload, "approver")
-        if not tenant_id or not approval_id or not approver:
+        if not tenant_id or not approval_id:
+            return
+        approver = self._signed_in_label(session, payload, "approver")
+        if not approver:
             return
         self.send_json(200, self._printer_flow().approve(tenant_id, approval_id, approver))
 
     def handle_printer_execute(self) -> None:
-        if self.require_operator(Permission.AGENT_APPROVE, mutating=True) is None:
+        session = self.require_operator(Permission.AGENT_APPROVE, mutating=True)
+        if session is None:
             return
         if self.require_key() is None:
             return
@@ -1733,8 +1749,10 @@ class Handler(BaseHTTPRequestHandler):
         tenant_id = self._repair_slug(payload, "tenant_id")
         device_id = self._repair_label(payload, "device_id")
         approval_id = self._repair_label(payload, "approval_id")
-        operator = self._repair_label(payload, "operator")
-        if not tenant_id or not device_id or not approval_id or not operator:
+        if not tenant_id or not device_id or not approval_id:
+            return
+        operator = self._signed_in_label(session, payload, "operator")
+        if not operator:
             return
         fixture = payload.get("fixture")
         if fixture is not None and not isinstance(fixture, str):
