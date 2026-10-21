@@ -628,6 +628,7 @@ class ConsoleTests(unittest.TestCase):
         self.assertNotIn("return modelUsable(item); })[0]", script)
         self.assertIn("Another model is not selected automatically.", script)
         self.assertNotIn("Enrol this computer in this page first.", script)
+        self.assertIn("The answer cited a source that was not in the evidence.", script)
 
     def test_rag_returns_sources_and_abstention(self) -> None:
         gateway = FakeGateway()

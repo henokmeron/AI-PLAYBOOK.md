@@ -255,6 +255,12 @@ class SearchAndEvidenceTests(unittest.TestCase):
     def test_citation_check_reports_out_of_range_labels(self) -> None:
         result = rp.check_citations("Per [Source 1] and [Source 4], yes.", 2)
         self.assertEqual(result, {"cited": ["Source 1", "Source 4"], "invalid": ["Source 4"]})
+        status, citations = rp.answer_delivery("Per [Source 1] and [Source 4], yes.", 2)
+        self.assertEqual(status, "abstained")
+        self.assertEqual(citations["invalid"], ["Source 4"])
+        status, citations = rp.answer_delivery("Per [Source 1], yes.", 2)
+        self.assertEqual(status, "answered")
+        self.assertEqual(citations["invalid"], [])
 
 
 class LibraryTests(unittest.TestCase):

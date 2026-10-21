@@ -34,8 +34,8 @@ from document_library import (
 from document_loaders import build_weekly_calculation_aid
 from retrieval_pipeline import (
     FileBackedBm25Store,
+    answer_delivery,
     build_evidence,
-    check_citations,
     search,
 )
 
@@ -1045,6 +1045,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._log_fields["upstream_ms"] = round((time.monotonic() - upstream_started) * 1000, 1)
 
+        status, citations = answer_delivery(answer_text, len(sources))
         retrieval = {
             "matched": True,
             "top_score": round(top_score, 3),
@@ -1059,13 +1060,15 @@ class Handler(BaseHTTPRequestHandler):
             "evidence_chars": pack.chars,
             "evidence_char_budget": char_budget,
             "history_messages_dropped": history_dropped,
-            "citations": check_citations(answer_text, len(sources)),
+            "citations": citations,
             "truncated": truncated,
         }
+        if status != "answered":
+            retrieval["reason"] = "invalid_citations"
         if skipped:
             retrieval["skipped_files"] = skipped
         body: dict[str, Any] = {
-            "status": "answered",
+            "status": status,
             "answer": answer_text,
             "model": reported_model,
             "upstream_model": model_token,

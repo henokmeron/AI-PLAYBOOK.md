@@ -357,6 +357,7 @@
     if (retrieval.reason === "below_min_score") parts.push("The best match was below the gateway score threshold.");
     else if (retrieval.reason === "no_match") parts.push("No document match was found.");
     else if (retrieval.reason === "low_query_coverage") parts.push("The documents do not appear to cover the key terms of this question.");
+    else if (retrieval.reason === "invalid_citations") parts.push("The answer cited a source that was not in the evidence.");
     else if (typeof retrieval.reason === "string") parts.push("Retrieval: " + retrieval.reason);
     if (typeof retrieval.top_score === "number") parts.push("Top score " + retrieval.top_score + ".");
     if (typeof retrieval.minimum_score === "number") parts.push("Minimum score " + retrieval.minimum_score + ".");

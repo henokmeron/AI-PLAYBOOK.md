@@ -302,3 +302,11 @@ def check_citations(answer: str, source_count: int) -> dict[str, Any]:
     cited = sorted({int(n) for n in _CITATION_RE.findall(answer)})
     invalid = [n for n in cited if n < 1 or n > source_count]
     return {"cited": [f"Source {n}" for n in cited], "invalid": [f"Source {n}" for n in invalid]}
+
+
+def answer_delivery(answer: str, source_count: int) -> tuple[str, dict[str, Any]]:
+    """A citation that is not in the evidence is not an answered result."""
+    citations = check_citations(answer, source_count)
+    if citations["invalid"]:
+        return "abstained", citations
+    return "answered", citations
