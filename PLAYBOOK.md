@@ -48,7 +48,7 @@ Use `C:\Users\henok\AppData\Local\GitHubDesktop\app-3.5.4\resources\app\git\ming
 2. Run the focused tests for the change, then `python -m ops.run_tests`, then `git diff --check`. Read the diff for secrets, `__pycache__`, and `ops/_*.sh` / `ops/_*.py`.
 3. Commit on `main` with `git commit -m "message"`. Never force-push. Never update git config. Never skip hooks.
 4. Push `main`. Fast-forward `feature/qwen-a100-start-hardening` and `feature/qwen3.5-27b-integration` only when that push is a true fast-forward. Do not use `--force`.
-5. `git ls-remote origin` those three refs and require one SHA. A push is not a deployment. The pod checkout stays where it is until a separate approved source update.
+5. `git ls-remote origin` those three refs and require one SHA. The repeatable check is `python -m ops.git_parity --ls-remote`. It does not commit or push. A push is not a deployment. The pod checkout stays where it is until a separate approved source update.
 
 ## 1. Core business strategy
 Do not compete only by owning a model.
@@ -296,7 +296,7 @@ Phase 7 — Advanced model customisation
 - potentially continued pretraining if justified
 
 ## 12. Current decisions
-- Canonical local checkout on this PC: `C:\Users\kokob\src\AI-PLAYBOOK.md`. Remote `origin`: `https://github.com/henokmeron/AI-PLAYBOOK.md.git`. The working branch is `main`.
+- Canonical local checkout on this PC: `C:\Users\henok\src\AI-PLAYBOOK.md`. Remote `origin`: `https://github.com/henokmeron/AI-PLAYBOOK.md.git`. The working branch is `main`. An older note named `C:\Users\kokob\src\AI-PLAYBOOK.md`; that path is not this checkout.
 - Primary objective: build a commercial AI platform, not merely a standalone LLM.
 - Start from open-weight models.
 - Keep the platform model-independent.
@@ -311,6 +311,14 @@ Phase 7 — Advanced model customisation
 - Treat the playbook as a reproducible blueprint for future AI-assisted automation.
 
 ## 13. Change log
+### 2026-10-22 — Offline implementation is not live acceptance
+
+- **VERIFIED locally:** System Status reads `GET /api/acceptance`. The page shows an offline implementation percent and a live acceptance percent. The production decision stays **NO-GO** while any live gate fails. `overall_percent` is the live percent.
+- **VERIFIED locally:** RAG unit tests cover an empty collection, a malformed file, duplicate evidence, and an embedder that is missing or unavailable. Ranking stays BM25.
+- **VERIFIED locally:** A console Host that is not loopback, or a loopback name with a non-numeric port, is rejected. A foreign Origin on login is rejected.
+- **VERIFIED locally:** `python -m ops.git_parity` checks that origin is `https://github.com/henokmeron/AI-PLAYBOOK.md.git` and does not push. `--ls-remote` checks `main` and the two feature branches. A matching SHA is not a deployment.
+- **VERIFIED locally:** Temp extract of `6f07b58` into `%TEMP%\ai-playbook-recover-6f07b58-temp-extract`. Not a fresh machine. The pod was not started. The volume was not written. Go-live **NO-GO**.
+
 ### 2026-10-22 — Stopped Global Volume has no direct file API
 
 - **VERIFIED:** Pod `xx9cjogra5vcwl` is **Stopped** at $0.00/hr. Storage page after reload: Global Volume `cmv2p5m0d000007jk9o3931ea`, location **Any**, 126.0GB, 1,804 objects. The volume menu has no file browser. [S3-compatible API](https://docs.runpod.io/storage/s3-api) applies to network volumes, not this Global Volume. The stopped-pod Volumes tab showed 0 Bytes and was not used as a listing. No pod was started. No key was created. No volume file was written.

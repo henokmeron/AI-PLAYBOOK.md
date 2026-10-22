@@ -8,7 +8,7 @@ Statuses mean:
 - **MISSING** — not built.
 - **BLOCKED** — needs credentials, a running Pod, or a decision this session must not make.
 
-Checked 2026-10-22 against the local `main` working tree and a read-only portal pass. Named operator login is in this tree. It is not a live Pod claim. The saved Entra redirect was re-read on Authentication (Preview).
+Checked 2026-10-22 against the local `main` working tree. Named operator login is in this tree. It is not a live Pod claim. The saved Entra redirect was re-read on an earlier pass the same day; this pass did not open Azure and did not read a mailbox. System Status separates offline implementation from live acceptance. Production stays **NO-GO**.
 
 The machine-readable registry is `windows_repair/capabilities.py`. Its statuses are PASS, PARTIAL, FAIL, NOT IMPLEMENTED, BLOCKED, and NOT VERIFIED. Windows read-only diagnostics are not Mac, Android, iPhone, or web-device support. There is no macOS, Android, or iOS agent in this repository. Web control is the loopback console only.
 
@@ -16,9 +16,9 @@ The machine-readable registry is `windows_repair/capabilities.py`. Its statuses 
 | --- | --- | --- |
 | Loopback console (chat, documents, status) | IMPLEMENTED BUT NOT LIVE-VERIFIED | `web/server.py`, `web/test_server.py` |
 | Model gateway | IMPLEMENTED BUT NOT LIVE-VERIFIED | `api/local_gateway.py` |
-| Qwen on RunPod | BLOCKED | Pod was left running earlier; this session did not SSH or restart it |
+| Qwen on RunPod | BLOCKED | Pod `xx9cjogra5vcwl` is Stopped. It was not started. Not a live claim. |
 | IT Helpdesk agent and approvals | IMPLEMENTED BUT NOT LIVE-VERIFIED | `agents/`; prior live note is in `docs/results/`, not re-run here |
-| RAG answers with citations / abstention | IMPLEMENTED BUT NOT LIVE-VERIFIED | `rag/`, `api` conversation tests; not re-run here (no Python on this PC) |
+| RAG answers with citations / abstention | IMPLEMENTED AND TESTED in source | `rag/`. Unit tests cover empty, malformed, duplicate, and unavailable-embedding cases. Ranking stays BM25. Live Qwen generation was not re-run. |
 | Operations Centre probes, alerts, incidents | IMPLEMENTED AND TESTED in source | `ops_centre/`, `ops_centre/tests/test_ops_centre.py` |
 | Director on-demand report | IMPLEMENTED AND TESTED in source | `ops_centre/director.py`, `ops_centre/tests/test_director.py` — tests not executed on this PC |
 | Scheduled Director reports | PARTIAL | `ops_centre/director_schedule.py` can run on a file interval. No cron daemon ships with the Pod. |

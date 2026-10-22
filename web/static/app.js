@@ -338,30 +338,54 @@
     statusPanel.appendChild(el("p", "meta", body.detail || ""));
   }
 
+  function acceptanceBar(percent, live) {
+    var track = el("div", "bar-track");
+    var fill = el("div", live ? "bar-fill-live" : "bar-fill");
+    fill.style.width = Math.max(0, Math.min(100, Number(percent) || 0)) + "%";
+    track.appendChild(fill);
+    return track;
+  }
+
+  function renderAcceptanceRow(row) {
+    var section = el("section", "acceptance-row");
+    section.appendChild(el("h3", null, row.name + " " + row.percent + "%"));
+    section.appendChild(acceptanceBar(row.percent, row.lane === "live"));
+    section.appendChild(el("p", "meta", "Completed: " + ((row.completed || []).join("; ") || "None")));
+    section.appendChild(el("p", "meta", "Remaining: " + ((row.remaining || []).join("; ") || "None")));
+    section.appendChild(el("p", "meta", "Evidence: " + (row.evidence || "")));
+    section.appendChild(el("p", "meta", "Next: " + (row.next_action || "") + " Blocker: " + (row.blocker || "")));
+    return section;
+  }
+
   function renderAcceptance(board) {
     var decision = document.getElementById("acceptance-decision");
+    var summary = document.getElementById("acceptance-summary");
     var rows = document.getElementById("acceptance-rows");
     if (!decision || !rows) return;
     rows.textContent = "";
+    if (summary) summary.textContent = "";
     if (!board || !Array.isArray(board.workstreams)) {
       decision.textContent = "The acceptance board could not be loaded.";
       return;
     }
-    decision.textContent = "Decision " + board.decision + ". Overall " + board.overall_percent + "%. " + (board.note || "");
-    board.workstreams.forEach(function (row) {
-      var section = el("section", "acceptance-row");
-      section.appendChild(el("h3", null, row.name + " " + row.percent + "%"));
-      var track = el("div", "bar-track");
-      var fill = el("div", "bar-fill");
-      fill.style.width = Math.max(0, Math.min(100, Number(row.percent) || 0)) + "%";
-      track.appendChild(fill);
-      section.appendChild(track);
-      section.appendChild(el("p", "meta", "Completed: " + (row.completed || []).join("; ")));
-      section.appendChild(el("p", "meta", "Remaining: " + (row.remaining || []).join("; ")));
-      section.appendChild(el("p", "meta", "Evidence: " + (row.evidence || "")));
-      section.appendChild(el("p", "meta", "Next: " + (row.next_action || "") + " Blocker: " + (row.blocker || "")));
-      rows.appendChild(section);
-    });
+    decision.className = "acceptance-decision";
+    decision.textContent = "Production decision " + board.decision + ". Offline implementation is not a production GO. Live acceptance " + board.live_acceptance_percent + "%. " + (board.note || "");
+    if (summary) {
+      var offline = el("section", "acceptance-row");
+      offline.appendChild(el("h3", null, "Offline implementation " + board.offline_percent + "%"));
+      offline.appendChild(acceptanceBar(board.offline_percent, false));
+      summary.appendChild(offline);
+      var live = el("section", "acceptance-row");
+      live.appendChild(el("h3", null, "Live acceptance " + board.live_acceptance_percent + "%"));
+      live.appendChild(acceptanceBar(board.live_acceptance_percent, true));
+      summary.appendChild(live);
+    }
+    var offlineRows = board.workstreams.filter(function (row) { return row.lane !== "live"; });
+    var liveRows = board.workstreams.filter(function (row) { return row.lane === "live"; });
+    rows.appendChild(el("h3", "lane-label", "Offline implementation"));
+    offlineRows.forEach(function (row) { rows.appendChild(renderAcceptanceRow(row)); });
+    rows.appendChild(el("h3", "lane-label", "Live acceptance"));
+    liveRows.forEach(function (row) { rows.appendChild(renderAcceptanceRow(row)); });
   }
 
   function renderChat() {

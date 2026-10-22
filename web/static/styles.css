@@ -306,6 +306,14 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   padding-top: 12px;
 }
 .acceptance-row { margin: 14px 0 0; }
+.acceptance-decision {
+  background: var(--danger-bg);
+  color: var(--danger-ink);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-weight: 700;
+}
+.acceptance-summary { display: grid; gap: 12px; margin-top: 12px; }
 .bar-track {
   height: 10px;
   background: var(--line);
@@ -313,3 +321,5 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   overflow: hidden;
 }
 .bar-fill { height: 100%; background: var(--accent); }
+.bar-fill-live { height: 100%; background: var(--warn-ink); }
+.lane-label { margin: 18px 0 0; font-size: 0.95rem; }

@@ -273,6 +273,73 @@ class SearchAndEvidenceTests(unittest.TestCase):
         self.assertEqual(citations["invalid"], [])
 
 
+class OfflineEdgeTests(unittest.TestCase):
+    """Empty, malformed, duplicate, and unavailable-embedding cases. No GPU."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory(prefix="rag-edge-test-")
+        self.folder = Path(self.tmp.name)
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def test_empty_collection_abstains_and_does_not_use_embeddings(self) -> None:
+        empty = self.folder / "empty"
+        empty.mkdir()
+        (empty / "blank.txt").write_text("", encoding="utf-8")
+        index = rp.load_collection(empty)
+        self.assertEqual(index.chunks, [])
+        outcome = rp.search("expense receipts", index, 4)
+        self.assertTrue(outcome.abstain)
+        self.assertEqual(outcome.reason, "no_match")
+        self.assertEqual(outcome.groups, [])
+        self.assertFalse(outcome.embedding["available"])
+        self.assertEqual(outcome.embedding["reason"], "unavailable")
+        self.assertEqual(outcome.embedding["retrieval"], "bm25")
+
+    def test_malformed_duplicate_and_unavailable_embedding(self) -> None:
+        folder = self.folder / "mix"
+        folder.mkdir()
+        text = "Expense receipts must be submitted within 10 business days."
+        (folder / "one.txt").write_text(text, encoding="utf-8")
+        (folder / "two.txt").write_text(text, encoding="utf-8")
+        (folder / "broken.docx").write_bytes(b"not a zip")
+
+        def embedder() -> None:
+            raise RuntimeError("embedding service unavailable")
+
+        index = rp.load_collection(folder)
+        self.assertEqual(index.skipped, ["broken.docx"])
+        self.assertEqual(index.sources, ["one.txt", "two.txt"])
+        outcome = rp.search("expense receipts business days", index, 8, embedder=embedder)
+        self.assertFalse(outcome.abstain)
+        self.assertEqual(len(outcome.groups), 1)
+        self.assertCountEqual(outcome.groups[0].files, ["one.txt", "two.txt"])
+        self.assertFalse(outcome.embedding["available"])
+        self.assertEqual(outcome.embedding["reason"], "unavailable")
+        self.assertEqual(outcome.embedding["retrieval"], "bm25")
+
+    def test_successful_embedder_output_is_still_not_used(self) -> None:
+        folder = self.folder / "plain"
+        folder.mkdir()
+        (folder / "policy.txt").write_text(
+            "Hotel cap in London is 180 pounds per night.",
+            encoding="utf-8",
+        )
+        calls: list[str] = []
+
+        def embedder() -> str:
+            calls.append("called")
+            return "vector"
+
+        outcome = rp.search("London hotel cap", rp.load_collection(folder), 4, embedder=embedder)
+        self.assertEqual(calls, ["called"])
+        self.assertFalse(outcome.abstain)
+        self.assertEqual(outcome.groups[0].chunk.source, "policy.txt")
+        self.assertFalse(outcome.embedding["available"])
+        self.assertEqual(outcome.embedding["retrieval"], "bm25")
+
+
 class LibraryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory(prefix="rag-lib-test-")

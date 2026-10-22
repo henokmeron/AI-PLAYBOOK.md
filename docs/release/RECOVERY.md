@@ -71,7 +71,9 @@ An isolated local recovery is:
 python -m ops.release.recover --archive <archive.tar.gz> --sha256 <checksum> --destination <empty-temp-directory>
 ```
 
-On 2026-10-22 that command extracted the `d8c32ff` archive into `%TEMP%\ai-playbook-recover-d8c32ff`. That is not a fresh machine, not a second computer, and not a pod deployment.
+On 2026-10-22 that command extracted the `d8c32ff` archive into `%TEMP%\ai-playbook-recover-d8c32ff`. Later the same day it extracted `6f07b581f4dd4a7ee2811a99e9ac62edbee3eac8` into `%TEMP%\ai-playbook-recover-6f07b58-temp-extract` after sidecar SHA-256 `3cf154feb99536781232408ea06cc93373e14fe69e1d866daffa64ecdb015de7` matched. Both are temp extracts, not a fresh machine, not a second computer, and not a pod deployment.
+
+Repeatable git parity on this PC is `python -m ops.git_parity`. Add `--ls-remote` to require one SHA on `main`, `feature/qwen-a100-start-hardening`, and `feature/qwen3.5-27b-integration`. The command does not commit, push, or start the pod. A matching SHA is not a deployment. System Status shows the same split: offline implementation percent is not live acceptance, and the production decision stays **NO-GO** until the live gates pass.
 
 ## Second endpoint and Blackwell
 

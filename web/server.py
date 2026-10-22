@@ -516,10 +516,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def _host_allowed(self) -> bool:
         host = (self.headers.get("Host") or "").strip().lower()
-        if not host or "/" in host or "\\" in host or "@" in host:
+        if not host or any(ch in host for ch in "/\\@ \t"):
             return False
-        hostname = host.split(":", 1)[0]
-        return hostname in {"127.0.0.1", "localhost"}
+        if host in {"127.0.0.1", "localhost"}:
+            return True
+        hostname, separator, port = host.partition(":")
+        if separator != ":" or hostname not in {"127.0.0.1", "localhost"}:
+            return False
+        if not port.isdigit():
+            return False
+        number = int(port)
+        return 1 <= number <= 65535
 
     def _request_origin_host(self) -> str | None:
         origin = (self.headers.get("Origin") or "").strip()

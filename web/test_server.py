@@ -464,6 +464,7 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("Document Q&amp;A", text)
         self.assertIn("System Status", text)
         self.assertIn('id="acceptance-board"', text)
+        self.assertIn('id="acceptance-summary"', text)
         self.assertIn(">IT Helpdesk<", text)
         self.assertIn(">Operations<", text)
         self.assertIn('id="ops-view"', text)
@@ -516,11 +517,21 @@ class ConsoleTests(unittest.TestCase):
         payload = json.loads(body)
         self.assertEqual(status, 200)
         self.assertEqual(payload["decision"], "NO-GO")
+        self.assertEqual(payload["production_decision"], "NO-GO")
         self.assertEqual(payload["microsoft_status"], "NOT CONFIGURED")
+        self.assertLess(payload["live_acceptance_percent"], 100)
+        self.assertEqual(payload["overall_percent"], payload["live_acceptance_percent"])
+        self.assertIn("not a production GO", payload["note"])
         self.assertIn("deployed commit equals intended Git tip", payload["failing_acceptance"])
-        names = [row["name"] for row in payload["workstreams"]]
-        self.assertEqual(len(names), 10)
+        lanes = {row["lane"] for row in payload["workstreams"]}
+        self.assertEqual(lanes, {"offline", "live"})
         self.assertNotIn("BEGIN OPENSSH PRIVATE KEY", body.decode("utf-8"))
+        status, script = self.request(base, "GET", "/static/app.js")
+        script_text = script.decode("utf-8")
+        self.assertEqual(status, 200)
+        self.assertIn("Offline implementation", script_text)
+        self.assertIn("Live acceptance", script_text)
+        self.assertIn("not a production GO", script_text)
 
     def test_status_reports_ready_without_leaking_health_extras(self) -> None:
         gateway = FakeGateway()

@@ -1,13 +1,17 @@
-"""Recorded finish-order progress for the existing console status page.
+"""Recorded offline implementation and live acceptance for System Status.
 
-Percentages count completed criteria. Editing a sentence does not change a
-percentage. HTTP 200 is not a recovery, and a push is not a deployment.
+Offline percent counts offline criteria only. Live acceptance percent counts
+live criteria only. ``overall_percent`` is the live figure so an offline 100
+cannot be read as production GO. Decision stays NO-GO while any live gate fails.
+A temp extract is not a fresh machine. A push is not a deployment.
 """
 from __future__ import annotations
 
-# Set from commands run in this session. A document edit must not flip these.
+# Local/mock checks run on this Windows PC. They do not start the pod.
 LOCAL_SUITE_PASSED = True
 ISOLATED_RECOVER_PASSED = True
+# The archive of the commit that contains this flag is recorded in a later commit.
+CODE_TIP_ARCHIVE_READ_BACK = False
 
 ACCEPTANCE_GATES = (
     ("deployed commit equals intended Git tip", False),
@@ -23,12 +27,20 @@ def _bar(percent: int) -> str:
     return "[" + ("#" * filled) + ("-" * (20 - filled)) + "]"
 
 
-def _row(name: str, criteria: list[tuple[str, bool]], evidence: str, next_action: str, blocker: str) -> dict:
+def _row(
+    name: str,
+    lane: str,
+    criteria: list[tuple[str, bool]],
+    evidence: str,
+    next_action: str,
+    blocker: str,
+) -> dict:
     done = [text for text, flag in criteria if flag]
     remaining = [text for text, flag in criteria if not flag]
-    percent = (100 * len(done)) // len(criteria)
+    percent = (100 * len(done)) // len(criteria) if criteria else 0
     return {
         "name": name,
+        "lane": lane,
         "percent": percent,
         "bar": _bar(percent),
         "completed": done,
@@ -39,144 +51,191 @@ def _row(name: str, criteria: list[tuple[str, bool]], evidence: str, next_action
     }
 
 
+def _average(rows: list[dict]) -> int:
+    if not rows:
+        return 0
+    return sum(row["percent"] for row in rows) // len(rows)
+
+
 def workstreams() -> list[dict]:
-    return [
+    offline = [
         _row(
-            "Source and tests",
+            "Source and local tests",
+            "offline",
             [
                 ("Suite entry is python -m ops.run_tests", True),
-                ("Release tests reject unsafe archives and a non-fast-forward", True),
-                ("This session's full local suite exited 0", LOCAL_SUITE_PASSED),
-                ("The H100 re-ran this suite", False),
+                ("This session's local suite exited 0", LOCAL_SUITE_PASSED),
+                ("Auth unit tests passed in that suite", LOCAL_SUITE_PASSED),
+                ("Host and origin regressions passed in that suite", LOCAL_SUITE_PASSED),
             ],
-            "Local suite only. The pod checkout was not used to run tests.",
-            "Keep the suite green on the next code change.",
-            "hardware",
-        ),
-        _row(
-            "Recovery and release",
-            [
-                ("Checksum is stored in a sidecar file outside the archive", True),
-                ("Isolated local extract into a temp directory", ISOLATED_RECOVER_PASSED),
-                ("Fresh-machine or new-pod recovery", False),
-                ("Volume copy of this tip", False),
-            ],
-            "An isolated extract is not a fresh machine. The volume was not written.",
-            "Package the new tip locally, then wait for approval before any volume copy.",
-            "user approval",
-        ),
-        _row(
-            "RunPod deployment parity",
-            [
-                ("Read-only health on the running pod was recorded", True),
-                ("update-source-only.sh is fast-forward only and does not signal services", True),
-                ("Deployed commit equals the intended Git tip", False),
-            ],
-            "Earlier 2026-10-22T01:18:42Z SSH, while the pod was running: HEAD a0e9422145aae4e38025709d1ca88288e42f375b; health URLs 200. A later console reload the same day showed pod xx9cjogra5vcwl Stopped at $0.00/hr. Health was not rechecked. HTTP 200 is not parity and is not the current state.",
-            "The pod is stopped, so /tmp is gone. After an approved start, use the volume launcher. Do not run update-source-only.sh until the pod is Running and a source update is approved.",
-            "user approval",
-        ),
-        _row(
-            "RAG",
-            [
-                ("RAG unit tests exist in this tree", True),
-                ("Live Qwen RAG was re-run this session", False),
-            ],
-            "No live generation was sent. Older E2E notes were not repeated.",
-            "Re-run RAG only against the deployed tip, with the gateway key left unread.",
-            "user approval",
-        ),
-        _row(
-            "Authentication and security",
-            [
-                ("Named operator login is implemented and covered by unit tests", True),
-                ("The running console is this tip", False),
-            ],
-            "The pod console is still checkout a0e9422. Privileged repair was not run.",
-            "Do not restart the console until a deploy is approved.",
-            "user approval",
-        ),
-        _row(
-            "Microsoft integration",
-            [
-                ("Saved Authentication blade has the loopback public-client redirect", True),
-                ("Delegated Mail.Read and User.Read only; admin consent required No", True),
-                ("A running console has loaded the application id", False),
-                ("A mailbox read succeeded", False),
-            ],
-            "Authentication (Preview) shows Mobile and desktop applications and http://127.0.0.1:18080/api/microsoft/callback. Supported accounts: Single tenant only - Default Directory. Tenant d595636e-9ef4-4890-b8a7-bde8dd5cab03. Status label NOT CONFIGURED.",
-            "One consent click after an approved console that loads the client id and MICROSOFT_TENANT set to that directory. common will not complete sign-in.",
-            "user approval",
-        ),
-        _row(
-            "Source backups",
-            [
-                ("GitHub origin is the expected repository", True),
-                ("Local archive of d8c32ff was read back and matches its manifest", True),
-                ("Local archive of the commit that contains this board was read back", False),
-                ("This tip was copied to the Global Volume", False),
-            ],
-            "d8c32ff archive SHA-256 de30f6a2877fee34036731ab58073da8e0433cd6a10742e4ecfb4b6f3437f0c6, 685460 bytes, 377 members. Not on the volume.",
-            "After this commit is pushed, package it and record that hash in a following commit.",
+            "LOCAL/MOCK on Python 3.11.9. python -m ops.run_tests was 41 modules, 0 failed, exit 0. integrations.tests.test_endpoint skipped 1. windows_repair.tests.test_live_diagnostics hit one temp-file PermissionError and passed on the runner's automatic retry. The pod was not used.",
+            "Keep the local suite green on the next code change. That does not deploy it.",
             "code",
         ),
         _row(
-            "Model-weight and runtime backups",
+            "RAG offline cases",
+            "offline",
             [
-                ("Runtime archive checksum was verified on the volume on 2026-10-22", True),
-                ("Weight shards were copied off the volume and verified", False),
-                ("Shard hashes were recomputed this session", False),
+                ("Empty collection abstains", True),
+                ("Malformed file is skipped and does not fail the collection", True),
+                ("Duplicate evidence collapses to one group", True),
+                ("Unavailable embedding does not replace BM25", True),
             ],
-            "Weights and the runtime archive remain only on Global Volume cmv2p5m0d000007jk9o3931ea. Storage page after reload: 126.0GB, 1,804 objects. The stopped-pod Volumes tab showed 0 Bytes and is not a file list. No independent weight backup exists. The S3 API was not used.",
-            "Do not copy the ~52GB shards unless the owner approves a separate backup.",
-            "user approval",
+            "rag.tests.test_retrieval_pipeline.OfflineEdgeTests. Retrieval stays lexical BM25. No embedding service is called for ranking. Live Qwen generation was not run.",
+            "Re-run live RAG only after the pod is Running on the deployed tip.",
+            "code",
+        ),
+        _row(
+            "Release packaging and temp extract",
+            "offline",
+            [
+                ("Checksum sidecar is stored outside the archive", True),
+                ("Isolated temp extract of 6f07b58", ISOLATED_RECOVER_PASSED),
+                ("The extract is labelled a temp extract and not a fresh machine", ISOLATED_RECOVER_PASSED),
+            ],
+            "python -m ops.release.recover extracted commit 6f07b581f4dd4a7ee2811a99e9ac62edbee3eac8 into %TEMP%\\ai-playbook-recover-6f07b58-temp-extract. Sidecar SHA-256 3cf154feb99536781232408ea06cc93373e14fe69e1d866daffa64ecdb015de7 matched. ops/release/START.sh was present. This is a temp extract, not a fresh machine, not a second computer, and not a deployment.",
+            "Package the new tip locally after it is pushed. Do not copy it to the volume.",
+            "code",
+        ),
+        _row(
+            "Git parity",
+            "offline",
+            [
+                ("Checker refuses a different origin", True),
+                ("Checker refuses a force push", True),
+                ("This checkout origin was read without pushing", True),
+            ],
+            "python -m ops.git_parity reads origin and does not commit. Before this commit, git ls-remote origin showed 4ee02bd843a8e40d59f8121e09c0b81bdabe7648 on HEAD, main, feature/qwen-a100-start-hardening, and feature/qwen3.5-27b-integration. A matching SHA is not a deployment.",
+            "After each push, run python -m ops.git_parity --ls-remote and require one SHA on those three refs.",
+            "code",
         ),
         _row(
             "Documentation",
+            "offline",
             [
-                ("Playbook, handoff, recovery, status, matrix, and manual exist", True),
-                ("Source update and volume transfer include preflight, rollback, and acceptance", True),
-                ("Second-endpoint procedure has been executed", False),
-                ("Blackwell procedure has been executed", False),
+                ("Playbook, handoff, status, matrix, manual, and recovery describe the offline and live split", True),
+                ("Second endpoint and Blackwell stay labelled NOT TESTED", True),
+                ("Those procedures were not marked executed", True),
             ],
-            "Second endpoint and Blackwell stay NOT TESTED. Hardware required: another Windows computer, and a CC 12.0 GPU with driver 575 or newer.",
-            "Keep the procedures labelled NOT TESTED until that hardware is used.",
+            "Docs name the existing System Status board. They do not say the pod is Running and they do not say mail is end-to-end verified.",
+            "Update the same docs when the next verified fact changes.",
+            "code",
+        ),
+        _row(
+            "Source archive of this tip",
+            "offline",
+            [
+                ("GitHub origin is the expected repository", True),
+                ("Local archive of the latest packaged code tip was read back", CODE_TIP_ARCHIVE_READ_BACK),
+                ("No new archive was copied to the Global Volume", True),
+            ],
+            "Origin is https://github.com/henokmeron/AI-PLAYBOOK.md.git. This commit has not been packaged yet. A later commit may record the archive hash and will not be inside that archive. The volume was not written.",
+            "After this commit is pushed, package it, read the SHA-256 back, and record that hash in a following commit.",
+            "code",
+        ),
+    ]
+    live = [
+        _row(
+            "RunPod deployment parity",
+            "live",
+            [
+                ("Deployed commit equals the intended Git tip", False),
+                ("Current pod health was read while the pod was Running this session", False),
+            ],
+            "Pod xx9cjogra5vcwl is Stopped at $0.00/hr. Start was not clicked. Earlier HTTP 200s were on checkout a0e9422145aae4e38025709d1ca88288e42f375b while the pod was running. They are not the current state. HTTP health on a stopped pod was not claimed.",
+            "Do not click Start. After an approved start, use the volume launcher and compare /tmp/AI-PLAYBOOK to the intended tip.",
+            "user approval",
+        ),
+        _row(
+            "Microsoft mail",
+            "live",
+            [
+                ("A running console has loaded the application id", False),
+                ("A mailbox read succeeded", False),
+            ],
+            "NOT CONFIGURED. An earlier portal read showed the saved redirect http://127.0.0.1:18080/api/microsoft/callback and delegated User.Read and Mail.Read only. This session did not open Azure, did not create a secret, and did not read a mailbox.",
+            "One consent click only after an approved console deploy with MICROSOFT_TENANT set to d595636e-9ef4-4890-b8a7-bde8dd5cab03. common will not complete sign-in.",
+            "user approval",
+        ),
+        _row(
+            "Second endpoint",
+            "live",
+            [
+                ("A second Windows computer ran the endpoint worker", False),
+            ],
+            "This development PC is not a second endpoint. Its collectors are not that result.",
+            "Use another Windows computer. Do not count this PC.",
             "hardware",
         ),
         _row(
-            "Live acceptance",
+            "Blackwell",
+            "live",
             [
-                ("Pod health URLs returned HTTP 200", True),
-                ("Deployed commit equals the intended Git tip", False),
-                ("Mail end-to-end", False),
-                ("Second endpoint", False),
-                ("Blackwell live acceptance", False),
-                ("Fresh-environment recovery", False),
+                ("Live install, serve, and infer on a CC 12.0 GPU", False),
             ],
-            "HTTP 200 at 2026-10-22T01:18:42Z was on the old checkout while the pod was running. The console later showed that pod Stopped. Health was not rechecked. That is not acceptance.",
-            "Leave the decision NO-GO until the failing gates pass.",
+            "NOT TESTED. The stopped H100 is not a Blackwell result. No Blackwell pod was started.",
+            "Use a CC 12.0 GPU and driver 575 or newer. Do not claim this H100 as that result.",
+            "hardware",
+        ),
+        _row(
+            "Fresh environment",
+            "live",
+            [
+                ("Recovery on a fresh machine or a new pod", False),
+            ],
+            "The temp extract of 6f07b58 is not a fresh machine and not a new pod.",
+            "Run recovery on a machine that does not already have this checkout, or on a new pod with this volume, after approval.",
+            "hardware",
+        ),
+        _row(
+            "Volume and weights",
+            "live",
+            [
+                ("This tip was copied to the Global Volume", False),
+                ("Weight shards were copied off the volume and verified", False),
+            ],
+            "Global Volume cmv2p5m0d000007jk9o3931ea was not written. No S3 key was created. Shard bytes were not recomputed. The S3 API does not apply to this Global Volume.",
+            "Do not copy the volume or the ~52 GB shards unless the owner approves that backup.",
             "user approval",
         ),
     ]
+    return offline + live
 
 
 def board() -> dict:
     rows = workstreams()
-    overall = sum(row["percent"] for row in rows) // len(rows)
+    offline_rows = [row for row in rows if row["lane"] == "offline"]
+    live_rows = [row for row in rows if row["lane"] == "live"]
+    offline_percent = _average(offline_rows)
+    live_percent = _average(live_rows)
     failing = [name for name, passed in ACCEPTANCE_GATES if not passed]
+    decision = "GO" if not failing and live_percent == 100 else "NO-GO"
     return {
-        "decision": "NO-GO" if failing else "GO",
+        "decision": decision,
+        "production_decision": decision,
+        "offline_percent": offline_percent,
+        "offline_bar": _bar(offline_percent),
+        "offline_label": "Offline implementation",
+        "live_acceptance_percent": live_percent,
+        "live_acceptance_bar": _bar(live_percent),
+        "live_label": "Live acceptance",
+        "overall_percent": live_percent,
+        "overall_bar": _bar(live_percent),
+        "offline_is_not_production_go": True,
         "failing_acceptance": failing,
-        "overall_percent": overall,
-        "overall_bar": _bar(overall),
         "microsoft_status": "NOT CONFIGURED",
         "microsoft_reason": (
-            "The saved redirect and delegated Mail.Read are portal configuration. "
-            "No running console has loaded the application id, and no mailbox was read."
+            "Portal configuration is not a mailbox read. "
+            "No running console has loaded the application id."
         ),
         "note": (
-            "Percentages count completed criteria. A document edit does not move them. "
-            "HTTP 200 is not a recovery. A push is not a deployment."
+            "Offline implementation percent is not a production GO. "
+            "Live acceptance is separate. "
+            "A temp extract is not a fresh machine. "
+            "A push is not a deployment. "
+            "HTTP health on a stopped pod is not acceptance."
         ),
         "workstreams": rows,
+        "offline_workstreams": offline_rows,
+        "live_workstreams": live_rows,
     }

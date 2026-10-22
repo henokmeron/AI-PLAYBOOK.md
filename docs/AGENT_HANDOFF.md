@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-22** (pod `xx9cjogra5vcwl` is **Stopped**. This Global Volume has no direct S3 file API and no stopped-pod file browser. Go-live **NO-GO**.)
+Last updated: **2026-10-22** (offline implementation is separate from live acceptance on System Status. Pod `xx9cjogra5vcwl` is **Stopped**. Production **NO-GO**.)
 
 ## Only this repository
 
@@ -24,7 +24,7 @@ Do not create a new project, a new GitHub repo, or a new folder. All work stays 
 
 Confirm with `git remote -v` before any commit. If the remote is not `henokmeron/AI-PLAYBOOK.md`, stop.
 
-The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e` while GitHub was at `01e7692`. It has been fast-forwarded to match GitHub. Stay on `feature/qwen-a100-start-hardening` unless you have just fetched and both tips match.
+The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e` while GitHub was at `01e7692`. It has been fast-forwarded to match GitHub. Stay on `main`. Fast-forward `feature/qwen-a100-start-hardening` and `feature/qwen3.5-27b-integration` only when that update is a true fast-forward.
 
 ---
 
@@ -70,7 +70,7 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 - **GitHub** feature branches include the Qwen routing work. `main` is fast-forwarded to the same tip and pushed. It is not force-pushed.
 - `e1e360f` is the parent of **`c2323238041cea8317d2322e6d16554d0bc967bc`** (Qwen routing). That push is a fast-forward. The `ninja` PATH change itself is **`083fa58`**, already inside `e1e360f`.
-- Local checkout is `feature/qwen-a100-start-hardening`. Keep `feature/qwen3.5-27b-integration` on the same commit.
+- Local checkout for new work is `main`. Keep `feature/qwen-a100-start-hardening` and `feature/qwen3.5-27b-integration` on the same commit by fast-forward only.
 - Live Pod source on `vx4oe3oyfsqnz8` is `/tmp/AI-PLAYBOOK` at **`2d273f6`**. Qwen `:8002`, gateway `:8010`, and console `:8080` are up. Gemma on `:8000` is down. `MICROSOFT_CLIENT_ID` is unset. Weights were not re-downloaded.
 - Volume snapshot `…-01e7692.tar.gz` SHA-256 `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370` re-checked **OK** on 2026-10-15. Runtime `SHA256SUMS` **OK**. Volume `START.sh` matches git (`6059e4c2…`).
 - Do not commit untracked `ops/_*.sh` / `ops/_*.py` probe helpers or `__pycache__`.
@@ -163,6 +163,18 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-22 — offline completion split from live acceptance
+
+- `CURSOR_OFFLINE_COMPLETION_SPRINT.md` was not in this checkout, Downloads, Documents, the Cursor project folder, or GitHub (`main` raw URL returned 404). Work followed the owner's order and this handoff. Desktop is not present on this PC.
+- Remote was `https://github.com/henokmeron/AI-PLAYBOOK.md.git`. Before this commit, `git ls-remote` showed `4ee02bd843a8e40d59f8121e09c0b81bdabe7648` on `HEAD`, `main`, `feature/qwen-a100-start-hardening`, and `feature/qwen3.5-27b-integration`. Untracked `__pycache__` was left uncommitted. The pod was not started. No volume, S3 key, or other paid resource was created. No secret was printed.
+- System Status `GET /api/acceptance` now shows two figures. Offline implementation counts source, RAG unit cases, release packaging, the temp extract, git parity, and docs. Live acceptance counts deployment, mail, a second computer, Blackwell, a fresh machine, and the volume. `overall_percent` is the live figure. Production decision stays **NO-GO**. Offline 100% is not a production GO. Live acceptance was not raised. Pod health was not claimed.
+- Host values that are not `localhost` or `127.0.0.1`, with an optional numeric port, are rejected. A foreign Origin on login is rejected. Retrieval stays BM25 when an embedder is missing, raises, or returns a value. Empty, malformed, and duplicate cases are in `rag.tests.test_retrieval_pipeline.OfflineEdgeTests`.
+- `python -m ops.git_parity` checks origin and does not push. `python -m ops.git_parity --ls-remote` checks the three refs. A matching SHA is not a deployment.
+- LOCAL/MOCK: focused `python -m unittest ops.test_acceptance_board ops.test_git_parity rag.tests.test_retrieval_pipeline web.test_auth web.test_server` was 81 tests, exit 0. `python -m ops.run_tests` on Python 3.11.9 was 41 modules, 0 failed, exit 0, about 162 seconds. `integrations.tests.test_endpoint` skipped 1. `windows_repair.tests.test_live_diagnostics` hit a temp-file PermissionError once and passed on the runner's automatic retry. Live H100 scripts were not run.
+- Temp extract, not a fresh machine: `python -m ops.release.recover` extracted `6f07b581f4dd4a7ee2811a99e9ac62edbee3eac8` into `%TEMP%\ai-playbook-recover-6f07b58-temp-extract`. Sidecar SHA-256 `3cf154feb99536781232408ea06cc93373e14fe69e1d866daffa64ecdb015de7`. `ops/release/START.sh` was present. The archive of this commit is not recorded yet.
+- Qwen3.5-27B remains the only auto-started model. Gemma was not loaded. Privileged repair was not run. This PC is not a second endpoint. Blackwell was not verified. Microsoft mail stays **NOT CONFIGURED**.
+- Production **NO-GO**. Live blockers: pod start, deployed commit equals the intended tip, mail consent and a mailbox read, a second Windows computer, Blackwell hardware, a fresh machine, and a volume copy.
 
 ### 2026-10-22 — Global Volume access while the H100 is stopped
 

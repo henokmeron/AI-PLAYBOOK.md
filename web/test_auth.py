@@ -250,6 +250,35 @@ class AuthTests(unittest.TestCase):
         status_ok, _, _ = self.call(base, "GET", "/api/connectors", cookie=cookie)
         self.assertEqual(status_ok, 200)
 
+    def test_foreign_origin_is_rejected(self) -> None:
+        base, _service = self.start_console()
+        status, body, _headers = self.call(
+            base,
+            "POST",
+            "/api/auth/login",
+            {"username": "admin", "password": ADMIN_PASSWORD},
+            origin="https://evil.example",
+        )
+        self.assertEqual(status, 403)
+        self.assertIn("origin", body.get("error", ""))
+
+    def test_foreign_host_is_rejected(self) -> None:
+        base, _service = self.start_console()
+        status, body, _headers = self.call(
+            base, "GET", "/api/auth/status", headers={"Host": "evil.example"},
+        )
+        self.assertEqual(status, 403)
+        self.assertIn("host not allowed", body.get("error", ""))
+        status, body, _headers = self.call(
+            base, "GET", "/api/auth/status", headers={"Host": "localhost:evil"},
+        )
+        self.assertEqual(status, 403)
+        self.assertIn("host not allowed", body.get("error", ""))
+        status, _body, _headers = self.call(
+            base, "GET", "/api/auth/status", headers={"Host": "127.0.0.1:18080"},
+        )
+        self.assertEqual(status, 200)
+
     def test_csrf_required_on_mutating(self) -> None:
         base, _ = self.start_console()
         cookie, _csrf = self.login(base)

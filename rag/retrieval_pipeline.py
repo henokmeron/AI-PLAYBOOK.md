@@ -148,6 +148,21 @@ class SearchOutcome:
     top_coverage: float | None
     top_k_used: int
     ranked_count: int
+    embedding: dict[str, Any] = field(default_factory=dict)
+
+
+def embedding_status(embedder: Any | None = None) -> dict[str, Any]:
+    """This build retrieves with BM25. It has no embedding backend.
+
+    A missing embedder, a failing embedder, and a successful embedder are all
+    unavailable for ranking. Search does not switch to vector scores.
+    """
+    if embedder is not None:
+        try:
+            embedder()
+        except Exception:
+            pass
+    return {"available": False, "reason": "unavailable", "retrieval": "bm25"}
 
 
 def search(
@@ -158,7 +173,9 @@ def search(
     allowed_sources: set[str] | None = None,
     min_score: float = 0.0,
     min_coverage: float = 0.0,
+    embedder: Any | None = None,
 ) -> SearchOutcome:
+    status = embedding_status(embedder)
     if isinstance(chunks_or_index, CollectionIndex):
         index = chunks_or_index.index
     elif isinstance(chunks_or_index, Bm25Index):
@@ -170,7 +187,7 @@ def search(
     used = effective_top_k(question, top_k)
     ranked = index.search(question, used)
     if not ranked:
-        return SearchOutcome([], True, "no_match", None, None, used, 0)
+        return SearchOutcome([], True, "no_match", None, None, used, 0, status)
     groups = [
         RankedGroup(score, chunk, files, index.coverage(question, chunk))
         for score, chunk, files in dedupe_ranked_chunks(ranked)
@@ -178,10 +195,10 @@ def search(
     top_score = groups[0].score
     top_coverage = max(g.coverage for g in groups)
     if top_score < min_score:
-        return SearchOutcome([], True, "below_min_score", top_score, top_coverage, used, len(ranked))
+        return SearchOutcome([], True, "below_min_score", top_score, top_coverage, used, len(ranked), status)
     if top_coverage < min_coverage:
-        return SearchOutcome([], True, "low_query_coverage", top_score, top_coverage, used, len(ranked))
-    return SearchOutcome(groups, False, None, top_score, top_coverage, used, len(ranked))
+        return SearchOutcome([], True, "low_query_coverage", top_score, top_coverage, used, len(ranked), status)
+    return SearchOutcome(groups, False, None, top_score, top_coverage, used, len(ranked), status)
 
 
 # Instruction-like phrases commonly used in indirect prompt injection.
