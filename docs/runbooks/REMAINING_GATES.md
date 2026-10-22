@@ -26,7 +26,7 @@ The device secret is written to that file and is not printed. Do not paste the s
 
 A temp extract on this PC does not count, including a new container on this same PC. The gate stays unmet until the same checksum-verified recover runs on a fresh machine or a new pod.
 
-The archive used below is commit `758177dfad9c6ddac588debce55ab0729704c8fd`, SHA-256 `d641667fdabf46b38d1091ea147497b548183a38bc65ce3dfed74d450ae3ae82`. It does not contain `.git` or the model weights. A stock `python:3.11-slim` image also has no `git`, `pypdf`, or `openpyxl`. Install those in the new environment before `python -m ops.run_tests`. The first container, with `--network none`, could not install them and the suite exited 1 (38 of 41 modules). A later container on this same PC installed them and the suite exited 1 with 40 of 41 modules: the remaining failure is `ops.test_git_parity` because the extract is not a git checkout.
+The archive used below is commit `758177dfad9c6ddac588debce55ab0729704c8fd`, SHA-256 `d641667fdabf46b38d1091ea147497b548183a38bc65ce3dfed74d450ae3ae82`. It does not contain `.git` or the model weights. A stock `python:3.11-slim` image also has no `git`, `pypdf`, or `openpyxl`. The first container, with `--network none`, could not install them and the suite exited 1 (38 of 41 modules). A later container on this same PC installed them and the suite exited 1 with 40 of 41 modules: `ops.test_git_parity` failed because the extract was not a git checkout.
 
 On the machine that holds the archive, recover into an empty directory:
 
@@ -34,17 +34,18 @@ On the machine that holds the archive, recover into an empty directory:
 python -m ops.release.recover --archive "$env:LOCALAPPDATA\AI-PLAYBOOK\releases\758177dfad9c6ddac588debce55ab0729704c8fd\AI-PLAYBOOK-758177dfad9c6ddac588debce55ab0729704c8fd.tar.gz" --sha256 d641667fdabf46b38d1091ea147497b548183a38bc65ce3dfed74d450ae3ae82 --destination <empty-directory>
 ```
 
-`recover` checks the checksum and extracts. It does not start Qwen, the gateway, or the console.
+`recover` checks the checksum and extracts. It then records `origin` as `https://github.com/henokmeron/AI-PLAYBOOK.md.git` in a new `.git` directory. It does not fetch, commit, start Qwen, the gateway, or the console. That origin is the metadata `test_this_checkout_origin_matches_without_network` reads. The test is not skipped.
 
-Inside the new container, after that extract is copied in:
+Inside the new container, after that extract is copied in, run the clean-image script from a checkout that contains it (the `758177df` archive does not):
 
 ```bash
-apt-get update && apt-get install -y git
-python -m pip install pypdf==6.20.0 openpyxl==3.1.5 et-xmlfile==2.0.0 defusedxml==0.7.1
+sh ops/release/install-clean-env.sh /opt/ai-playbook
 python -m ops.run_tests
 ```
 
-The install needs a network. It does not copy model weights. `git` makes `git --version` succeed. It does not turn the extract into a checkout, so `test_this_checkout_origin_matches_without_network` still fails until the tree is a clone of the published repo.
+The script runs `apt-get install -y git` when `git` is missing, then `python -m pip install pypdf==6.20.0 openpyxl==3.1.5 et-xmlfile==2.0.0 defusedxml==0.7.1`. If `.git` is still absent it records the same origin. The install needs a network. It does not copy model weights and it does not fetch the repository.
+
+On 2026-10-22 a new container on this same PC followed that path. The checksum matched, recover exited 0, and `python -m ops.run_tests` exited 0 (41 of 41). The record is `docs/results/fresh-recovery-2026-10-22-repeat.md`. That run does not pass this gate.
 
 ## Blackwell
 

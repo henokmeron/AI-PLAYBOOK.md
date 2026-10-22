@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from ops.git_parity import check_repo
 from ops.release.package import (
     ReleaseError,
     git_executable,
@@ -20,6 +21,7 @@ from ops.release.package import (
     write_checksum_sidecar,
 )
 from ops.release.pre_shutdown import checkpoint_status
+from ops.release.recover import attach_published_origin
 from ops.release.source_update import SourceUpdateRefusal, acceptance, plan_fast_forward
 from ops.release.volume_transfer import plan_volume_transfer
 
@@ -104,6 +106,33 @@ class ReleasePackageTests(unittest.TestCase):
         result = subprocess.run([exe, "--version"], check=False, capture_output=True, text=True, timeout=8)
         self.assertEqual(result.returncode, 0)
         self.assertIn("git version", result.stdout.lower())
+
+    def test_recovered_tree_records_origin_without_a_commit_or_fetch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "extract"
+            dest.mkdir()
+            (dest / "README").write_text("extracted\n", encoding="utf-8")
+            attach_published_origin(dest)
+            self.assertEqual(check_repo(dest, ls_remote=False), "origin-ok")
+            head = subprocess.run(
+                [git_executable(), "-C", str(dest), "rev-parse", "HEAD"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(head.returncode, 0)
+            attach_published_origin(dest)
+            self.assertEqual(check_repo(dest, ls_remote=False), "origin-ok")
+
+    def test_clean_env_script_pins_git_and_parsers(self) -> None:
+        script = Path("ops/release/install-clean-env.sh").read_text(encoding="utf-8")
+        self.assertIn("apt-get install -y git", script)
+        self.assertIn("pypdf==6.20.0", script)
+        self.assertIn("openpyxl==3.1.5", script)
+        self.assertIn("https://github.com/henokmeron/AI-PLAYBOOK.md.git", script)
+        self.assertNotIn("git fetch", script)
+        self.assertNotIn("git clone", script)
+        self.assertNotIn("git commit", script)
 
     def test_source_update_never_restarts_a_process(self) -> None:
         self.assertEqual(

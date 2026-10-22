@@ -22,7 +22,9 @@ The `.github/workflows/verify-and-package.yml` workflow is configured to run the
 python -m ops.release.recover --archive <archive.tar.gz> --sha256 <checksum> --destination <empty-directory>
 ```
 
-Automatic steps: checksum check, reject unsafe archive paths and all symlink/hardlink/device/FIFO members, reject a symlink destination, then extract into an empty directory. Paths are checked for POSIX traversal, Windows drive/UNC paths, backslash traversal, and NTFS alternate data streams. These checks protect recovery from a crafted archive; they do not establish that a release is deployed.
+Automatic steps: checksum check, reject unsafe archive paths and all symlink/hardlink/device/FIFO members, reject a symlink destination, then extract into an empty directory. Paths are checked for POSIX traversal, Windows drive/UNC paths, backslash traversal, and NTFS alternate data streams. These checks protect recovery from a crafted archive; they do not establish that a release is deployed. A `git archive` has no `.git`. After the extract, recover records `origin` as `https://github.com/henokmeron/AI-PLAYBOOK.md.git` in a new `.git` directory. That step does not fetch, clone, or create a commit. The parity suite reads `git remote -v` from that directory.
+
+A stock `python:3.11-slim` image has no `git`, `pypdf`, or `openpyxl`. Before `python -m ops.run_tests` in that image, run `sh ops/release/install-clean-env.sh <checkout>`. The script installs `git` and the pinned parsers `pypdf==6.20.0` and `openpyxl==3.1.5` (with `et-xmlfile==2.0.0` and `defusedxml==0.7.1`), and records the same origin if `.git` is still absent. It does not download model weights. An archive built before that script existed can still be recovered; copy the script in from a checkout that has it and run it against the extracted tree.
 
 Human steps after that:
 
