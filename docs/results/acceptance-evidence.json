@@ -73,6 +73,16 @@
           "evidence_kind": "live",
           "detail": "200/200/200. Gateway pid 84940 and console pid 84943 started at 21:58:54Z after the checkout. vLLM pid 1826 was not signalled.",
           "citation": "docs/results/live-acceptance-2026-10-22.md, deploy of 7d2c036"
+        },
+        {
+          "source_sha": "cbf52ec5405056734302a05db2970f7362c57c0e",
+          "deployed_sha": "cbf52ec5405056734302a05db2970f7362c57c0e",
+          "command": "curl -s -o /dev/null -w %{http_code} http://127.0.0.1:8002/health; http://127.0.0.1:8010/health; http://127.0.0.1:8080/api/status after a console-only reload on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T23:37:20Z",
+          "result": "http_200",
+          "evidence_kind": "live",
+          "detail": "200/200/200. Console pid 97009. Qwen pid 1826 and gateway pid 87842 were not signalled.",
+          "citation": "docs/IMPLEMENTATION_STATUS.md, 2026-10-23 console reload of cbf52ec"
         }
       ]
     },
@@ -147,6 +157,16 @@
           "evidence_kind": "live",
           "detail": "Pod HEAD 7d2c036, 0 tracked edits. Gateway 84940 start epoch 1792706334.646 is after api/local_gateway.py mtime 1792706255.052. Console 84943 start epoch 1792706334.746 is after integrations/endpoint.py mtime 1792706334.476 and web/static/app.js mtime 1792706334.477. vLLM pid 1826 was not signalled. Ancestor ce8ad21 changed the gateway; this restart loaded it.",
           "citation": "docs/results/live-acceptance-2026-10-22.md, deploy of 7d2c036"
+        },
+        {
+          "source_sha": "cbf52ec5405056734302a05db2970f7362c57c0e",
+          "deployed_sha": "cbf52ec5405056734302a05db2970f7362c57c0e",
+          "command": "SOURCE_UPDATE_APPROVED=yes bash ops/release/update-source-only.sh; replace web/server.py only from its own /proc environ; GET /api/acceptance on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T23:37:20Z",
+          "result": "deployed_sha_read",
+          "evidence_kind": "live",
+          "detail": "Pod HEAD cbf52ec5405056734302a05db2970f7362c57c0e. Console pid 97009 started 2026-10-22T23:36:42Z. GET /api/acceptance returned the content-match gate and Microsoft NOT CONFIGURED. acceptance_board.py mtime is 118 ms after the process start tick; the response text is the new gate, so the import read that file. Qwen pid 1826 and gateway pid 87842 were not signalled. This commit does not change api/local_gateway.py.",
+          "citation": "docs/IMPLEMENTATION_STATUS.md, 2026-10-23 console reload of cbf52ec"
         }
       ]
     },

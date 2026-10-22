@@ -1,6 +1,12 @@
 # Remaining live gates
 
-These four gates are open. Nothing here starts a pod, copies model weights, or creates a paid resource. Production stays NO-GO until each one has its own live evidence.
+These gates are open. Nothing here starts a pod, copies model weights, or creates a paid resource. Production stays NO-GO until each mandatory one has its own live evidence.
+
+## Microsoft content match
+
+A count-only list of message ids was HTTP 200 with count 9 on 2026-10-22T23:28Z. A phrase search for `the`, and `contains(subject,'the')`, were HTTP 200 with count 0. No subject or body was stored. `Mail.Send` is not granted. That is not `mailbox_content_match_ok`.
+
+Do not open a subject to invent the query. The owner can supply one harmless distinctive phrase that is already in the mailbox. Record only the HTTP status, the count, and whether that phrase was present.
 
 ## Second Windows computer
 
