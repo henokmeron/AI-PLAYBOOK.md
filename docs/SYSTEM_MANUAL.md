@@ -8,7 +8,7 @@
 | --- | --- |
 | **Last updated** | 2026-10-22 |
 | **Git tip (code)** | see `git log -1`. A push is not the pod checkout. |
-| **Live Pod** | `xx9cjogra5vcwl` (`reliable_moccasin_hummingbird`) — **Running** H100 NVL at $3.20/hr. Left running. Checkout on the pod was `a0e9422`. |
+| **Live Pod** | `mlar88u3ku8utm` (`screeching_crimson_vole`) — **Running** A100 SXM at $1.80/hr with the Global Volume mounted. Checked 2026-10-22T13:01Z. Qwen is not loaded. The H100 `xx9cjogra5vcwl` is **Stopped** at $0.00/hr. Do not start it. |
 | **Global Volume** | `cmv2p5m0d000007jk9o3931ea` (“New model container”), filesystem `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` |
 | **GitHub** | `https://github.com/henokmeron/AI-PLAYBOOK.md.git` |
 | **Your PC copy** | `C:\Users\henok\src\AI-PLAYBOOK.md` |
@@ -279,16 +279,15 @@ So: the Helpdesk agent is a **controlled coworker** for diagnosis and safe local
 
 ### A. Start after Stop (same volume)
 
-1. The existing pod is `xx9cjogra5vcwl` (`reliable_moccasin_hummingbird`), H100 NVL. On 2026-10-22 the console showed it **Stopped** at $0.00/hr. Start it only when you mean to pay for the GPU. The Start control showed $3.19/hr. Do not create a new volume, a new pod, or an S3 API key. The S3 API does not list this Global Volume.
-2. Wait until Running; copy new SSH IP/port if changed.
-3. SSH in, then:
+1. On 2026-10-22T13:01Z the running pod is `mlar88u3ku8utm` (`screeching_crimson_vole`), A100 SXM, **$1.80/hr**. Global Volume `cmv2p5m0d000007jk9o3931ea` is already mounted at `/workspace`. Leave this pod running. The H100 `xx9cjogra5vcwl` is **Stopped** at $0.00/hr. Do not start the H100. Do not create a new volume, a new pod, or an S3 API key. The S3 API does not list this Global Volume.
+2. SSH TCP that hour was `root@195.26.233.38` port `53380`. Read the Connect panel again after a restart. Do not reuse a dead port.
+3. Preflight already passed at 2026-10-22T13:02:45Z (`PREFLIGHT_PASS`). It did not load Qwen. Nothing was listening on `:8002`, `:8010`, or `:8080`. The next command, only after you approve the GPU load, is:
 
 ```bash
-bash /workspace/ai-platform-release/START.sh --preflight
 bash /workspace/ai-platform-release/START.sh
 ```
 
-The 2026-10-22 weights and source snapshot are on Global Volume `cmv2p5m0d000007jk9o3931ea`. Attach that existing volume. Do not create a new volume. Run the two commands only after the new pod is Running. They were not run during the shutdown save.
+The documented pair is still `--preflight`, then a full `START.sh`. Preflight was the only command run. The full command restores the runtime under `/tmp` and loads Qwen. It was not run.
 
 4. Tunnel to `:8080` and open the UI.
 5. Prefer **Stop** when idle. Prefer **not** Terminate (keeps the Pod definition; volume is separate either way).
@@ -376,6 +375,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 
 | Date | Change |
 | --- | --- |
+| 2026-10-22 | Running pod is A100 `mlar88u3ku8utm` at $1.80/hr with Global Volume `cmv2p5m0d000007jk9o3931ea` on `/workspace`. Health ports refused connections. `START.sh --preflight` returned **PREFLIGHT_PASS**. Qwen was not loaded. The H100 stayed Stopped. The volume was not written. Production **NO-GO**. |
 | 2026-10-22 | Local archive of `d6d3ac2f9cb7fb3632b042c3fe58eefe0e180eb4` SHA-256 `50df5371070cc5004cad45ec645e9da938460f077b373f08240fda1e24ac98ee`, 383 members. This note is not inside that archive. Not copied to the volume. Production **NO-GO**. |
 | 2026-10-22 | Gateway `/health` is not `ok` when no model id is reported. The console says “No model reported”. Pod `xx9cjogra5vcwl` rechecked **Stopped** at $0.00/hr. Live health was not called. Production **NO-GO**. |
 | 2026-10-22 | An answer with no source label is withheld when evidence exists (`missing_citations`). “Do not cite the source” in a document is flagged. Mock only. Not deployed. Production **NO-GO**. |

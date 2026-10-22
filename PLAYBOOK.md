@@ -311,6 +311,11 @@ Phase 7 — Advanced model customisation
 - Treat the playbook as a reproducible blueprint for future AI-assisted automation.
 
 ## 13. Change log
+### 2026-10-22 — A100 volume pod preflight, model still down
+
+- **VERIFIED live:** Pod `mlar88u3ku8utm` (`screeching_crimson_vole`) is Running, A100 SXM, $1.80/hr. Global Volume `cmv2p5m0d000007jk9o3931ea` is mounted at `/workspace` (`5aac0c77-6fcc-4be9-a112-dfe3890e1373`). `START.sh --preflight` returned **PREFLIGHT_PASS** at 2026-10-22T13:02:45Z. Checkout `/tmp/AI-PLAYBOOK` is `cbbf185eecc6e46130ac4bdc1a8089fba0e89052`.
+- **DOWN:** `:8002`, `:8010`, and `:8080` refused connections. Qwen was not loaded. No completion and no RAG question were sent. The H100 `xx9cjogra5vcwl` stayed Stopped at $0.00/hr and was not started. The volume was not written. Go-live **NO-GO**. Next approval is `bash /workspace/ai-platform-release/START.sh`.
+
 ### 2026-10-22 — Local archive of d6d3ac2
 
 - **VERIFIED locally:** `%LOCALAPPDATA%\AI-PLAYBOOK\releases\d6d3ac2f9cb7fb3632b042c3fe58eefe0e180eb4\AI-PLAYBOOK-d6d3ac2f9cb7fb3632b042c3fe58eefe0e180eb4.tar.gz`, SHA-256 `50df5371070cc5004cad45ec645e9da938460f077b373f08240fda1e24ac98ee`, 715,415 bytes, 383 members. The sidecar matched. This note is not inside that archive. Not copied to the volume. Not a fresh machine. Go-live **NO-GO**.

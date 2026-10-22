@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-22T12:55:53Z** (H100 `xx9cjogra5vcwl` rechecked **Stopped** at $0.00/hr. Start was not clicked. Live health was not called. Production **NO-GO**.)
+Last updated: **2026-10-22T13:03:23Z** (A100 `mlar88u3ku8utm` is **Running** at $1.80/hr with the platform volume mounted. Preflight **passed**. Qwen was **not** loaded. H100 stayed **Stopped**. Production **NO-GO**.)
 
 ## Only this repository
 
@@ -46,13 +46,14 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 | Item | Value | Status |
 | --- | --- | --- |
-| Active test Pod | RunPod `xx9cjogra5vcwl` (“reliable_moccasin_hummingbird”), **H100 NVL** | **VERIFIED** **Stopped** on 2026-10-22. Page `https://console.runpod.io/pods?id=xx9cjogra5vcwl` showed a pause icon, **Start for $3.19/hr**, Compute **Not running**, Container storage **Not running**, total **$0.00/hr**. The list price was also **$0.00/hr**. Start was not clicked. A different pod, `screeching_crimson_vole` (`mlar88u3ku8utm`, A100 SXM, **$1.80/hr**), was Running and was not used. |
-| Prior Pod | `1cj381fjuujeq7` / `vx4oe3oyfsqnz8` | Gone from console / left alone. Do not recreate extras. |
-| SSH (TCP) | Previous endpoint `root@216.81.245.55` port `25839`, key `%USERPROFILE%\.ssh\id_ed25519`. | **REFUSED** on 2026-10-22. The stopped pod’s inspector has no Connect tab and no current TCP port. The key was not printed. |
-| GPU / driver | Last read while the pod was running: H100 NVL, **85,415 MiB used** of **95,830 MiB**, driver **595.91.07** | **NOT RECHECKED** while stopped. |
-| Container | PyTorch 2.8.0; runtime in `/tmp/vllm-qwen-env` | Restored from volume archive. |
-| Global Volume | Console id `cmv2p5m0d000007jk9o3931ea` (“New model container”). Filesystem `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (`fuse.geesefs`) was verified earlier over SSH and was **not** re-checked while the pod is stopped. | **VERIFIED** on the Storage page after a reload: type badge **Global**, location **Any**, **126.0GB stored**, **1,804 objects**, **$11.34/mo**. A stale tab first showed 1,794 objects. The stopped-pod Volumes tab shows **0 Bytes / 0 objects** and is not a file list. Direct S3 API is **not** supported. No file was written. No new volume was created. |
-| Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | **NOT CALLED** on 2026-10-22. The pod is stopped, so there was no process to probe. Earlier HTTP 200s were while it was running, on checkout **`a0e9422145aae4e38025709d1ca88288e42f375b`**. Do not treat those 200s as the current state. Qwen was not signalled and was not reloaded. |
+| Active test Pod | RunPod `mlar88u3ku8utm` (“screeching_crimson_vole”), **A100 SXM** | **VERIFIED Running** on 2026-10-22. Page `https://console.runpod.io/pods?id=mlar88u3ku8utm` showed a Stop button, **A100 SXM x1**, **$1.80/hr**. The H100 `xx9cjogra5vcwl` (“reliable_moccasin_hummingbird”) stayed **Stopped** at **$0.00/hr**. Start was not clicked. The A100 was not stopped. |
+| Prior Pod | `xx9cjogra5vcwl` H100, and older `1cj381fjuujeq7` / `vx4oe3oyfsqnz8` | H100 left **Stopped**. Older pods left alone. Do not start the H100 to compensate. Do not recreate extras. |
+| SSH (TCP) | `root@195.26.233.38` port `53380`, key `%USERPROFILE%\.ssh\id_ed25519`. | **VERIFIED** at 2026-10-22T13:01:34Z. The dead H100 endpoint `216.81.245.55:25839` was not reused. The key was not printed. |
+| GPU / driver | NVIDIA A100-SXM4-80GB, **81920 MiB** total, **0 MiB** used, driver **595.91.07**, utilization 0%. No compute apps. | **VERIFIED** at 2026-10-22T13:01:34Z. |
+| Container | `/tmp/vllm-qwen-env` is **absent**. About 49 GiB free under `/tmp`. | The runtime archive was not restored. Preflight did not extract it. |
+| Global Volume | Console id `cmv2p5m0d000007jk9o3931ea` (“New model container”), type **Global**, mounted at `/workspace`. `findmnt` source `5aac0c77-6fcc-4be9-a112-dfe3890e1373`, fstype `fuse.geesefs`. | **VERIFIED** on this running A100 at 2026-10-22T13:01:34Z. The Volumes panel showed **126 GB** and **1,804 objects**. No `/workspace` file had an mtime in the 30 minutes before 13:03:23Z. Direct S3 API is **not** supported. No new volume was created. |
+| Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | **DOWN** at 2026-10-22T13:01:34Z. Curl could not connect (HTTP 000). Nothing was listening at 13:03:23Z. No vLLM, gateway, or console process. Gemma `:8000` is down. The model was not loaded. Earlier HTTP 200s were a different pod and checkout **`a0e9422145aae4e38025709d1ca88288e42f375b`**. |
+| Pod checkout | `/tmp/AI-PLAYBOOK` did not exist before preflight. After `START.sh --preflight` it is `main` at `cbbf185eecc6e46130ac4bdc1a8089fba0e89052`. Origin `https://github.com/henokmeron/AI-PLAYBOOK.md.git`. | Clone is on container `/tmp` only. **PREFLIGHT_PASS** at 2026-10-22T13:02:45Z, exit 0. “no services started, nothing restored.” Full `START.sh` was not run. |
 | Other Pod | Older idle/terminated Pods | Leave alone unless user says otherwise |
 
 ### Exact volume paths that must remain
@@ -68,6 +69,7 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 ### Git
 
+- Current pod checkout, after the 2026-10-22 preflight clone on `mlar88u3ku8utm`, is `/tmp/AI-PLAYBOOK` at `cbbf185eecc6e46130ac4bdc1a8089fba0e89052`. Services on that pod are down. The `vx4oe3oyfsqnz8` sentence below is an older pod.
 - **GitHub** feature branches include the Qwen routing work. `main` is fast-forwarded to the same tip and pushed. It is not force-pushed.
 - `e1e360f` is the parent of **`c2323238041cea8317d2322e6d16554d0bc967bc`** (Qwen routing). That push is a fast-forward. The `ninja` PATH change itself is **`083fa58`**, already inside `e1e360f`.
 - Local checkout for new work is `main`. Keep `feature/qwen-a100-start-hardening` and `feature/qwen3.5-27b-integration` on the same commit by fast-forward only.
@@ -163,6 +165,16 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-22 — A100 is the running volume pod; preflight passed; model not loaded
+
+- RunPod at 2026-10-22T13:01Z: `screeching_crimson_vole` (`mlar88u3ku8utm`) is **Running**, A100 SXM x1, **$1.80/hr**, Stop button present. `reliable_moccasin_hummingbird` (`xx9cjogra5vcwl`) is still **Stopped** at **$0.00/hr**. Start was not clicked. The A100 was not stopped, resized, or terminated. The H100 was not started.
+- Volumes tab on the A100: “New model container” `cmv2p5m0d000007jk9o3931ea`, type **Global**, mounted at `/workspace`, **126 GB**, **1,804 objects**. SSH `findmnt` at 2026-10-22T13:01:34Z: `5aac0c77-6fcc-4be9-a112-dfe3890e1373 fuse.geesefs /workspace`. This is the platform volume. Not BLOCKED.
+- SSH TCP from the Connect panel: `root@195.26.233.38` port `53380`. The key was not printed. The old port `25839` was not used. `nvidia-smi`: NVIDIA A100-SXM4-80GB, 81920 MiB total, 0 MiB used, driver 595.91.07, 0% utilization, no compute apps.
+- Health at 2026-10-22T13:01:34Z: `:8002/health`, `:8010/health`, and `:8080/api/status` all failed to connect (HTTP 000). At 13:03:23Z nothing was listening on those ports or `:8000`, and no platform process was running. `/tmp/AI-PLAYBOOK` did not exist before preflight. Weights shard 11, the runtime archive, and `/workspace/ai-platform-release/START.sh` were present. They were not overwritten.
+- `bash /workspace/ai-platform-release/START.sh --preflight` at 2026-10-22T13:02:45Z printed **PREFLIGHT_PASS** and exit 0. It said “no services started, nothing restored.” It cloned `main` `cbbf185eecc6e46130ac4bdc1a8089fba0e89052` into `/tmp/AI-PLAYBOOK` only. Gemma was not loaded. `--start` and a full `START.sh` were not run. No completion and no RAG question were sent, because nothing was listening and those scripts would talk to a dead gateway. `update-source-only.sh` was not needed; the new checkout was already at `origin/main`.
+- A search for `/workspace` files changed in the previous 30 minutes, at 13:03:23Z, returned none. The volume was not written. Production stays **NO-GO**. Mail stays **NOT CONFIGURED**. Live acceptance was not raised.
+- Next approval, and only that, is the model load: `bash /workspace/ai-platform-release/START.sh`. That restores the runtime and loads Qwen. It was not run. This recording commit is not on the pod. The pod checkout stays `cbbf185eecc6e46130ac4bdc1a8089fba0e89052` until a later source-only update.
 
 ### 2026-10-22 — archive of d6d3ac2 recorded after the fact
 
