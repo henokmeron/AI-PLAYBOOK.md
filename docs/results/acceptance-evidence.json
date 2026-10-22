@@ -43,6 +43,16 @@
           "evidence_kind": "live",
           "detail": "200 / 200 / 200 after the console-only restart to c25c0ac (console pid 57562); vLLM pid 1826 and gateway pid 54370 unchanged.",
           "citation": "docs/results/live-acceptance-2026-10-22.md, console redeploy of c25c0ac"
+        },
+        {
+          "source_sha": "4eab966f9acc35632fcc2cfe4a5e42565db59e9a",
+          "deployed_sha": "4eab966f9acc35632fcc2cfe4a5e42565db59e9a",
+          "command": "curl -s -o /dev/null -w %{http_code} http://127.0.0.1:8002/health; :8010/health; :8080/ over SSH on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T19:46:42Z",
+          "result": "http_200",
+          "evidence_kind": "live",
+          "detail": "200/200/200 after gateway pid 72553 and console pid 72560 restarted onto 4eab966. vLLM pid 1826 unchanged.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, redeploy of 4eab966"
         }
       ]
     },
@@ -87,6 +97,16 @@
           "evidence_kind": "live",
           "detail": "Pod HEAD c25c0ac, 0 tracked edits. Changed served file since d6d3beb: ops/acceptance_board.py only (read by the console; the gateway does not import it). Console 57562 start epoch 1792694566.07 is after the file mtime 1792694565.87; environment carried over (29 variables, Microsoft id file and tenant set). Gateway 54370 and vLLM 1826 not signalled.",
           "citation": "docs/results/live-acceptance-2026-10-22.md, console redeploy of c25c0ac"
+        },
+        {
+          "source_sha": "4eab966f9acc35632fcc2cfe4a5e42565db59e9a",
+          "deployed_sha": "4eab966f9acc35632fcc2cfe4a5e42565db59e9a",
+          "command": "SOURCE_UPDATE_APPROVED=yes bash ops/release/update-source-only.sh; git rev-parse HEAD; restart gateway and console from their own /proc environ on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T19:46:42Z",
+          "result": "deployed_sha_read",
+          "evidence_kind": "live",
+          "detail": "Pod HEAD 4eab966. Gateway 72553 and console 72560 started after the checkout. vLLM pid 1826 not signalled.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, redeploy of 4eab966"
         }
       ]
     },
@@ -215,6 +235,26 @@
           "evidence_kind": "live",
           "detail": "HTTP 200 abstained, no sources.",
           "citation": "docs/results/live-acceptance-2026-10-22.md, redeploy of d6d3beb"
+        },
+        {
+          "source_sha": "4eab966f9acc35632fcc2cfe4a5e42565db59e9a",
+          "deployed_sha": "4eab966f9acc35632fcc2cfe4a5e42565db59e9a",
+          "command": "python3 -m evaluation.run_live_rag_regression P3 on http://127.0.0.1:8010 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T19:47:37Z",
+          "result": "rag_cited_answer_ok",
+          "evidence_kind": "live",
+          "detail": "P3 What type of train ticket should employees choose? HTTP 200 answered, phrase standard present, source expenses-policy.md. Suite 6/6.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, redeploy of 4eab966"
+        },
+        {
+          "source_sha": "4eab966f9acc35632fcc2cfe4a5e42565db59e9a",
+          "deployed_sha": "4eab966f9acc35632fcc2cfe4a5e42565db59e9a",
+          "command": "python3 -m evaluation.run_live_rag_regression N1 and N2 on http://127.0.0.1:8010 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T19:47:37Z",
+          "result": "rag_abstention_ok",
+          "evidence_kind": "live",
+          "detail": "N1 yacht and N2 VAT both HTTP 200 abstained with no sources. P1, P2 and P4 also answered with the required phrase and source.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, redeploy of 4eab966"
         }
       ]
     },

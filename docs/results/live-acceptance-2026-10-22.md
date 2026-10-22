@@ -226,3 +226,11 @@ With the evidence file from `d6d3beb`, both tests pass. Any accurate new live re
 - Running revision: console start epoch 1792694566.07 is after the `ops/acceptance_board.py` mtime 1792694565.87. Pod HEAD c25c0ac with 0 tracked edits.
 - 18:42:49Z: health 200 on 8002 and 8010, console 200 on 8080. vLLM 1826 and gateway 54370 unchanged.
 - Earlier attempt at 18:41Z: a quoting slip in the remote shell stripped characters from the script. It stopped at the first failing command, before the kill line. A read-only check confirmed nothing changed.
+
+## Redeploy of 4eab966 (coordinator, 19:46Z)
+
+- `SOURCE_UPDATE_APPROVED=yes bash ops/release/update-source-only.sh` fast-forwarded the pod to `4eab966f9acc35632fcc2cfe4a5e42565db59e9a`.
+- Gateway restarted from pid 54370 to **72553**. Console restarted from pid 64569 to **72560**. vLLM stayed pid **1826**.
+- 19:46:42Z: health 200 on 8002 and 8010, console 200 on 8080.
+- 19:47:37Z `python3 -m evaluation.run_live_rag_regression` exit 0, **6/6**. P3 `What type of train ticket should employees choose?` was HTTP 200, status answered, the answer contained `standard`, and the source was `expenses-policy.md`. N1 and N2 abstained with no sources.
+
