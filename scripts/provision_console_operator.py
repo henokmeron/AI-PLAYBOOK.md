@@ -15,8 +15,14 @@ Examples:
   python3 scripts/provision_console_operator.py set-role --username bob --role viewer
   python3 scripts/provision_console_operator.py list
 
+  # Forgotten password. Needs write access to OPERATOR_AUTH_DIR, like create-admin.
+  # Every session of that operator is signed out.
+  python3 scripts/provision_console_operator.py reset-password --username alice
+
 Passwords are read from the OPERATOR_PASSWORD environment variable or, if unset,
-from a single stdin line. Values are never printed.
+from a hidden prompt (or a single stdin line when not interactive). If
+OPERATOR_ADMIN_PASSWORD is unset, the administrator password is prompted for.
+Values are never printed.
 """
 from __future__ import annotations
 
@@ -76,9 +82,11 @@ def _require_local_admin(service: AuthService) -> str:
     """CLI gate: prove admin credentials from the environment for local ops."""
     username = os.environ.get("OPERATOR_ADMIN_USERNAME", "").strip()
     password = os.environ.get("OPERATOR_ADMIN_PASSWORD", "")
+    if username and not password and sys.stdin.isatty():
+        password = getpass.getpass(f"Password for administrator {username}: ")
     if not username or not password:
         raise AuthError(
-            "set OPERATOR_ADMIN_USERNAME and OPERATOR_ADMIN_PASSWORD for this administrative CLI action",
+            "set OPERATOR_ADMIN_USERNAME (the administrator password is prompted for) for this administrative CLI action",
             status=401,
         )
     session = service.login(username, password, peer_ip="cli")
@@ -139,6 +147,26 @@ def cmd_set_role(args: argparse.Namespace) -> int:
     return 0
 
 
+def _read_new_password(prompt: str) -> str:
+    password = _read_password(prompt)
+    if sys.stdin.isatty() and not os.environ.get("OPERATOR_PASSWORD"):
+        if password != getpass.getpass("Confirm password: "):
+            raise AuthError("passwords do not match")
+    return password
+
+
+def cmd_reset_password(args: argparse.Namespace) -> int:
+    service = _service()
+    try:
+        password = _read_new_password(f"New password for {args.username}: ")
+        record = service.reset_password(args.username, password, actor="provision-cli")
+    except AuthError as exc:
+        print(f"ERROR: {exc.message}", file=sys.stderr)
+        return 2
+    print(f"Password reset for {record.username}. Their existing sessions were signed out.")
+    return 0
+
+
 def cmd_list(_args: argparse.Namespace) -> int:
     service = _service()
     rows = service.list_operators()
@@ -176,6 +204,10 @@ def main(argv: list[str] | None = None) -> int:
     p_role.add_argument("--username", required=True)
     p_role.add_argument("--role", choices=list(role_names()), required=True)
     p_role.set_defaults(func=cmd_set_role)
+
+    p_reset = sub.add_parser("reset-password", help="Set a new password (local store access required)")
+    p_reset.add_argument("--username", required=True)
+    p_reset.set_defaults(func=cmd_reset_password)
 
     p_list = sub.add_parser("list", help="List operators (no secrets)")
     p_list.set_defaults(func=cmd_list)

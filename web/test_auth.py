@@ -407,6 +407,40 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(len(successes), 1)
         self.assertEqual(successes[0]["actor"], "admin")
 
+    def test_password_reset_replaces_password_and_ends_sessions(self) -> None:
+        directory = self._auth_dir()
+        service = AuthService(directory)
+        service.create_operator("admin", ADMIN_PASSWORD, "admin", allow_first_admin=True, actor="test")
+        old = service.login("admin", ADMIN_PASSWORD, peer_ip="127.0.0.1")
+        new_password = "unit-test-reset-password"
+        service.reset_password("Admin", new_password, actor="provision-cli")
+        self.assertIsNone(service.validate_session(old.session_id))
+        with self.assertRaises(AuthError):
+            service.login("admin", ADMIN_PASSWORD, peer_ip="127.0.0.1")
+        reloaded = AuthService(directory)
+        self.assertEqual(reloaded.login("admin", new_password, peer_ip="127.0.0.1").username, "admin")
+        with self.assertRaises(AuthError) as missing:
+            service.reset_password("nobody", new_password, actor="provision-cli")
+        self.assertEqual(missing.exception.status, 404)
+        with self.assertRaises(AuthError):
+            service.reset_password("admin", "", actor="provision-cli")
+
+    def test_provision_cli_resets_password_without_printing_it(self) -> None:
+        import subprocess
+
+        directory = self._auth_dir()
+        AuthService(directory).create_operator("admin", ADMIN_PASSWORD, "admin", allow_first_admin=True, actor="test")
+        script = Path(__file__).resolve().parents[1] / "scripts" / "provision_console_operator.py"
+        new_password = "unit-test-cli-reset-password"
+        env = {**os.environ, "OPERATOR_AUTH_DIR": directory, "OPERATOR_PASSWORD": new_password}
+        done = subprocess.run(
+            [sys.executable, str(script), "reset-password", "--username", "admin"],
+            capture_output=True, text=True, env=env, timeout=60,
+        )
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn(new_password, done.stdout + done.stderr)
+        self.assertEqual(AuthService(directory).login("admin", new_password).username, "admin")
+
     def test_ops_actor_comes_from_session_not_json(self) -> None:
         from ops_centre.models import Alert
 

@@ -212,6 +212,35 @@ class AuthService:
         )
         return record
 
+    def reset_password(self, username: str, password: str, *, actor: str) -> OperatorRecord:
+        """Set a new password and end every session for that operator.
+
+        Only the local provisioning CLI calls this: write access to the private
+        operator store is the authority, as for the first administrator.
+        """
+        try:
+            password_hash = hash_password(password)
+        except PasswordError as exc:
+            raise AuthError(str(exc)) from exc
+        with self.store._lock:
+            record = self.store.by_username(username.strip().casefold())
+            if record is None:
+                raise AuthError("operator not found", status=404)
+            record.password_hash = password_hash
+            record.updated_at = utc_now()
+            self.store.save_operators()
+            self._revoke_operator_sessions(record.operator_id)
+        self._clear_failures(record.username, "cli")
+        self._audit(
+            "auth.password_reset",
+            "updated",
+            actor=actor,
+            summary=f"Password reset for {record.username}",
+            detail={"username": record.username},
+            severity="medium",
+        )
+        return record
+
     def list_operators(self) -> list[dict[str, Any]]:
         return [op.public() for op in sorted(self.store.operators.values(), key=lambda item: item.username)]
 
