@@ -26,6 +26,19 @@ This revision keeps Chat, upload, System Status, loopback binding, and bearer-ke
 - Failed requests do not append a turn; the transcript stays intact and Ask re-enables.
 - Clear conversation clears only the local transcript/`ragTurns`. It does not call document delete APIs and does not change the selected collection or `top_k`.
 
+## Retest the recovered handbook quiz
+
+The recovered 2,000-character paste and the pages it must reach are in `eval/rag/datasets/msfc-hdbk-3173-quiz.json`. Question 10 in that file is the truncated live text, ending at `Deep reasonin`.
+
+Handbook prose uses 4.4 characters per token for the evidence budget. Spreadsheet chunks stay at 2.4. A numbered quiz is answered one short paragraph per question. The lexical winner is kept when a long question dilutes its coverage, and the question still abstains when no chunk clears the coverage floor.
+
+```bash
+python -m unittest rag.tests.test_retrieval_pipeline api.test_rag_conversation api.test_gateway_reliability agents.tests.test_graph_tools
+python eval/rag/handbook_quiz_eval.py --collection /path/to/my-docs --require
+```
+
+On the pod the collection is `/workspace/rag-managed-docs/my-docs`. `--require` exits 1 when page 45, 89, or 192 is indexed but not packed. The unittest run also covers an unsupported fact, instruction-like text inside a document, and invalid tool arguments.
+
 ## Spreadsheet extraction, retrieval, and calculations
 
 - XLSX extraction (`rag/document_loaders.py`) keeps sheet name, row number, cell coordinate, and stacked headers from every label row above the first numeric data row as `coordinate/Header=value` (so age bands and units stay attached to rates).

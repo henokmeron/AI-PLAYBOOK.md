@@ -404,7 +404,7 @@ class GatewayReliabilityTests(unittest.TestCase):
             ({"raw": b"\xff\xfe"}, 400),
             ({"raw": b'{"question": "x"}', "content_type": "text/plain"}, 415),
             ({"body": {"question": ""}}, 400),
-            ({"body": {"question": "q" * 2001}}, 413),
+            ({"body": {"question": "q" * (gateway.MAX_QUESTION_CHARS + 1)}}, 413),
             ({"body": {"question": "ok", "top_k": 0}}, 400),
             ({"body": {"question": "ok", "top_k": True}}, 400),
             ({"body": {"question": "ok", "history": "nope"}}, 400),
