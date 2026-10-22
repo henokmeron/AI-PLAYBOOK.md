@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-22T18:25Z** (Tip `d1e766e` running in gateway 53074 and console 53091 on `gom4ualdk47qrj`; vLLM 1826 untouched. Live completion and cited RAG verified; RAG regression 5/6. Microsoft configured but not connected; sign-in blocked on operator login. See `docs/results/live-acceptance-2026-10-22.md`.) Previous: **2026-10-22T16:30Z** (Coordinator integrated uncommitted specialist edits on top of `409c891`. A100 `gom4ualdk47qrj` was not restarted. Empty tenant and `common` resolve to directory `d595636e-9ef4-4890-b8a7-bde8dd5cab03` and are not sent. The running console has no `MICROSOFT_CLIENT_ID` and no token file. Mail stays **NOT CONFIGURED**. Inference and one RAG answer from about 15:50Z stay **LIVE VERIFIED** for that sample only. Second endpoint, Blackwell, and fresh-machine recovery stay open. Production **NO-GO**.)
+Last updated: **2026-10-22T18:40Z** (`d6d3beb` running in gateway 54370 and console 54402; vLLM 1826. Board 4/9 NO-GO; two snapshot tests need their expectations updated. See `docs/results/live-acceptance-2026-10-22.md`.) Previous: **2026-10-22T18:25Z** (Tip `d1e766e` running in gateway 53074 and console 53091 on `gom4ualdk47qrj`; vLLM 1826 untouched. Live completion and cited RAG verified; RAG regression 5/6. Microsoft configured but not connected; sign-in blocked on operator login. See `docs/results/live-acceptance-2026-10-22.md`.) Previous: **2026-10-22T16:30Z** (Coordinator integrated uncommitted specialist edits on top of `409c891`. A100 `gom4ualdk47qrj` was not restarted. Empty tenant and `common` resolve to directory `d595636e-9ef4-4890-b8a7-bde8dd5cab03` and are not sent. The running console has no `MICROSOFT_CLIENT_ID` and no token file. Mail stays **NOT CONFIGURED**. Inference and one RAG answer from about 15:50Z stay **LIVE VERIFIED** for that sample only. Second endpoint, Blackwell, and fresh-machine recovery stay open. Production **NO-GO**.)
 
 ## Only this repository
 
@@ -162,6 +162,13 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-22 — d6d3beb redeployed to gateway and console; live evidence appended
+
+- At 18:33:12Z `/tmp/AI-PLAYBOOK` was fast-forwarded `d1e766e` → `d6d3beb8788ccd37b8b8012525674f92ae6c4863`. The gateway was restarted as **54370** and the console as **54402**, with the same commands and environment (Microsoft id file and tenant included). vLLM stays **1826**. Both processes started after the checkout mtime.
+- At 18:34Z: health 200/200/200, completion OK, 3 cited RAG answers with text found in the cited file, and 2 abstentions. In the console's environment, Microsoft reports configured (from the file) and not connected; the director shows UNKNOWN because there is no token. `run_live_platform_smoke` exited 0 (6/6). `run_live_rag_regression` exited 1 (5/6; P3 train/rail gap).
+- `docs/results/acceptance-evidence.json` gained live records for `d6d3beb` and `d1e766e`; nothing was removed. The board reads 4/9 and **NO-GO**, with deployment, health, inference, and RAG passing.
+- **Open:** two snapshot tests pin the old evidence file, `ops.test_acceptance_board.test_recorded_repo_evidence` and `web.test_server.test_acceptance_board_stays_no_go`. They now fail and need their expectations updated, since this was a docs-only commit. One `web.test_server` HTTP test errors at random (a different test on each run).
 
 ### 2026-10-22 — tip d1e766e deployed to gateway and console on gom4ualdk47qrj; live acceptance
 

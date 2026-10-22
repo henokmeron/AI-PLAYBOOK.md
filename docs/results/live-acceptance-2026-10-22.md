@@ -148,6 +148,41 @@ What the owner must do, with the tunnel running:
 - `/root/.gitconfig` gained `safe.directory=/tmp/AI-PLAYBOOK`.
 - An SSH tunnel on this PC forwards `127.0.0.1:18080` to the pod console.
 
+## Redeploy of d6d3beb (18:33–18:34Z)
+
+- 18:32Z `git ls-remote` main = `d6d3beb8788ccd37b8b8012525674f92ae6c4863`, and both feature branches match. The diff from `d1e766e` adds only stdlib and in-repo imports; `api/` and `rag/` are unchanged.
+- 18:33:12Z `SOURCE_UPDATE_APPROVED=yes bash ops/release/update-source-only.sh` printed `source-only d1e766e… -> d6d3beb…`. The gateway and console were restarted with the identical commands and environment, including `MICROSOFT_CLIENT_ID_FILE=/tmp/microsoft-client-id` and `MICROSOFT_TENANT=d595636e-…`.
+- Gateway 53074 → **54370** (start epoch 1792693993.24), `/health` 200 at 18:33:14Z. Console 53091 → **54402** (start epoch 1792693994.90), `/api/status` 200 at 18:33:17Z. Mtime of the changed files (`integrations/microsoft_oauth.py`, `integrations/microsoft365.py`) is 1792693992.93, so both processes started after the checkout. vLLM stayed pid **1826**. Pod HEAD was `d6d3beb` with 0 tracked edits at 18:33:17Z and again at 18:34:14Z.
+
+| Time | Check | HTTP | Result |
+| --- | --- | --- | --- |
+| 18:34:02Z | `:8002/v1/models`, `:8010/health`, `:8080/api/status` | 200 / 200 / 200 | healthy |
+| 18:34:02Z | gateway chat completion | 200 | `gateway works` |
+| 18:34:02Z | RAG `global-canary-1791758676`: "Quote the persistent storage verification code line…" | 200 | answered, cited `global-volume-canary.md`; quote "Persistent storage verification code: GLOBALVOL-58317." found in file |
+| 18:34:04Z | RAG `upload-smoke-test`: "What is the demonstration recovery code in the test record?" | 200 | answered, cited `platform-upload-smoke.md`; `ORCHID-4729` in answer and file |
+| 18:34:05Z | RAG demo: receipts deadline | 200 | answered, cited `expenses-policy.md`; `10 business days` in answer and file |
+| 18:34:06Z | RAG demo: CEO's yacht | 200 | abstained, no sources |
+| 18:34:06Z | RAG demo: VAT number | 200 | abstained, no sources |
+| 18:34:06Z | console `/api/connectors`, `/api/ops/director` without login | 401 / 401 | operator login required |
+| 18:34:07Z | Microsoft status from console pid 54402's environment | — | `client_id_source=MICROSOFT_CLIENT_ID_FILE`; `microsoft_configuration` = `configured`, client_id `present`, mailbox `NOT CONFIGURED`; OAuth `configured: true, connected: false`; director `microsoft_graph` = `UNKNOWN` (token file missing, `graph_called=false`) |
+
+Microsoft now reports configured and not connected when the id comes from the file. The HTTP routes that show this need an operator session, so the status was read in-process with the console's exact environment.
+
+| Start | Command | Exit | Counts |
+| --- | --- | --- | --- |
+| 18:34:07Z | `env VLLM_BASE_URL=http://127.0.0.1:8002/v1 python3 -m evaluation.run_live_platform_smoke` | **0** | 6/6 |
+| 18:34:08Z | `python3 -m evaluation.run_live_rag_regression` | **1** | 5/6; P3 is the same train/rail gap |
+
+Evidence records were appended to `docs/results/acceptance-evidence.json`; no existing record was removed. For `d6d3beb`: `http_200`, `deployed_sha_read`, `completion_ok`, two `rag_cited_answer_ok`, and two `rag_abstention_ok`. For `d1e766e` (this file's earlier run): one record each of `http_200`, `deployed_sha_read` and `completion_ok`, plus one `rag_cited_answer_ok` and one `rag_abstention_ok`. Nothing was added for mailbox, second endpoint, Blackwell, recovery, or backup.
+
+Local board (Windows, `AI_PLAYBOOK_GIT` set): intended tip `d6d3beb…` from `git HEAD of this checkout`. Live score 4/9 (mandatory 4/8), **NO-GO**. Deployment, health, inference, and RAG gates PASS. Microsoft is NOT CONFIGURED; second endpoint, Blackwell, fresh recovery, and weight backup have NO EVIDENCE.
+
+`python -m unittest ops.test_acceptance_board web.test_server` ran 48 tests and FAILED with 2 deterministic failures. Both are snapshot assertions on the committed evidence file:
+- `ops.test_acceptance_board.test_recorded_repo_evidence` expects only `{live_health, inference_completion}` to pass and every timestamp to start with `2026-10-22T15:`.
+- `web.test_server.test_acceptance_board_stays_no_go` expects "Deployed commit equals the intended Git tip" in `failing_acceptance`.
+
+With the evidence file from `d6d3beb`, both tests pass. Any accurate new live record breaks them. No gate rule was changed. The tests need their pinned expectations updated outside this docs-only commit. One more test errored on each run, a different one each time (`test_rag_history_is_validated_and_forwarded`, then `test_printer_restart_needs_a_different_approver_and_does_not_run`). Run alone, `test_rag_history_is_validated_and_forwarded` passed, so these errors are flaky local HTTP timing.
+
 ## Machine-readable evidence
 
 ```json

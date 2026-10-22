@@ -13,6 +13,26 @@
           "evidence_kind": "live",
           "detail": "200 / 200 / 200 after vLLM application startup complete. Pod checkout /tmp/AI-PLAYBOOK was be9cbd2.",
           "citation": "docs/AGENT_HANDOFF.md, 2026-10-22 replacement A100 reached HTTP 200 (15:50:02Z line); docs/IMPLEMENTATION_STATUS.md 2026-10-22T15:50:02Z"
+        },
+        {
+          "source_sha": "d1e766ebc9afec185c328f279949012447417215",
+          "deployed_sha": "d1e766ebc9afec185c328f279949012447417215",
+          "command": "curl -s -o /dev/null -w %{http_code} http://127.0.0.1:8002/v1/models; http://127.0.0.1:8010/health; http://127.0.0.1:8080/api/status over SSH root@154.54.102.41 -p 12572 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T18:21:43Z",
+          "result": "http_200",
+          "evidence_kind": "live",
+          "detail": "200 / 200 / 200 with gateway pid 53074 and console pid 53091 started after the d1e766e checkout; vLLM pid 1826.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, section 2"
+        },
+        {
+          "source_sha": "d6d3beb8788ccd37b8b8012525674f92ae6c4863",
+          "deployed_sha": "d6d3beb8788ccd37b8b8012525674f92ae6c4863",
+          "command": "curl -s -o /dev/null -w %{http_code} http://127.0.0.1:8002/v1/models; http://127.0.0.1:8010/health; http://127.0.0.1:8080/api/status over SSH root@154.54.102.41 -p 12572 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T18:34:02Z",
+          "result": "http_200",
+          "evidence_kind": "live",
+          "detail": "200 / 200 / 200 with gateway pid 54370 and console pid 54402 started after the d6d3beb checkout; vLLM pid 1826.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, redeploy of d6d3beb"
         }
       ]
     },
@@ -27,6 +47,26 @@
           "evidence_kind": "live",
           "detail": "START.sh logged source be9cbd2. The checkout stayed be9cbd2 and was not reset. It is behind GitHub main.",
           "citation": "docs/AGENT_HANDOFF.md, pod checkout table row and 2026-10-22 replacement A100 section"
+        },
+        {
+          "source_sha": "d1e766ebc9afec185c328f279949012447417215",
+          "deployed_sha": "d1e766ebc9afec185c328f279949012447417215",
+          "command": "git -C /tmp/AI-PLAYBOOK rev-parse HEAD; ss -ltnp; /proc/PID/stat start time vs checkout file mtime over SSH root@154.54.102.41 -p 12572 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T18:21:43Z",
+          "result": "deployed_sha_read",
+          "evidence_kind": "live",
+          "detail": "Pod HEAD d1e766e, 0 tracked edits. Gateway 53074 start epoch 1792693035.43 and console 53091 start epoch 1792693037.08 are after checkout file mtime 1792693035.11. No endpoint reports a SHA.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, section 2, running-revision evidence"
+        },
+        {
+          "source_sha": "d6d3beb8788ccd37b8b8012525674f92ae6c4863",
+          "deployed_sha": "d6d3beb8788ccd37b8b8012525674f92ae6c4863",
+          "command": "git -C /tmp/AI-PLAYBOOK rev-parse HEAD; ss -ltnp; /proc/PID/stat start time vs checkout file mtime over SSH root@154.54.102.41 -p 12572 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T18:33:17Z",
+          "result": "deployed_sha_read",
+          "evidence_kind": "live",
+          "detail": "Pod HEAD d6d3beb, 0 tracked edits (re-read 18:34:14Z). Gateway 54370 start epoch 1792693993.24 and console 54402 start epoch 1792693994.90 are after checkout file mtime 1792693992.93. vLLM pid 1826 unchanged. No endpoint reports a SHA.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, redeploy of d6d3beb"
         }
       ]
     },
@@ -51,6 +91,26 @@
           "evidence_kind": "live",
           "detail": "Gateway HTTP 200, content PLATFORM_OK. Sent after the 15:50:02Z health poll; the exact second was not recorded, so the poll time is used.",
           "citation": "docs/AGENT_HANDOFF.md, 2026-10-22 replacement A100 reached HTTP 200 section"
+        },
+        {
+          "source_sha": "d1e766ebc9afec185c328f279949012447417215",
+          "deployed_sha": "d1e766ebc9afec185c328f279949012447417215",
+          "command": "POST http://127.0.0.1:8010/v1/chat/completions {model: qwen3.5-27b, messages: [Reply with exactly: gateway works], temperature 0, max_tokens 16} with Bearer key file over SSH root@154.54.102.41 -p 12572 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T18:18:43Z",
+          "result": "completion_ok",
+          "evidence_kind": "live",
+          "detail": "HTTP 200, content 'gateway works'.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, section 3, models and completion"
+        },
+        {
+          "source_sha": "d6d3beb8788ccd37b8b8012525674f92ae6c4863",
+          "deployed_sha": "d6d3beb8788ccd37b8b8012525674f92ae6c4863",
+          "command": "POST http://127.0.0.1:8010/v1/chat/completions {model: qwen3.5-27b, messages: [Reply with exactly: gateway works], temperature 0, max_tokens 16} with Bearer key file over SSH root@154.54.102.41 -p 12572 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T18:34:02Z",
+          "result": "completion_ok",
+          "evidence_kind": "live",
+          "detail": "HTTP 200, content 'gateway works'.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, redeploy of d6d3beb"
         }
       ]
     },
@@ -75,6 +135,66 @@
           "evidence_kind": "live",
           "detail": "HTTP 200, answer named the GBP 100 approval threshold. A citation for this answer was not recorded. Sent after the 15:49:11Z health poll.",
           "citation": "docs/AGENT_HANDOFF.md, 2026-10-22 one new A100 deployed section"
+        },
+        {
+          "source_sha": "d1e766ebc9afec185c328f279949012447417215",
+          "deployed_sha": "d1e766ebc9afec185c328f279949012447417215",
+          "command": "POST http://127.0.0.1:8010/v1/rag/ask {question: What does the global volume canary document say?, top_k: 4, collection: global-canary-1791758676} with Bearer key file over SSH root@154.54.102.41 -p 12572 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T18:18:50Z",
+          "result": "rag_cited_answer_ok",
+          "evidence_kind": "live",
+          "detail": "HTTP 200 answered, cited global-volume-canary.md; both quoted spans found in that file.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, section 3, RAG table"
+        },
+        {
+          "source_sha": "d1e766ebc9afec185c328f279949012447417215",
+          "deployed_sha": "d1e766ebc9afec185c328f279949012447417215",
+          "command": "POST http://127.0.0.1:8010/v1/rag/ask {question: What colour is the CEO's private yacht?, top_k: 4} with Bearer key file over SSH root@154.54.102.41 -p 12572 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T18:18:52Z",
+          "result": "rag_abstention_ok",
+          "evidence_kind": "live",
+          "detail": "HTTP 200 abstained, no sources.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, section 3, RAG table"
+        },
+        {
+          "source_sha": "d6d3beb8788ccd37b8b8012525674f92ae6c4863",
+          "deployed_sha": "d6d3beb8788ccd37b8b8012525674f92ae6c4863",
+          "command": "POST http://127.0.0.1:8010/v1/rag/ask {question: Quote the persistent storage verification code line from the canary document., top_k: 4, collection: global-canary-1791758676} with Bearer key file over SSH root@154.54.102.41 -p 12572 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T18:34:02Z",
+          "result": "rag_cited_answer_ok",
+          "evidence_kind": "live",
+          "detail": "HTTP 200 answered, cited global-volume-canary.md; quoted line 'Persistent storage verification code: GLOBALVOL-58317.' found in that file.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, redeploy of d6d3beb"
+        },
+        {
+          "source_sha": "d6d3beb8788ccd37b8b8012525674f92ae6c4863",
+          "deployed_sha": "d6d3beb8788ccd37b8b8012525674f92ae6c4863",
+          "command": "POST http://127.0.0.1:8010/v1/rag/ask {question: What is the demonstration recovery code in the test record?, top_k: 4, collection: upload-smoke-test} with Bearer key file over SSH root@154.54.102.41 -p 12572 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T18:34:04Z",
+          "result": "rag_cited_answer_ok",
+          "evidence_kind": "live",
+          "detail": "HTTP 200 answered, cited platform-upload-smoke.md; ORCHID-4729 appears in the answer and in that file.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, redeploy of d6d3beb"
+        },
+        {
+          "source_sha": "d6d3beb8788ccd37b8b8012525674f92ae6c4863",
+          "deployed_sha": "d6d3beb8788ccd37b8b8012525674f92ae6c4863",
+          "command": "POST http://127.0.0.1:8010/v1/rag/ask {question: What colour is the CEO's private yacht?, top_k: 4} with Bearer key file over SSH root@154.54.102.41 -p 12572 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T18:34:06Z",
+          "result": "rag_abstention_ok",
+          "evidence_kind": "live",
+          "detail": "HTTP 200 abstained, no sources.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, redeploy of d6d3beb"
+        },
+        {
+          "source_sha": "d6d3beb8788ccd37b8b8012525674f92ae6c4863",
+          "deployed_sha": "d6d3beb8788ccd37b8b8012525674f92ae6c4863",
+          "command": "POST http://127.0.0.1:8010/v1/rag/ask {question: What is the company's VAT registration number?, top_k: 4} with Bearer key file over SSH root@154.54.102.41 -p 12572 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T18:34:06Z",
+          "result": "rag_abstention_ok",
+          "evidence_kind": "live",
+          "detail": "HTTP 200 abstained, no sources.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, redeploy of d6d3beb"
         }
       ]
     },
