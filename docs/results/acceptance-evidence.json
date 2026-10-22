@@ -279,7 +279,18 @@
       ]
     },
     "microsoft_mailbox_read": {
-      "evidence": []
+      "evidence": [
+        {
+          "source_sha": "326739eb6e04c4f3a1d9853b741a98c659f3f2cd",
+          "deployed_sha": "326739eb6e04c4f3a1d9853b741a98c659f3f2cd",
+          "command": "IT Helpdesk m365_search_mail on console pid 80688 at http://127.0.0.1:18080, served by /tmp/AI-PLAYBOOK on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T21:08:04Z",
+          "result": "mailbox_read_ok",
+          "evidence_kind": "live",
+          "detail": "One mailbox search. Graph returned the message list with HTTP 200 and count 0. Before the call, mailbox status was NOT CONFIGURED. After the call it was read, which this process sets only when a live Graph GET of /me/messages returns HTTP 200. Token file exists, mode 0600, contents not read. The console log has no Graph status line and records POST /api/agent HTTP 200. vLLM pid 1826 and gateway pid 72553 were not restarted.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, mailbox read on 326739eb"
+        }
+      ]
     },
     "second_endpoint": {
       "evidence": []

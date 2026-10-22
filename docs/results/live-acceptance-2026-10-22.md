@@ -239,3 +239,14 @@ With the evidence file from `d6d3beb`, both tests pass. Any accurate new live re
 - Pod HEAD `0a94d36387f5d3a1e4ca9343687b6eac7b85f814`. Console restarted from pid 72560 to **76664**. Gateway stayed **72553**. vLLM stayed **1826**.
 - 20:10:19Z: health 200 on 8002 and 8010, console 200 on 8080.
 - Gateway code did not change, so the 19:47:37Z RAG regression of 6/6 still stands. It was not run again.
+
+## Mailbox read on 326739eb (21:08Z)
+
+- Pod HEAD stayed `326739eb6e04c4f3a1d9853b741a98c659f3f2cd`. vLLM pid **1826**, gateway pid **72553**, and console pid **80688** were not restarted.
+- IT Helpdesk showed Microsoft connected, with read-only mail search. The account address is not recorded here.
+- Before the search, `/api/connectors` reported `mailbox` **NOT CONFIGURED**. That field stays NOT CONFIGURED until a live Graph mail read returns HTTP 200.
+- One `m365_search_mail` search ran from the console. The tool result was `status` ok, message count **0**. No message was opened and no mail was sent.
+- After that call, `/api/connectors` reported `mailbox` **read**.
+- `/tmp/microsoft-365-token.json` exists, mode `0600`. The file was not read.
+- `/tmp/platform-diagnostics/console.log` does not contain a Graph HTTP status. It records `POST /api/agent` as HTTP 200. The Graph status is HTTP 200 because this console sets `mailbox` to read only on that response.
+- Second endpoint, Blackwell, fresh recovery, and weight backup were not exercised. Production stays **NO-GO**.
