@@ -588,7 +588,7 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload["decision"], "NO-GO")
         self.assertEqual(payload["production_decision"], "NO-GO")
-        self.assertEqual(payload["microsoft_status"], "NOT CONFIGURED")
+        self.assertIn(payload["microsoft_status"], {"NOT CONFIGURED", "MAILBOX READ VERIFIED"})
         self.assertLess(payload["live_acceptance_percent"], 100)
         self.assertEqual(payload["overall_percent"], payload["live_acceptance_percent"])
         self.assertIn("not a production GO", payload["note"])

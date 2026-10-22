@@ -38,6 +38,22 @@ class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
 
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost"})
 _MAX_RESPONSE_BYTES = 65536
+FIXTURE_LABEL = "not-the-second-endpoint"
+
+
+def acceptance_role(fixture_label: str = "") -> str:
+    """Say whether this invocation may be treated as the second Windows computer.
+
+    The labelled local fixture is explicit. Every other run is still not
+    recorded evidence: a loopback tunnel is also how a different physical PC
+    reaches the console, so the address alone cannot prove which machine it is.
+    """
+    label = " ".join(fixture_label.split()).casefold()
+    if not label:
+        return "not-recorded-as-second-endpoint"
+    if label != FIXTURE_LABEL:
+        raise InvalidRequest("the only local fixture label is not-the-second-endpoint")
+    return FIXTURE_LABEL
 
 
 def console_origin(value: str) -> str:
@@ -410,6 +426,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--credential", default="")
     parser.add_argument("--code", default="")
     parser.add_argument("--name", default="Office PC")
+    parser.add_argument("--fixture-label", default="")
     args = parser.parse_args(argv)
     from windows_repair.engine import RepairDenied
     try:
@@ -423,6 +440,10 @@ def main(argv: list[str] | None = None) -> int:
         if not args.token_file:
             print("ERROR: --token-file is required", file=sys.stderr)
             return 2
+        role = acceptance_role(args.fixture_label)
+        if args.fixture_label and args.name.strip().casefold() != FIXTURE_LABEL:
+            print("ERROR: a labelled fixture must use the name not-the-second-endpoint", file=sys.stderr)
+            return 2
         if args.action == "enrol":
             if not args.console:
                 print("ERROR: --console is required", file=sys.stderr)
@@ -433,6 +454,11 @@ def main(argv: list[str] | None = None) -> int:
             device_id = enrol(args.console, args.code, args.name, Path(args.token_file))
             print(f"enrolled device {device_id}")
             print("the device secret was saved and is not printed")
+            print(f"acceptance_role={role}")
+            if role == FIXTURE_LABEL:
+                print("this run is a local fixture and does not satisfy the second Windows endpoint gate")
+            else:
+                print("this computer is not recorded as the second Windows endpoint")
             return 0
         if args.action == "remove":
             remove_secret(Path(args.token_file))
@@ -443,6 +469,11 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         result = submit_report(args.console, Path(args.token_file))
         print(f"stored diagnostic for {result.get('device_id', 'unknown device')}")
+        print(f"acceptance_role={role}")
+        if role == FIXTURE_LABEL:
+            print("this run is a local fixture and does not satisfy the second Windows endpoint gate")
+        else:
+            print("this computer is not recorded as the second Windows endpoint")
         return 0
     except (InvalidRequest, RepairDenied) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

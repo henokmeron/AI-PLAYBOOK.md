@@ -201,6 +201,7 @@ class EndpointTests(unittest.TestCase):
         self.assertFalse(stored["remote_control"])
         visible = registry.public_devices("local-console")[0]
         self.assertFalse(visible["repair_authority"])
+        self.assertFalse(visible["counts_as_second_endpoint"])
         self.assertEqual(visible["diagnostic_coverage"], "registered")
         self.assertEqual(visible["report"]["checks"][0]["evidence_source"], "live_windows")
         self.assertEqual(visible["report"]["collection_scope"], "computer_running_the_worker")
@@ -485,6 +486,112 @@ class WorkerTransportTests(unittest.TestCase):
             finally:
                 server.shutdown()
                 server.server_close()
+
+
+    def test_labelled_fixture_round_trip_is_not_the_second_endpoint(self) -> None:
+        """Temp loopback fixture. This PC and this process are not the second endpoint."""
+        import threading
+        from contextlib import redirect_stdout
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        from io import StringIO
+        from unittest.mock import patch
+
+        from integrations.endpoint_worker import FIXTURE_LABEL, acceptance_role, main
+
+        self.assertEqual(acceptance_role(""), "not-recorded-as-second-endpoint")
+        self.assertEqual(acceptance_role(FIXTURE_LABEL), FIXTURE_LABEL)
+        with self.assertRaises(InvalidRequest):
+            acceptance_role("Office PC")
+
+        registry = DeviceRegistry()
+        created = registry.create_enrolment("local-console")
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                if self.path == "/api/devices/enroll":
+                    device_id = registry.enrol(
+                        payload["code"], payload["display_name"], payload["device_secret"],
+                    )
+                    body = json.dumps({"device_id": device_id, "remote_control": False}).encode()
+                elif self.path == "/api/devices/report":
+                    secret = (self.headers.get("Authorization") or "")[7:]
+                    body = json.dumps(registry.submit(secret, payload)).encode()
+                else:
+                    self.send_error(404)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format_string: str, *args: object) -> None:
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            origin = f"http://127.0.0.1:{server.server_address[1]}"
+            with tempfile.TemporaryDirectory() as tmp:
+                token = Path(tmp) / "device-secret"
+                stdout = StringIO()
+                with redirect_stdout(stdout):
+                    enrolled = main([
+                        "enrol",
+                        "--console", origin,
+                        "--code", created["enrolment_code"],
+                        "--name", FIXTURE_LABEL,
+                        "--fixture-label", FIXTURE_LABEL,
+                        "--token-file", str(token),
+                    ])
+                text = stdout.getvalue()
+                self.assertEqual(enrolled, 0, text)
+                secret = read_secret_file(token)
+                self.assertNotIn(secret, text)
+                self.assertIn("acceptance_role=not-the-second-endpoint", text)
+                self.assertIn("local fixture", text)
+                visible = registry.public_devices("local-console")[0]
+                self.assertEqual(visible["display_name"], FIXTURE_LABEL)
+                self.assertFalse(visible["counts_as_second_endpoint"])
+                self.assertIsNone(visible["report"])
+                stdout_report = StringIO()
+
+                def _fixture_checks(*_args, **_kwargs):
+                    stamp = int(time.time())
+                    return [{
+                        "procedure_id": "win.storage.space",
+                        "evidence_source": "live_windows",
+                        "ok": True,
+                        "collected_at_unix": stamp,
+                        "summary": "local fixture collector, not the second endpoint",
+                    }]
+
+                with patch(
+                    "integrations.endpoint_worker.collect_registered_checks",
+                    side_effect=_fixture_checks,
+                ):
+                    with redirect_stdout(stdout_report):
+                        reported = main([
+                            "report",
+                            "--console", origin,
+                            "--name", FIXTURE_LABEL,
+                            "--fixture-label", FIXTURE_LABEL,
+                            "--token-file", str(token),
+                        ])
+                report_text = stdout_report.getvalue()
+                self.assertEqual(reported, 0, report_text)
+                self.assertNotIn(secret, report_text)
+                self.assertIn("acceptance_role=not-the-second-endpoint", report_text)
+                stored = registry.public_devices("local-console")[0]
+                self.assertFalse(stored["counts_as_second_endpoint"])
+                self.assertEqual(stored["diagnostic_coverage"], "registered")
+                self.assertEqual(stored["display_name"], FIXTURE_LABEL)
+        finally:
+            server.shutdown()
+            server.server_close()
 
 
 if __name__ == "__main__":

@@ -641,6 +641,7 @@ def _public_device(item: _Device, now: float) -> dict[str, Any]:
         "repair_authority": False,
         "last_report_at": item.last_report_at,
         "diagnostic_coverage": coverage,
+        "counts_as_second_endpoint": False,
         **timing,
         "report": report,
     }

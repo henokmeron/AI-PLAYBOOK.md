@@ -1288,6 +1288,7 @@
         } else {
           text += ". No diagnostic has arrived. Remote control is off.";
         }
+        text += " This enrolment does not count as the second Windows computer.";
         var item = el("li");
         item.appendChild(document.createTextNode(text + " "));
         if (device.status === "enrolled") {
