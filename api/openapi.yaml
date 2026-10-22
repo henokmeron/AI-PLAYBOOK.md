@@ -31,7 +31,7 @@ paths:
   /readyz:
     get:
       security: []
-      summary: Readiness - the inference upstream answers /models with at least one model
+      summary: Readiness - the inference upstream answers /models with at least one loaded model and a live engine
       responses:
         "200":
           description: Ready to serve chat and document answers
@@ -43,7 +43,11 @@ paths:
                   status: { type: string, const: ready }
                   model_count: { type: integer, minimum: 1 }
         "503":
-          description: Not ready
+          description: >
+            Not ready. A refused connection or a connect/read timeout is
+            upstream_unreachable or upstream_timeout, never HTTP 200.
+            An empty model list is no_models_reported. A listed id with a dead
+            engine is model_engine_dead.
           content:
             application/json:
               schema:
@@ -52,19 +56,32 @@ paths:
                   status: { type: string, const: not_ready }
                   reason:
                     type: string
-                    enum: [upstream_unreachable, upstream_timeout, upstream_bad_response, no_models_reported]
+                    enum:
+                      - upstream_unreachable
+                      - upstream_timeout
+                      - upstream_bad_response
+                      - upstream_redirect_refused
+                      - no_models_reported
+                      - model_engine_dead
                     description: May also be upstream_http_<code>.
+                  model_count: { type: integer }
                   error_id: { type: string }
   /health:
     get:
       security: []
-      summary: Legacy combined check (unchanged); prefer /livez and /readyz
+      summary: Legacy combined check; prefer /livez and /readyz
       description: >
-        Kept for the console and existing scripts. Returns 200 whenever the upstream
-        /models call succeeds, even when it reports zero models.
+        Kept for the console and existing scripts. HTTP 200 only when /models
+        reports at least one loaded id and engine /health is alive. An empty
+        model list, a refused connection, a timeout, or a dead engine is HTTP 503
+        with status unknown. reason stays model_server_absent when the model
+        server cannot be contacted; upstream_reason is upstream_unreachable
+        (connection refused) or upstream_timeout. Connect attempts use
+        UPSTREAM_CONNECT_TIMEOUT (default 2s) and do not wait for the generation
+        budget UPSTREAM_TIMEOUT.
       responses:
         "200":
-          description: Upstream is reachable
+          description: Upstream is reachable and at least one model is loaded
           content:
             application/json:
               schema:
@@ -72,9 +89,26 @@ paths:
                 properties:
                   status: { type: string, const: ok }
                   upstream: { type: string, const: ok }
-                  model_count: { type: integer }
+                  model_count: { type: integer, minimum: 1 }
                   default_model_id: { type: string }
-        "503": { description: Upstream unavailable }
+        "503":
+          description: Model server absent, empty, or engine dead. Not HTTP 200.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, const: unknown }
+                  reason:
+                    type: string
+                    enum: [model_server_absent, no_models_reported, model_engine_dead]
+                  upstream: { type: string, const: unavailable }
+                  upstream_reason:
+                    type: string
+                    description: Present when the server could not be contacted.
+                    enum: [upstream_unreachable, upstream_timeout, upstream_bad_response, upstream_redirect_refused]
+                  model_count: { type: integer }
+                  error_id: { type: string }
   /v1/chat/completions:
     post:
       summary: Proxy a non-streaming OpenAI-compatible chat completion
@@ -318,7 +352,11 @@ components:
         reason:
           type: string
           description: >
-            upstream_timeout, upstream_unreachable, upstream_bad_response or
+            A connection refusal is upstream_unreachable. A connect or read
+            timeout is upstream_timeout. Neither is HTTP 200. Also
+            upstream_bad_response, upstream_redirect_refused, or
             upstream_http_<code> (for example upstream_http_400 when the prompt
-            exceeds the model context).
+            exceeds the model context). The connect wait is
+            UPSTREAM_CONNECT_TIMEOUT (default 2 seconds), not the generation
+            budget UPSTREAM_TIMEOUT.
         error_id: { type: string }

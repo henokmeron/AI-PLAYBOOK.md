@@ -5,7 +5,9 @@ Loopback-only development prototype. It is not production-hardened.
 """
 from __future__ import annotations
 
+import errno
 import hmac
+import http.client
 import json
 import os
 import socket
@@ -79,6 +81,10 @@ RAG_CHARS_PER_TOKEN = float(os.environ.get("RAG_CHARS_PER_TOKEN", "2.4"))
 RAG_CONTEXT_MARGIN_TOKENS = 384
 RAG_MIN_EVIDENCE_CHARS = 3000
 UPSTREAM_TIMEOUT = int(os.environ.get("UPSTREAM_TIMEOUT", "180"))
+# Connect budget, separate from the generation read budget. A closed loopback
+# port can drop SYNs until this expires; it must not wait for UPSTREAM_TIMEOUT.
+# Zero or negative is treated as blocking and replaced at use time.
+UPSTREAM_CONNECT_TIMEOUT = float(os.environ.get("UPSTREAM_CONNECT_TIMEOUT", "2"))
 REQUEST_SOCKET_TIMEOUT = int(os.environ.get("PLATFORM_SOCKET_TIMEOUT", "30"))
 RATE_LIMIT_PER_MINUTE = 30
 MAX_TRACKED_PEERS = 1024
@@ -278,11 +284,95 @@ def upstream_engine_health_url() -> str:
     return base + "/health"
 
 
-def _open_without_redirect(url: str, timeout: float) -> tuple[int, bytes]:
-    request = urllib.request.Request(url, method="GET")
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _RefuseRedirects)
+def _positive_timeout(value: float, fallback: float) -> float:
+    """A finite wait. Zero means "block forever" on a socket, so it is rejected."""
     try:
-        with opener.open(request, timeout=timeout) as response:
+        number = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    if number <= 0 or number != number:  # NaN compares unequal to itself
+        return fallback
+    return number
+
+
+def _timeout_pair(read_timeout: float) -> tuple[float, float]:
+    """Return (connect_timeout, read_timeout). Connect is never the generation budget."""
+    read = _positive_timeout(read_timeout, _positive_timeout(UPSTREAM_TIMEOUT, 2.0))
+    connect = _positive_timeout(UPSTREAM_CONNECT_TIMEOUT, 2.0)
+    return min(read, connect), read
+
+
+def _exception_is_timeout(exc: BaseException) -> bool:
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return True
+    if getattr(exc, "winerror", None) == 10060:
+        return True
+    timed_out = {errno.ETIMEDOUT}
+    wsa = getattr(errno, "WSAETIMEDOUT", None)
+    if wsa is not None:
+        timed_out.add(wsa)
+    if getattr(exc, "errno", None) in timed_out:
+        return True
+    return "timed out" in str(exc).casefold()
+
+
+def _exception_is_refusal(exc: BaseException) -> bool:
+    if isinstance(exc, ConnectionRefusedError):
+        return True
+    if getattr(exc, "winerror", None) == 10061:
+        return True
+    refused = {errno.ECONNREFUSED}
+    wsa = getattr(errno, "WSAECONNREFUSED", None)
+    if wsa is not None:
+        refused.add(wsa)
+    return getattr(exc, "errno", None) in refused
+
+
+def _transport_parts(exc: BaseException) -> tuple[BaseException, ...]:
+    if isinstance(exc, urllib.error.URLError) and isinstance(exc.reason, BaseException) and exc.reason is not exc:
+        return (exc, exc.reason)
+    return (exc,)
+
+
+def _raise_transport_failure(exc: BaseException) -> None:
+    """Map a dead socket to a client-safe UpstreamError. No URL or exception text."""
+    parts = _transport_parts(exc)
+    if any(_exception_is_timeout(part) for part in parts):
+        raise UpstreamError("Inference upstream timed out", "upstream_timeout") from exc
+    if any(_exception_is_refusal(part) for part in parts):
+        raise UpstreamError("Inference upstream refused the connection", "upstream_unreachable") from exc
+    kind = type(parts[-1]).__name__
+    unreachable = isinstance(exc, (urllib.error.URLError, ConnectionError)) or isinstance(parts[-1], ConnectionError)
+    reason = "upstream_unreachable" if unreachable else "upstream_bad_response"
+    raise UpstreamError(f"Inference upstream request failed: {kind}", reason) from exc
+
+
+def _upstream_opener(connect_timeout: float, read_timeout: float) -> urllib.request.OpenerDirector:
+    """HTTP opener with a short connect wait and a separate read wait. No proxy."""
+
+    class _Connection(http.client.HTTPConnection):
+        def connect(self) -> None:
+            super().connect()
+            if self.sock is not None:
+                self.sock.settimeout(read_timeout)
+
+    class _Handler(urllib.request.HTTPHandler):
+        def http_open(self, req: urllib.request.Request):  # noqa: ANN201
+            return self.do_open(_Connection, req)
+
+    return urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        _RefuseRedirects,
+        _Handler(),
+    )
+
+
+def _open_without_redirect(url: str, timeout: float) -> tuple[int, bytes]:
+    connect_timeout, read_timeout = _timeout_pair(timeout)
+    request = urllib.request.Request(url, method="GET")
+    opener = _upstream_opener(connect_timeout, read_timeout)
+    try:
+        with opener.open(request, timeout=connect_timeout) as response:
             status = int(getattr(response, "status", 0) or 0)
             return status, response.read(65536)
     except urllib.error.HTTPError as exc:
@@ -624,6 +714,7 @@ def build_rag_completion_messages(
 
 def read_upstream_json(path: str, payload: dict[str, Any] | None = None, timeout: float | None = None) -> dict[str, Any]:
     timeout = UPSTREAM_TIMEOUT if timeout is None else timeout
+    connect_timeout, read_timeout = _timeout_pair(timeout)
     data = None if payload is None else json_bytes(payload)
     headers = {"Accept": "application/json"}
     if data is not None:
@@ -632,9 +723,9 @@ def read_upstream_json(path: str, payload: dict[str, Any] | None = None, timeout
         f"{UPSTREAM}{path}", data=data, headers=headers,
         method="GET" if data is None else "POST",
     )
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _RefuseRedirects)
+    opener = _upstream_opener(connect_timeout, read_timeout)
     try:
-        with opener.open(req, timeout=timeout) as response:
+        with opener.open(req, timeout=connect_timeout) as response:
             value = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         exc.close()
@@ -643,14 +734,10 @@ def read_upstream_json(path: str, payload: dict[str, Any] | None = None, timeout
                 "Inference upstream redirect was refused", "upstream_redirect_refused"
             ) from exc
         raise UpstreamError(f"Inference upstream returned HTTP {exc.code}", f"upstream_http_{exc.code}") from exc
-    except (TimeoutError, socket.timeout) as exc:
-        raise UpstreamError("Inference upstream timed out", "upstream_timeout") from exc
-    except urllib.error.URLError as exc:
-        if isinstance(exc.reason, (TimeoutError, socket.timeout)):
-            raise UpstreamError("Inference upstream timed out", "upstream_timeout") from exc
-        raise UpstreamError(f"Inference upstream request failed: {type(exc).__name__}", "upstream_unreachable") from exc
-    except (json.JSONDecodeError, UnicodeDecodeError, ConnectionError, OSError) as exc:
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise UpstreamError(f"Inference upstream request failed: {type(exc).__name__}", "upstream_bad_response") from exc
+    except (TimeoutError, socket.timeout, urllib.error.URLError, ConnectionError, OSError) as exc:
+        _raise_transport_failure(exc)
     if not isinstance(value, dict):
         raise UpstreamError("Inference upstream response was not a JSON object", "upstream_bad_response")
     return value
@@ -824,6 +911,16 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/health":
             try:
                 payload = read_upstream_json("/models", timeout=5)
+            except UpstreamError as exc:
+                # reason stays model_server_absent so consoles do not treat a
+                # dead server as a reported model. upstream_reason names the cause.
+                self.send_json(503, {
+                    "status": "unknown",
+                    "reason": "model_server_absent",
+                    "upstream": "unavailable",
+                    "upstream_reason": exc.reason,
+                })
+                return
             except Exception:
                 self.send_json(503, {
                     "status": "unknown",

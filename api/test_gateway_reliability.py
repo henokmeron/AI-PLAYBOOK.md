@@ -11,6 +11,7 @@ import base64
 import contextlib
 import io
 import json
+import socket
 import sys
 import tempfile
 import threading
@@ -112,8 +113,8 @@ class GatewayReliabilityTests(unittest.TestCase):
         cls.saved = {
             name: getattr(gateway, name)
             for name in ("API_KEY", "UPSTREAM", "RAG_DOCS_DIR", "RAG_MANAGED_DOCS_DIR",
-                         "RATE_LIMIT_PER_MINUTE", "UPSTREAM_TIMEOUT", "RAG_MIN_SCORE",
-                         "PLATFORM_MODEL_REGISTRY", "PLATFORM_DEFAULT_MODEL_ID")
+                         "RATE_LIMIT_PER_MINUTE", "UPSTREAM_TIMEOUT", "UPSTREAM_CONNECT_TIMEOUT",
+                         "RAG_MIN_SCORE", "PLATFORM_MODEL_REGISTRY", "PLATFORM_DEFAULT_MODEL_ID")
         }
         gateway.API_KEY = API_KEY
         gateway.UPSTREAM = f"http://127.0.0.1:{cls.upstream.server_port}/v1"
@@ -200,21 +201,153 @@ class GatewayReliabilityTests(unittest.TestCase):
 
     def test_liveness_does_not_depend_on_upstream(self) -> None:
         previous = gateway.UPSTREAM
+        previous_connect = gateway.UPSTREAM_CONNECT_TIMEOUT
+        previous_read = gateway.UPSTREAM_TIMEOUT
+        # A closed port may refuse at once or blackhole until the connect budget.
+        # The generation budget is deliberately long so a hang would blow this bound.
         gateway.UPSTREAM = "http://127.0.0.1:9/v1"
+        gateway.UPSTREAM_CONNECT_TIMEOUT = 0.4
+        gateway.UPSTREAM_TIMEOUT = 30
+        started = time.monotonic()
         try:
             self.assert_alive()
             status, body, _ = self.call("GET", "/readyz", auth=False)
             self.assertEqual(status, 503)
             self.assertEqual(body["status"], "not_ready")
-            self.assertEqual(body["reason"], "upstream_unreachable")
+            self.assertIn(body["reason"], {"upstream_unreachable", "upstream_timeout"})
             self.assertIn("error_id", body)
+            self.assertNotEqual(status, 200)
             status, body, _ = self.call("GET", "/health", auth=False)
             self.assertEqual(status, 503)
             self.assertEqual(body["status"], "unknown")
             self.assertEqual(body["reason"], "model_server_absent")
+            self.assertIn(body["upstream_reason"], {"upstream_unreachable", "upstream_timeout"})
             self.assertNotEqual(body["status"], "ok")
         finally:
             gateway.UPSTREAM = previous
+            gateway.UPSTREAM_CONNECT_TIMEOUT = previous_connect
+            gateway.UPSTREAM_TIMEOUT = previous_read
+        self.assertLess(time.monotonic() - started, 5)
+
+    def test_dead_upstream_is_a_structured_error_not_success(self) -> None:
+        """Refusal or connect timeout is 502/503 with a reason, never HTTP 200, and not the read budget."""
+        previous = gateway.UPSTREAM
+        previous_connect = gateway.UPSTREAM_CONNECT_TIMEOUT
+        previous_read = gateway.UPSTREAM_TIMEOUT
+        gateway.UPSTREAM = "http://127.0.0.1:9/v1"
+        gateway.UPSTREAM_CONNECT_TIMEOUT = 0.4
+        gateway.UPSTREAM_TIMEOUT = 30
+        started = time.monotonic()
+        try:
+            self.assert_alive()
+            status, body, _ = self.call("POST", "/v1/chat/completions", {
+                "model": "fake-model", "messages": [{"role": "user", "content": "hi"}],
+            })
+            self.assertEqual(status, 502, body)
+            self.assertEqual(body["error"], "inference upstream unavailable")
+            self.assertIn(body["reason"], {"upstream_unreachable", "upstream_timeout"})
+            self.assertRegex(body["error_id"], r"\A[0-9a-f]{16}\Z")
+            self.assertNotIn("127.0.0.1", json.dumps(body))
+
+            status, body, _ = self.ask("When are receipts due in business days?")
+            self.assertEqual(status, 502, body)
+            self.assertEqual(body["error"], "document answer generation failed")
+            self.assertIn(body["reason"], {"upstream_unreachable", "upstream_timeout"})
+            self.assertIn("error_id", body)
+            self.assertNotEqual(body.get("status"), "answered")
+        finally:
+            gateway.UPSTREAM = previous
+            gateway.UPSTREAM_CONNECT_TIMEOUT = previous_connect
+            gateway.UPSTREAM_TIMEOUT = previous_read
+        self.assertLess(time.monotonic() - started, 5)
+        # Empty model list stays not-ready after the dead-upstream path.
+        FakeUpstream.mode = "no_models"
+        try:
+            status, body, _ = self.call("GET", "/readyz", auth=False)
+            self.assertEqual((status, body["status"], body["reason"]), (503, "not_ready", "no_models_reported"))
+            self.assertNotEqual(status, 200)
+        finally:
+            FakeUpstream.mode = "ok"
+
+    def test_connection_refusal_reason_is_upstream_unreachable(self) -> None:
+        class _Refused:
+            def open(self, *_args, **_kwargs):
+                raise urllib.error.URLError(ConnectionRefusedError(111, "connection refused"))
+
+        original = gateway._upstream_opener
+        gateway._upstream_opener = lambda *_args, **_kwargs: _Refused()
+        started = time.monotonic()
+        try:
+            with self.assertRaises(gateway.UpstreamError) as caught:
+                gateway.read_upstream_json("/models", timeout=30)
+        finally:
+            gateway._upstream_opener = original
+        self.assertEqual(caught.exception.reason, "upstream_unreachable")
+        self.assertIn("refused", str(caught.exception).casefold())
+        self.assertLess(time.monotonic() - started, 1)
+
+    def test_stalled_upstream_times_out_as_structured_error(self) -> None:
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(8)
+        listener.settimeout(0.2)
+        held: list[socket.socket] = []
+        stop = threading.Event()
+
+        def accept_and_hold() -> None:
+            while not stop.is_set():
+                try:
+                    conn, _addr = listener.accept()
+                except socket.timeout:
+                    continue
+                held.append(conn)
+
+        thread = threading.Thread(target=accept_and_hold, daemon=True)
+        thread.start()
+        port = listener.getsockname()[1]
+        previous = gateway.UPSTREAM
+        previous_connect = gateway.UPSTREAM_CONNECT_TIMEOUT
+        previous_read = gateway.UPSTREAM_TIMEOUT
+        gateway.UPSTREAM = f"http://127.0.0.1:{port}/v1"
+        gateway.UPSTREAM_CONNECT_TIMEOUT = 0.3
+        gateway.UPSTREAM_TIMEOUT = 0.4
+        started = time.monotonic()
+        try:
+            status, body, _ = self.call("POST", "/v1/chat/completions", {
+                "model": "fake-model", "messages": [{"role": "user", "content": "hi"}],
+            })
+        finally:
+            gateway.UPSTREAM = previous
+            gateway.UPSTREAM_CONNECT_TIMEOUT = previous_connect
+            gateway.UPSTREAM_TIMEOUT = previous_read
+            stop.set()
+            thread.join(1)
+            for conn in held:
+                conn.close()
+            listener.close()
+        elapsed = time.monotonic() - started
+        self.assertEqual(status, 502, body)
+        self.assertEqual(body["reason"], "upstream_timeout")
+        self.assertEqual(body["error"], "inference upstream unavailable")
+        self.assertIn("error_id", body)
+        self.assertLess(elapsed, 3)
+
+    def test_connect_budget_does_not_abort_a_slow_live_response(self) -> None:
+        previous_connect = gateway.UPSTREAM_CONNECT_TIMEOUT
+        previous_read = gateway.UPSTREAM_TIMEOUT
+        gateway.UPSTREAM_CONNECT_TIMEOUT = 0.2
+        gateway.UPSTREAM_TIMEOUT = 3
+        FakeUpstream.mode = "slow"
+        try:
+            status, body, _ = self.call("POST", "/v1/chat/completions", {
+                "model": "fake-model", "messages": [{"role": "user", "content": "hi"}],
+            })
+        finally:
+            gateway.UPSTREAM_CONNECT_TIMEOUT = previous_connect
+            gateway.UPSTREAM_TIMEOUT = previous_read
+            FakeUpstream.mode = "ok"
+        self.assertEqual(status, 200, body)
+        self.assertIn("choices", body)
 
     def test_readiness_requires_a_reported_model(self) -> None:
         status, body, _ = self.call("GET", "/readyz", auth=False)
