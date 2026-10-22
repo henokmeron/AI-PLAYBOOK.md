@@ -164,6 +164,12 @@ E2E helper (uses key file; does not print it):
 
 ## Session log (newest first)
 
+### 2026-10-22 — archive of d6d3ac2 recorded after the fact
+
+- Code commit `d6d3ac2f9cb7fb3632b042c3fe58eefe0e180eb4` was pushed to `main` and fast-forwarded onto `feature/qwen-a100-start-hardening` and `feature/qwen3.5-27b-integration`. `git ls-remote` and `python -m ops.git_parity --ls-remote` showed that SHA on `HEAD` and all three refs. The parent was `b0ead09a8df7c5cd6abace971331ef46de6646a7`. Nothing was force-pushed.
+- Local archive, read back in Python: `%LOCALAPPDATA%\AI-PLAYBOOK\releases\d6d3ac2f9cb7fb3632b042c3fe58eefe0e180eb4\AI-PLAYBOOK-d6d3ac2f9cb7fb3632b042c3fe58eefe0e180eb4.tar.gz`. 715,415 bytes, 383 tar members, SHA-256 `50df5371070cc5004cad45ec645e9da938460f077b373f08240fda1e24ac98ee`. The sidecar matched. It contains `reported_model_count` and `ops/release/START.sh`. This recording commit is not inside that archive. The first `git archive` attempt did not see the new directory. The directory was created and the same commit was archived, then the bytes were read back. The archive was not copied to the volume. It was not extracted onto a fresh machine.
+- The H100 stayed **Stopped**. No live health call was added by this recording commit. Production **NO-GO**.
+
 ### 2026-10-22 — empty model list is not healthy; H100 still stopped
 
 - Remote was `https://github.com/henokmeron/AI-PLAYBOOK.md.git`. Before this commit, `git ls-remote` showed `b0ead09a8df7c5cd6abace971331ef46de6646a7` on `HEAD`, `main`, `feature/qwen-a100-start-hardening`, and `feature/qwen3.5-27b-integration`. Untracked `__pycache__` was left uncommitted. No secret was printed. Nothing was force-pushed.

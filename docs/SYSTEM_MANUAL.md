@@ -376,6 +376,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 
 | Date | Change |
 | --- | --- |
+| 2026-10-22 | Local archive of `d6d3ac2f9cb7fb3632b042c3fe58eefe0e180eb4` SHA-256 `50df5371070cc5004cad45ec645e9da938460f077b373f08240fda1e24ac98ee`, 383 members. This note is not inside that archive. Not copied to the volume. Production **NO-GO**. |
 | 2026-10-22 | Gateway `/health` is not `ok` when no model id is reported. The console says “No model reported”. Pod `xx9cjogra5vcwl` rechecked **Stopped** at $0.00/hr. Live health was not called. Production **NO-GO**. |
 | 2026-10-22 | An answer with no source label is withheld when evidence exists (`missing_citations`). “Do not cite the source” in a document is flagged. Mock only. Not deployed. Production **NO-GO**. |
 | 2026-10-22 | Managed document names that contain `:` are rejected. | A collection symlink is rejected. Invalidating one document folder does not clear a sibling folder that only shares a path prefix. Local suite 41 modules, 0 failed. Not deployed. Production **NO-GO**. |

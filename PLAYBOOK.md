@@ -311,6 +311,10 @@ Phase 7 — Advanced model customisation
 - Treat the playbook as a reproducible blueprint for future AI-assisted automation.
 
 ## 13. Change log
+### 2026-10-22 — Local archive of d6d3ac2
+
+- **VERIFIED locally:** `%LOCALAPPDATA%\AI-PLAYBOOK\releases\d6d3ac2f9cb7fb3632b042c3fe58eefe0e180eb4\AI-PLAYBOOK-d6d3ac2f9cb7fb3632b042c3fe58eefe0e180eb4.tar.gz`, SHA-256 `50df5371070cc5004cad45ec645e9da938460f077b373f08240fda1e24ac98ee`, 715,415 bytes, 383 members. The sidecar matched. This note is not inside that archive. Not copied to the volume. Not a fresh machine. Go-live **NO-GO**.
+
 ### 2026-10-22 — An empty model list is not healthy
 
 - **VERIFIED locally:** Gateway `/health` returns HTTP 503 and `status` `unknown` when the model server is absent (`model_server_absent`) or reports no model id (`no_models_reported`). A registry probe does not treat `{"data":[]}` as loaded. The console shows connection `unknown` (“No model reported”) when HTTP 200 still claims `model_count` 0. `/livez` does not call the model. Mock only. `python -m ops.run_tests` was 41 modules, 0 failed, exit 0. The H100 pod `xx9cjogra5vcwl` was rechecked **Stopped** at $0.00/hr and was not started. Live health was not called. Go-live **NO-GO**.
