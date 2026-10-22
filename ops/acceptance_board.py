@@ -63,9 +63,9 @@ LIVE_GATES = (
     },
     {
         "id": "microsoft_mailbox_read",
-        "description": "A real Microsoft mailbox read succeeded from the running console",
+        "description": "A live Microsoft mailbox search returned the expected harmless phrase",
         "mandatory": True,
-        "required_results": ["mailbox_read_ok"],
+        "required_results": ["mailbox_read_ok", "mailbox_content_match_ok"],
         "freshness_hours": 24,
     },
     {
@@ -436,9 +436,9 @@ def board(
         "offline_is_not_production_go": True,
         "microsoft_status": "MAILBOX READ VERIFIED" if mail["passed"] else "NOT CONFIGURED",
         "microsoft_reason": (
-            "A live mailbox read was recorded inside the freshness window."
+            "A live mailbox search returned the expected harmless phrase inside the freshness window."
             if mail["passed"]
-            else "No fresh live mailbox_read_ok record. Portal configuration or HTTP 200 is not a mailbox read."
+            else "No fresh live mailbox_content_match_ok record. HTTP 200, a message count, and a search that returns count 0 are not a content match."
         ),
         "note": (
             "Offline implementation percent is not a production GO and does not change the live score. "

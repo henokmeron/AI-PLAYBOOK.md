@@ -21,7 +21,7 @@ REQUIRED = {
     "deployment_parity": ["deployed_sha_read"],
     "inference_completion": ["completion_ok"],
     "rag_cited_and_abstain": ["rag_cited_answer_ok", "rag_abstention_ok"],
-    "microsoft_mailbox_read": ["mailbox_read_ok"],
+    "microsoft_mailbox_read": ["mailbox_read_ok", "mailbox_content_match_ok"],
     "second_endpoint": ["second_endpoint_worker_ok"],
     "blackwell": ["blackwell_inference_ok"],
     "fresh_recovery": ["fresh_recovery_ok"],
@@ -145,6 +145,7 @@ class AcceptanceBoardTests(unittest.TestCase):
             [record("http_200")],
             [record("consent_ok")],
             [record("mailbox_read_ok", kind="mock")],
+            [record("mailbox_read_ok")],
         ):
             gates = all_passing()
             gates["microsoft_mailbox_read"] = evidence
@@ -155,7 +156,10 @@ class AcceptanceBoardTests(unittest.TestCase):
             self.assertEqual(payload["microsoft_status"], "NOT CONFIGURED")
             self.assertEqual(payload["decision"], "NO-GO")
         gates = all_passing()
-        gates["microsoft_mailbox_read"] = [record("mailbox_read_ok", hours_ago=30)]
+        gates["microsoft_mailbox_read"] = [
+            record("mailbox_read_ok", hours_ago=30),
+            record("mailbox_content_match_ok", hours_ago=30),
+        ]
         payload = self.run_board(gates)
         self.assertEqual(payload["microsoft_status"], "NOT CONFIGURED")
         self.assertEqual(self.gate(payload, "microsoft_mailbox_read")["status"], "STALE")
@@ -251,8 +255,9 @@ class AcceptanceBoardTests(unittest.TestCase):
                         self.assertRegex(item[key], r"^[0-9a-f]{40}$")
                 stamp = datetime.strptime(item["timestamp_utc"], "%Y-%m-%dT%H:%M:%SZ")
                 self.assertLessEqual(stamp.replace(tzinfo=timezone.utc), datetime.now(timezone.utc) + timedelta(minutes=5))
-        if "mailbox_read_ok" not in recorded.get("microsoft_mailbox_read", set()):
+        if "mailbox_content_match_ok" not in recorded.get("microsoft_mailbox_read", set()):
             self.assertEqual(payload["microsoft_status"], "NOT CONFIGURED")
+            self.assertFalse(self.gate(payload, "microsoft_mailbox_read")["passed"])
         later = board(now=datetime.now(timezone.utc) + timedelta(days=30), intended_tip=TIP)
         self.assertEqual(later["live_score"]["passed"], 0)
         self.assertEqual(later["decision"], "NO-GO")
