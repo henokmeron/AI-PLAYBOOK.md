@@ -66,19 +66,21 @@ RAG_MANAGED_MIN_SCORE = float(os.environ.get("RAG_MANAGED_MIN_SCORE", "0.0"))
 RAG_MIN_COVERAGE = float(os.environ.get("RAG_MIN_COVERAGE", "0.15"))
 MAX_BODY_BYTES = 1_048_576
 MAX_UPLOAD_BODY_BYTES = 14 * 1024 * 1024
-MAX_QUESTION_CHARS = 2000
+MAX_QUESTION_CHARS = 8000
 MAX_RAG_HISTORY_MESSAGES = 12
-MAX_RAG_HISTORY_CHARS = 2000
-MAX_RAG_HISTORY_TOTAL_CHARS = 12000
+MAX_RAG_HISTORY_CHARS = 8000
+MAX_RAG_HISTORY_TOTAL_CHARS = 24000
 RAG_MAX_TOKENS = int(os.environ.get("RAG_MAX_TOKENS", "2048"))
 RAG_TOP_K_DEFAULT = 8
 RAG_TOP_K_MAX = 20
 # Prompt budget: the served model's max_model_len minus the answer budget and a
 # safety margin, converted to characters. Measured with the Qwen3.5-27B
 # tokenizer: prose ~4.5 chars/token, CSV rows ~2.6, XLSX rows ~2.44, so 2.4 is
-# the worst-case ratio for spreadsheet-heavy prompts.
+# the worst-case ratio for spreadsheet-heavy prompts. Handbook prose measured
+# 4.45–4.67 chars/token on /tokenize; 4.4 stays under that so the margin holds.
 RAG_MODEL_CONTEXT_TOKENS = int(os.environ.get("RAG_MODEL_CONTEXT_TOKENS", "8192"))
 RAG_CHARS_PER_TOKEN = float(os.environ.get("RAG_CHARS_PER_TOKEN", "2.4"))
+RAG_PROSE_CHARS_PER_TOKEN = float(os.environ.get("RAG_PROSE_CHARS_PER_TOKEN", "4.4"))
 RAG_CONTEXT_MARGIN_TOKENS = 384
 RAG_MIN_EVIDENCE_CHARS = 3000
 UPSTREAM_TIMEOUT = int(os.environ.get("UPSTREAM_TIMEOUT", "180"))
@@ -707,7 +709,9 @@ def build_rag_completion_messages(
                 "stored-based weekly total. "
                 "For council-specific fees, only answer when the council and rate are both "
                 "present in the retrieved evidence. "
-                "If any requested category is missing from the evidence, say the answer is incomplete."
+                "If any requested category is missing from the evidence, say the answer is incomplete. "
+                "Answer each numbered question. When the evidence does not support one, name that "
+                "question and say the evidence is insufficient. A missing passage is not a cut-off question."
             ),
         },
     ]
@@ -744,16 +748,37 @@ def read_upstream_json(path: str, payload: dict[str, Any] | None = None, timeout
     return value
 
 
-def evidence_char_budget(non_evidence_chars: int) -> int:
+def evidence_looks_tabular(groups: list[Any]) -> bool:
+    """CSV and XLSX chunks tokenize much more densely than handbook prose."""
+    for group in groups:
+        chunk = getattr(group, "chunk", None)
+        if chunk is None:
+            continue
+        kind = str(chunk.meta.get("kind") or "")
+        if kind in {"table", "sheet"} or "| Row " in chunk.text:
+            return True
+    return False
+
+
+def evidence_chars_per_token(groups: list[Any]) -> float:
+    """Use the spreadsheet ratio only when the retrieved chunks are tabular."""
+    if not groups or evidence_looks_tabular(groups):
+        return RAG_CHARS_PER_TOKEN
+    return RAG_PROSE_CHARS_PER_TOKEN
+
+
+def evidence_char_budget(non_evidence_chars: int, chars_per_token: float | None = None) -> int:
     """Characters available for evidence after system prompt, history and template."""
+    ratio = RAG_CHARS_PER_TOKEN if chars_per_token is None else chars_per_token
     prompt_tokens = RAG_MODEL_CONTEXT_TOKENS - RAG_MAX_TOKENS - RAG_CONTEXT_MARGIN_TOKENS
-    return int(prompt_tokens * RAG_CHARS_PER_TOKEN) - non_evidence_chars
+    return int(prompt_tokens * ratio) - non_evidence_chars
 
 
 def fit_history_to_budget(
     question: str,
     history: list[dict[str, str]],
     collection_files: list[str] | None,
+    chars_per_token: float | None = None,
 ) -> tuple[list[dict[str, str]], int, int]:
     """Drop the oldest history pairs until evidence keeps a minimum budget.
 
@@ -762,7 +787,7 @@ def fit_history_to_budget(
     dropped = 0
     while True:
         scaffold = build_rag_completion_messages(question, [], history, collection_files=collection_files)
-        budget = evidence_char_budget(sum(len(m["content"]) for m in scaffold))
+        budget = evidence_char_budget(sum(len(m["content"]) for m in scaffold), chars_per_token)
         if budget >= RAG_MIN_EVIDENCE_CHARS or not history:
             return history, max(budget, RAG_MIN_EVIDENCE_CHARS), dropped
         history = history[2:]
@@ -1241,7 +1266,12 @@ class Handler(BaseHTTPRequestHandler):
 
         top_score = outcome.top_score
         model_question, uncovered_notes = generation_question(question, outcome.part_abstain)
-        history, char_budget, history_dropped = fit_history_to_budget(model_question, history, collection_files)
+        history, char_budget, history_dropped = fit_history_to_budget(
+            model_question,
+            history,
+            collection_files,
+            chars_per_token=evidence_chars_per_token(outcome.groups),
+        )
         pack = build_evidence(outcome.groups, char_budget)
         sources = pack.sources
         evidence = pack.blocks

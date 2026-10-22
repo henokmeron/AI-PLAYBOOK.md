@@ -566,6 +566,8 @@ class ConsoleTests(unittest.TestCase):
         self.assertNotIn("localStorage", script_text)
         self.assertNotIn("/v1/", script_text)
         self.assertIn("historyPayload", script_text)
+        self.assertIn("MAX_RAG_QUESTION_CHARS", script_text)
+        self.assertIn("so it was not pasted", script_text)
         self.assertIn("ragQuestion.value = \"\"", script_text)
         self.assertIn("setRagBusy(false)", script_text)
         self.assertIn("ragTurns", script_text)
@@ -576,6 +578,7 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("removed_from_index", script_text)
         self.assertIn("searchable !== true", script_text)
         self.assertIn('value="my-docs"', text)
+        self.assertIn('id="rag-question" rows="6" maxlength="8000"', text)
         self.assertIn("upload-form", text)
         self.assertIn("document-list", text)
         status, css = self.request(base, "GET", "/static/styles.css")
@@ -1013,9 +1016,9 @@ class ConsoleTests(unittest.TestCase):
             server.validate_rag_history([{"role": "user", "content": "q"}])
         with self.assertRaises(ValueError):
             server.validate_rag_history([
-                {"role": "user", "content": "u" * 2000},
-                {"role": "assistant", "content": "a" * 2000},
-            ] * 4)
+                {"role": "user", "content": "u" * 8000},
+                {"role": "assistant", "content": "a" * 8000},
+            ] * 2)
 
     def test_rag_without_history_still_works(self) -> None:
         gateway = FakeGateway()

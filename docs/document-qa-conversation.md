@@ -20,7 +20,7 @@ This revision keeps Chat, upload, System Status, loopback binding, and bearer-ke
 ## Conversation history rules
 
 - Maximum 12 messages (6 complete user/assistant pairs).
-- Each message at most 2000 characters; aggregate history text at most 12,000 characters.
+- Each message at most 8,000 characters; aggregate history text at most 24,000 characters. A paste over the limit is refused in the browser and is not silently shortened.
 - Roles must be `user`/`assistant`, start with user, end with assistant, and alternate.
 - Requests with no `history` field continue to work.
 - Failed requests do not append a turn; the transcript stays intact and Ask re-enables.

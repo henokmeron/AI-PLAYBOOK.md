@@ -736,6 +736,47 @@ class GatewayReliabilityTests(unittest.TestCase):
         self.assertEqual(body["sources"], [])
         self.assertEqual(len(FakeUpstream.requests), calls)
 
+    def test_question_longer_than_2000_characters_reaches_the_model_intact(self) -> None:
+        status, body, _ = self.upload(
+            "long-question",
+            "handbook.md",
+            b"A good requirement is clear and verifiable. Unclear requirements create problems during design and testing.\n",
+        )
+        self.assertEqual(status, 201, body)
+        tail = "TOKEN-Q10-COMPLETE synthesise the lifecycle and name unsupported parts."
+        question = (
+            "What characteristics make a good requirement, and how can an unclear "
+            "requirement create problems during design and testing? "
+            + ("and " * 700)
+            + tail
+        )
+        self.assertGreater(len(question), 2000)
+        self.assertLess(len(question), gateway.MAX_QUESTION_CHARS)
+        status, body, _ = self.ask(question, collection="long-question")
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["status"], "answered", body.get("answer"))
+        prompt = FakeUpstream.requests[-1]["messages"][1]["content"]
+        self.assertIn(tail, prompt)
+        self.assertIn("A missing passage is not a cut-off question.", prompt)
+        status, rejected, _ = self.ask("x" * (gateway.MAX_QUESTION_CHARS + 1), collection="long-question")
+        self.assertEqual(status, 413, rejected)
+
+    def test_prose_evidence_gets_a_wider_character_budget_than_a_table(self) -> None:
+        class _Chunk:
+            def __init__(self, kind: str, text: str) -> None:
+                self.meta = {"kind": kind}
+                self.text = text
+
+        class _Group:
+            def __init__(self, chunk: _Chunk) -> None:
+                self.chunk = chunk
+
+        prose = gateway.evidence_chars_per_token([_Group(_Chunk("page", "Stakeholder expectation definition."))])
+        table = gateway.evidence_chars_per_token([_Group(_Chunk("sheet", "| Row 1 | 10 |"))])
+        self.assertEqual(prose, gateway.RAG_PROSE_CHARS_PER_TOKEN)
+        self.assertEqual(table, gateway.RAG_CHARS_PER_TOKEN)
+        self.assertGreater(prose, table)
+
     def test_gemma_request_while_qwen_live_is_refused_with_409(self) -> None:
         try:
             import yaml  # noqa: F401

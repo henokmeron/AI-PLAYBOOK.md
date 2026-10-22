@@ -293,30 +293,31 @@ def generation_question(question: str, part_abstain: tuple[bool, ...]) -> tuple[
 
 
 def _merge_ranked_groups(outcomes: list[SearchOutcome], limit: int) -> list[RankedGroup]:
-    """Keep the best chunk from each passing part, then fill by score."""
+    """Keep two chunks from each passing part, then fill by score.
+
+    One chunk per question left later questions outside the context budget,
+    because a single high-scoring question filled the remaining slots.
+    """
     chosen: list[RankedGroup] = []
     seen: set[tuple[str, int]] = set()
 
     def add(group: RankedGroup) -> None:
         key = (group.chunk.source, group.chunk.number)
-        if key in seen:
+        if key in seen or len(chosen) >= limit:
             return
         seen.add(key)
         chosen.append(group)
 
-    for outcome in outcomes:
-        if outcome.groups:
-            add(outcome.groups[0])
-    if len(chosen) >= limit:
-        return chosen[:limit]
+    for depth in (0, 1):
+        for outcome in outcomes:
+            if len(outcome.groups) > depth:
+                add(outcome.groups[depth])
     rest = sorted(
         (group for outcome in outcomes for group in outcome.groups),
         key=lambda group: group.score,
         reverse=True,
     )
     for group in rest:
-        if len(chosen) >= limit:
-            break
         add(group)
     return chosen
 
@@ -413,7 +414,8 @@ def _search_one(
         return SearchOutcome([], True, "below_min_score", top_score, top_coverage, used, len(ranked), status)
     # Instruction text is not evidence. A hidden "do not abstain" cannot keep
     # a question above the coverage gate when the factual span does not cover it.
-    # A chunk below the coverage floor is not cited, even if another chunk passes.
+    # Other chunks below the floor are not cited. The lexical winner is kept
+    # when some other chunk clears the floor, so a long question cannot hide it.
     factual_scores = [factual_coverage(question, group.chunk, index) for group in groups]
     factual_top = max(factual_scores, default=0.0)
     if factual_top < min_coverage:
@@ -421,6 +423,11 @@ def _search_one(
         reported = factual_top if reason == "instruction_not_evidence" else top_coverage
         return SearchOutcome([], True, reason, top_score, reported, used, len(ranked), status)
     kept = [group for group, factual in zip(groups, factual_scores) if factual >= min_coverage]
+    # The coverage floor still abstains when nothing clears it. A long question
+    # can dilute the lexical winner below that floor while a vaguer chunk
+    # scrapes over it. Cite the winner as well, or the indexed passage is missed.
+    if groups[0] not in kept:
+        kept.insert(0, groups[0])
     return SearchOutcome(
         kept,
         False,

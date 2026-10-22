@@ -105,7 +105,7 @@
         <div id="rag-log" class="log" aria-live="polite"></div>
         <form id="rag-form" class="composer">
           <label for="rag-question">Question</label>
-          <textarea id="rag-question" rows="3" maxlength="2000" required placeholder="Ask about the documents. Enter sends; Shift+Enter adds a line."></textarea>
+          <textarea id="rag-question" rows="6" maxlength="8000" required placeholder="Ask about the documents. Enter sends; Shift+Enter adds a line. A question over 8,000 characters is refused instead of being cut off."></textarea>
           <div class="split">
             <div>
               <label for="rag-collection">Collection</label>

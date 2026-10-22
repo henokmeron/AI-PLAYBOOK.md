@@ -51,12 +51,12 @@ class RagConversationTests(unittest.TestCase):
             ],
             [{"role": "system", "content": "nope"}],
             [{"role": "user", "content": ""}],
-            [{"role": "user", "content": "q"}, {"role": "assistant", "content": "a" * 2001}],
+            [{"role": "user", "content": "q"}, {"role": "assistant", "content": "a" * 8001}],
             [{"role": "user", "content": "q"}, {"role": "assistant", "content": "a"}] * 7,
             [
-                {"role": "user", "content": "u" * 2000},
-                {"role": "assistant", "content": "a" * 2000},
-            ] * 4,
+                {"role": "user", "content": "u" * 8000},
+                {"role": "assistant", "content": "a" * 8000},
+            ] * 2,
         ]
         for value in cases:
             with self.subTest(value=repr(value)[:80]):

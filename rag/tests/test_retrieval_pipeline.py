@@ -373,6 +373,43 @@ class SearchAndEvidenceTests(unittest.TestCase):
         self.assertEqual(absent.reason, "low_query_coverage")
         self.assertEqual(absent.groups, [])
 
+    def test_merge_keeps_a_second_chunk_from_each_part_before_score_fill(self) -> None:
+        def group(source: str, number: int, score: float) -> rp.RankedGroup:
+            chunk = Chunk(source, number, "text", ["term"], Counter(["term"]), {}, "")
+            return rp.RankedGroup(score, chunk, [source], 0.5)
+
+        def outcome(groups: list[rp.RankedGroup]) -> rp.SearchOutcome:
+            return rp.SearchOutcome(groups, False, None, groups[0].score, 0.5, 4, len(groups), {})
+
+        merged = rp._merge_ranked_groups([
+            outcome([group("a.txt", 1, 10), group("a.txt", 2, 9), group("a.txt", 3, 50)]),
+            outcome([group("b.txt", 1, 8), group("b.txt", 2, 7)]),
+        ], 4)
+        self.assertEqual(
+            [(item.chunk.source, item.chunk.number) for item in merged],
+            [("a.txt", 1), ("b.txt", 1), ("a.txt", 2), ("b.txt", 2)],
+        )
+
+    def test_lexical_winner_survives_a_diluted_coverage_floor(self) -> None:
+        folder = Path(self.tmp.name) / "diluted"
+        folder.mkdir()
+        (folder / "standards.txt").write_text("Table 3 NASA MSFC.", encoding="utf-8")
+        (folder / "generic.txt").write_text(
+            "The document has information, details, a page, a table number, entries, and outside notes. "
+            + " ".join(f"zz{i}" for i in range(400)),
+            encoding="utf-8",
+        )
+        (folder / "museum.txt").write_text("The museum opens on public days.", encoding="utf-8")
+        question = (
+            "Numerical extraction: Find the table listing NASA and MSFC testing standards. "
+            "Identify the table number, its PDF page, and five entries or details from it. "
+            "Do not substitute information from outside the document."
+        )
+        outcome = rp.search(question, rp.load_collection(folder), 8, min_coverage=0.15)
+        self.assertFalse(outcome.abstain, (outcome.reason, outcome.top_coverage))
+        self.assertEqual(outcome.groups[0].chunk.source, "standards.txt")
+        self.assertNotIn("museum.txt", [group.chunk.source for group in outcome.groups])
+
     def test_weak_chunk_is_not_cited_beside_a_real_match(self) -> None:
         folder = Path(self.tmp.name) / "mixed"
         folder.mkdir()

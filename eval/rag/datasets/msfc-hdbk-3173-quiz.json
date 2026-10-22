@@ -1,0 +1,16 @@
+{
+  "document": "msfc-hdbk-3173_rev_c.pdf",
+  "collection": "my-docs",
+  "recovered_from": "console transcript of the 2026-10-22T22:12:34Z ask",
+  "question_chars": 2000,
+  "question_tail": "10. Deep reasonin",
+  "q10_note": "The browser maxlength of 2000 dropped the rest of question 10 before the request. The missing characters were not in the gateway log.",
+  "question": "1. Requirements: According to the handbook, what is the difference between stakeholder expectation definition and technical requirements definition? Explain how the outputs of one process inform the other, with page references.\n\n2. Verification versus validation: Explain the difference between product verification and product validation. Give the purpose of each and identify where the handbook discusses their relationship.\n\n3. Risk management: Describe the handbook's continuous risk management process. Identify the principal activities in their correct order and explain how risk information informs technical decisions.\n\n4. Configuration management: What activities does the handbook associate with configuration management? Explain the relationship between configuration identification, change control, status accounting, and verification or audit.\n\n5. Decision analysis: Find the handbook's discussion of decision analysis methods. Compare a decision matrix with a decision tree, explaining what each helps decision-makers evaluate and what limitations should be considered.\n\n6. Numerical extraction: Find the table listing NASA and MSFC testing standards. Identify the table number, its PDF page, and five entries or details from it. Do not substitute information from outside the document.\n\n7. Cross-chapter synthesis: Explain how requirements management, technical risk management, configuration management, and product verification work together across a system's lifecycle. Support each connection with specific sections.\n\n8. Appendix challenge: Use Appendix C, Developing Good Requirements, to identify the characteristics of a good requirement. Explain how an unclear or unverifiable requirement could create problems later in design and testing.\n\n9. Missing-information test: According to this handbook, what is the current 2026 cost of launching a NASA mission? Give the exact figure and page. If the handbook does not contain that information, explicitly say so.\n\n10. Deep reasonin",
+  "recall_pages": {
+    "1": [33, 45],
+    "6": [89],
+    "8": [192]
+  },
+  "must_not_invent": [9],
+  "absent_phrases": ["2026", "launch cost"]
+}

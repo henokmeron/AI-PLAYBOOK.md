@@ -10,6 +10,7 @@
   var catalogModels = [];
   var selectedModelId = "";
   var MAX_RAG_HISTORY_MESSAGES = 12;
+  var MAX_RAG_QUESTION_CHARS = 8000;
   var authState = null;
   var csrfToken = "";
 
@@ -751,11 +752,31 @@
     renderChat();
   });
 
+  ragQuestion.addEventListener("paste", function (event) {
+    var clipboard = event.clipboardData || window.clipboardData;
+    if (!clipboard) return;
+    var incoming = clipboard.getData("text");
+    if (!incoming) return;
+    var selected = ragQuestion.selectionEnd - ragQuestion.selectionStart;
+    var nextLength = ragQuestion.value.length - selected + incoming.length;
+    if (nextLength <= MAX_RAG_QUESTION_CHARS) return;
+    event.preventDefault();
+    showError(
+      ragError,
+      "That question is " + nextLength + " characters. The limit is " +
+      MAX_RAG_QUESTION_CHARS + ", so it was not pasted and the end was not cut off."
+    );
+  });
+
   ragForm.addEventListener("submit", function (event) {
     event.preventDefault();
     if (ragBusy) return;
     var question = ragQuestion.value.trim();
     if (!question) return;
+    if (question.length > MAX_RAG_QUESTION_CHARS) {
+      showError(ragError, "Question must not exceed " + MAX_RAG_QUESTION_CHARS + " characters.");
+      return;
+    }
     var collection = ragCollection.value.trim();
     if (collection && !/^[a-z0-9][a-z0-9_-]{0,39}$/.test(collection)) {
       showError(ragError, "Collection must be a lowercase slug using letters, numbers, hyphens, or underscores.");
