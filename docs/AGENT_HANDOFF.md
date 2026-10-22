@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-22** (A100 `mlar88u3ku8utm` already has the one official `START.sh` from about 13:11:19Z. At 13:58:38Z it was still loading Qwen shards, GPU **51923 MiB / 81920 MiB**, and `:8002` / `:8010` / `:8080` were HTTP **000**. Do **not** start a second `START.sh`. Pod checkout `/tmp/AI-PLAYBOOK` is `f7043f8ad8ed9ac39423f96fe7fcbd12f21fe7ba`. Do not reload Qwen onto a newer commit. H100 stays **Stopped**. Live health is **not** VERIFIED. Production **NO-GO**.)
+Last updated: **2026-10-22** (Integrator fetched `main` at `6d479937bc90b2bf6054d9de8ab2bfecfd3b465f`. The A100 load recorded in `06e47834ed6578ff5b368783bd31d4380d325cce` was still in progress at 13:58:38Z: shard **2/11**, GPU **51923 MiB / 81920 MiB**, health HTTP **000**. This session did not SSH and has no later evidence that the load finished. Do **not** start a second `START.sh`. Do not reload Qwen onto a newer commit. H100 stays **Stopped**. Production **NO-GO**.)
 
 ## Only this repository
 
@@ -168,6 +168,21 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-22 — integrator: area commits are on main; production NO-GO
+
+- Fetched `origin` until `main` was `6d479937bc90b2bf6054d9de8ab2bfecfd3b465f`. `git pull --ff-only origin main` was already up to date. No merge conflict. Nothing was force-pushed. No other commit was reset. Nothing was packaged, and nothing was copied to the volume.
+- SHAs fetched on that tip, newest first:
+  - `6d479937bc90b2bf6054d9de8ab2bfecfd3b465f` — `web/auth/` plus the console Microsoft start route. A browser `Sec-Fetch-Site` of `same-site` or `cross-site` is refused before a sign-in attempt is stored. `docs/security/operator-auth.md` says the same.
+  - `06e47834ed6578ff5b368783bd31d4380d325cce` — handoff only. Its evidence: one official `START.sh` on A100 `mlar88u3ku8utm` began about 13:11:19Z. At 13:58:38Z vLLM pid 12621 was still loading safetensors shard **2/11**, GPU **51923 MiB / 81920 MiB**, and `:8002` / `:8010` / `:8080` were HTTP **000**. Pod checkout `/tmp/AI-PLAYBOOK` was `f7043f8ad8ed9ac39423f96fe7fcbd12f21fe7ba`. H100 `xx9cjogra5vcwl` was not started. This integrator did not SSH and did not run `START.sh`. There is no later reading here, so the load stays **in progress**, not finished.
+  - `1fbc1decdba5f0d8fd24edfc283de2574ebce1f8` — `rag/`. A citation is withheld when its text is not in that collection's retrieved chunk. `answer_delivery` still skips that check when `evidence` is omitted, and `api/local_gateway.py` still calls it without chunk text. That is the compatibility path the RAG function documents. Both sides' tests passed. It was not rewired.
+  - `0061ae95c461b3c3ddf3cb964a190e1e54e1bcea` — `ops_centre/`. Graph, fleet, and repair jobs are not marked healthy on missing or stale evidence.
+  - `c4834e7d2c94d5c6da6f3f64ae8a09035127db58` — `api/`. A dead or timed-out inference upstream fails fast with a structured error.
+  - `cefec8593e9b15096496fee6a0066ba71f89f45b` — `web/` outside auth. The console shows loading and a gateway-down error, and a dead model engine is not treated as healthy.
+  - Already on `main` before those pushes: `81b47752e05320240a84486ebbea50826823e3db` (typed tasks stay behind the approval gate), `7d3c10d55f0758400abb2bb3ea220b807361768d` (approved Graph draft updates and named-file changes, no mail sent), `e6f0b38a48ff1b0bb8c704409fec8334790665cf` (local archive checksum for `0089420`).
+- `python -m ops.run_tests` on Python 3.11 was 42 modules, 41 ok, 1 failed, about 162 seconds. The failure was `web.test_server`: `PermissionError` WinError 5 replacing a temp `sessions.json`, first on the printer-restart case and then on chat and repair logout during the automatic retry. Those were not assertion mismatches between the new trees. An isolated rerun of `web.test_server` was 31 tests, OK, about 50 seconds. `integrations.tests.test_endpoint` skipped 1. `api.test_gateway_reliability` was 31 tests, logged a Windows socket abort, and still passed. No integration edit was required.
+- The acceptance board still names running A100 `mlar88u3ku8utm` and stopped H100 `xx9cjogra5vcwl`. That matches the pod in the 13:58:38Z evidence, so the board was not edited. Live acceptance was not raised.
+- Do not start a second `START.sh`. Do not start the H100. Do not reload Qwen onto this newer Git tip while that load is the running one. Production **NO-GO**. Gates still open: deployed commit equals intended Git tip, mail end-to-end, second endpoint, Blackwell live acceptance, fresh-environment recovery. Mail stays **NOT CONFIGURED**.
 
 ### 2026-10-22 — A100 start still loading; health still down
 
