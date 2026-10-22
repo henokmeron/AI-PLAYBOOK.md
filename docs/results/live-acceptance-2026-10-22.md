@@ -218,3 +218,11 @@ With the evidence file from `d6d3beb`, both tests pass. Any accurate new live re
   "microsoft_mail_read": {"value": false, "reason": "no operator session, no consent, no token", "at": "2026-10-22T18:20:30Z"}
 }
 ```
+
+## Console redeploy of c25c0ac (coordinator, 18:42Z)
+
+- Before: console 54402, gateway 54370, vLLM 1826. `SOURCE_UPDATE_APPROVED=yes bash ops/release/update-source-only.sh` fast-forwarded d6d3beb to `c25c0ac19cb1639376bb2efd268395179f02161b`.
+- Changed files: three docs files, `ops/acceptance_board.py`, and two test files. Only the console reads `ops/acceptance_board.py`, so only `web/server.py` was restarted. It reused the old process's own `/proc` environment (29 variables, Microsoft id file and tenant set) and command line. New pid 57562.
+- Running revision: console start epoch 1792694566.07 is after the `ops/acceptance_board.py` mtime 1792694565.87. Pod HEAD c25c0ac with 0 tracked edits.
+- 18:42:49Z: health 200 on 8002 and 8010, console 200 on 8080. vLLM 1826 and gateway 54370 unchanged.
+- Earlier attempt at 18:41Z: a quoting slip in the remote shell stripped characters from the script. It stopped at the first failing command, before the kill line. A read-only check confirmed nothing changed.

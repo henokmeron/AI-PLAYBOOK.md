@@ -33,6 +33,16 @@
           "evidence_kind": "live",
           "detail": "200 / 200 / 200 with gateway pid 54370 and console pid 54402 started after the d6d3beb checkout; vLLM pid 1826.",
           "citation": "docs/results/live-acceptance-2026-10-22.md, redeploy of d6d3beb"
+        },
+        {
+          "source_sha": "c25c0ac19cb1639376bb2efd268395179f02161b",
+          "deployed_sha": "c25c0ac19cb1639376bb2efd268395179f02161b",
+          "command": "curl -s -o /dev/null -w %{http_code} http://127.0.0.1:8002/health; http://127.0.0.1:8010/health; http://127.0.0.1:8080/ over SSH root@154.54.102.41 -p 12572 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T18:42:49Z",
+          "result": "http_200",
+          "evidence_kind": "live",
+          "detail": "200 / 200 / 200 after the console-only restart to c25c0ac (console pid 57562); vLLM pid 1826 and gateway pid 54370 unchanged.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, console redeploy of c25c0ac"
         }
       ]
     },
@@ -67,6 +77,16 @@
           "evidence_kind": "live",
           "detail": "Pod HEAD d6d3beb, 0 tracked edits (re-read 18:34:14Z). Gateway 54370 start epoch 1792693993.24 and console 54402 start epoch 1792693994.90 are after checkout file mtime 1792693992.93. vLLM pid 1826 unchanged. No endpoint reports a SHA.",
           "citation": "docs/results/live-acceptance-2026-10-22.md, redeploy of d6d3beb"
+        },
+        {
+          "source_sha": "c25c0ac19cb1639376bb2efd268395179f02161b",
+          "deployed_sha": "c25c0ac19cb1639376bb2efd268395179f02161b",
+          "command": "SOURCE_UPDATE_APPROVED=yes bash ops/release/update-source-only.sh; git rev-parse HEAD; restart of web/server.py only with its own /proc environ and cmdline; /proc/PID/stat start vs ops/acceptance_board.py mtime, over SSH root@154.54.102.41 -p 12572 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T18:42:49Z",
+          "result": "deployed_sha_read",
+          "evidence_kind": "live",
+          "detail": "Pod HEAD c25c0ac, 0 tracked edits. Changed served file since d6d3beb: ops/acceptance_board.py only (read by the console; the gateway does not import it). Console 57562 start epoch 1792694566.07 is after the file mtime 1792694565.87; environment carried over (29 variables, Microsoft id file and tenant set). Gateway 54370 and vLLM 1826 not signalled.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, console redeploy of c25c0ac"
         }
       ]
     },
