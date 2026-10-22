@@ -111,10 +111,17 @@ def run_preflight(
             "PyYAML does not import. Registry tests cannot be treated as validated.",
         ))
 
-    if str(env.get("MICROSOFT_CLIENT_ID", "")).strip():
-        checks.append(_check("microsoft", "pass", "MICROSOFT_CLIENT_ID is present"))
+    from integrations.microsoft_oauth import client_id_source
+
+    client_source = client_id_source(dict(env))
+    if client_source:
+        checks.append(_check("microsoft", "pass", f"{client_source} is present"))
     else:
-        checks.append(_check("microsoft", "not_configured", "MICROSOFT_CLIENT_ID is unset"))
+        checks.append(_check(
+            "microsoft",
+            "not_configured",
+            "MICROSOFT_CLIENT_ID is unset and MICROSOFT_CLIENT_ID_FILE is unset, unreadable, or not private",
+        ))
 
     model_open = bool(ports_open.get(MODEL_PORT))
     gateway_open = bool(ports_open.get(GATEWAY_PORT))

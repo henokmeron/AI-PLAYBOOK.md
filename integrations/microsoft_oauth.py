@@ -260,6 +260,22 @@ def load_client_id(environ: dict[str, str] | None = None) -> str:
     return validate_client_id(text.splitlines()[0].strip())
 
 
+def client_id_source(environ: dict[str, str] | None = None) -> str:
+    """Name the variable that supplies the application id, or return "".
+
+    An unsafe, non-private, or invalid id file counts as not configured.
+    """
+    source = os.environ if environ is None else environ
+    if str(source.get("MICROSOFT_CLIENT_ID", "")).strip():
+        return "MICROSOFT_CLIENT_ID"
+    if not str(source.get("MICROSOFT_CLIENT_ID_FILE", "")).strip():
+        return ""
+    try:
+        return "MICROSOFT_CLIENT_ID_FILE" if load_client_id(dict(source)) else ""
+    except InvalidRequest:
+        return ""
+
+
 def scopes_for(access: str = "read", *, target: str | None = None) -> tuple[str, ...]:
     """Delegated scopes only. Writes are requested for one named flow."""
     choice, embedded = _named_file_access(access)

@@ -301,8 +301,10 @@ def microsoft_configuration(env: Mapping[str, str] | None = None) -> dict[str, s
     `status` means the application id is present or absent. `mailbox` stays
     NOT CONFIGURED until a real Microsoft Graph mail read succeeds.
     """
+    from .microsoft_oauth import client_id_source
+
     source = env or {}
-    present = bool(str(source.get("MICROSOFT_CLIENT_ID", "")).strip())
+    present = bool(client_id_source(dict(source)))
     return {
         "status": "configured" if present else "NOT CONFIGURED",
         "client_id": "present" if present else "absent",

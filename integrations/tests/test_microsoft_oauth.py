@@ -18,6 +18,7 @@ from integrations.microsoft_oauth import (
     DEFAULT_TENANT,
     MicrosoftOAuth,
     _challenge,
+    client_id_source,
     load_client_id,
     validate_redirect,
     validate_tenant,
@@ -163,9 +164,16 @@ class OAuthTests(unittest.TestCase):
             })
             self.assertEqual(forced.tenant, DEFAULT_TENANT)
             self.assertNotIn("/common/", forced.authorization_url())
+            file_env = {"MICROSOFT_CLIENT_ID_FILE": str(path)}
+            self.assertEqual(client_id_source(file_env), "MICROSOFT_CLIENT_ID_FILE")
+            self.assertEqual(microsoft_configuration(file_env)["status"], "configured")
+            self.assertEqual(microsoft_configuration(file_env)["mailbox"], "NOT CONFIGURED")
             path.write_text("not-a-uuid\n", encoding="utf-8")
             with self.assertRaises(InvalidRequest):
                 load_client_id({"MICROSOFT_CLIENT_ID_FILE": str(path)})
+            self.assertEqual(client_id_source(file_env), "")
+            self.assertEqual(microsoft_configuration(file_env)["status"], "NOT CONFIGURED")
+            self.assertEqual(client_id_source({"MICROSOFT_CLIENT_ID_FILE": str(directory / "missing")}), "")
 
     def test_authorization_url_uses_pkce_and_no_client_secret(self) -> None:
         oauth = MicrosoftOAuth(client_id=CLIENT, transport=Transport())

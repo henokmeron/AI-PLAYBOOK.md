@@ -510,8 +510,10 @@ def _rag_health(verified_at: str | None) -> dict[str, Any]:
 
 def _microsoft_graph(verified_at: str | None) -> dict[str, Any]:
     """Label Graph from local files only. This function does not call Microsoft."""
-    client_id = os.environ.get("MICROSOFT_CLIENT_ID", "").strip()
-    if not client_id:
+    from integrations.microsoft_oauth import client_id_source
+
+    client_source = client_id_source(dict(os.environ))
+    if not client_source:
         return _component(
             "microsoft_graph",
             "NOT CONFIGURED",
@@ -519,7 +521,7 @@ def _microsoft_graph(verified_at: str | None) -> dict[str, Any]:
             detail="Outlook mail search is not connected in this process.",
             checked_at=verified_at,
         )
-    evidence = ["MICROSOFT_CLIENT_ID is set", "graph_called=false"]
+    evidence = [f"{client_source} is set", "graph_called=false"]
     token_path = os.environ.get("MICROSOFT_TOKEN_FILE", "").strip()
     if not token_path:
         return _component(
