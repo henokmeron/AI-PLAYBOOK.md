@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "about": "Recorded evidence for ops/acceptance_board.py. Gate rules live in code; this file only records what was observed. Add a record only when it can be cited. evidence_kind is one of live, local, mock, none. timestamp_utc is when the observation was made, not when it was written here.",
+  "gates": {
+    "live_health": {
+      "evidence": [
+        {
+          "source_sha": "be9cbd2baf08ee1d9f1bbd192982c94575f57aeb",
+          "deployed_sha": "be9cbd2baf08ee1d9f1bbd192982c94575f57aeb",
+          "command": "HTTP health status poll of :8002 (Qwen), :8010 (gateway), :8080 (console) over SSH on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T15:50:02Z",
+          "result": "http_200",
+          "evidence_kind": "live",
+          "detail": "200 / 200 / 200 after vLLM application startup complete. Pod checkout /tmp/AI-PLAYBOOK was be9cbd2.",
+          "citation": "docs/AGENT_HANDOFF.md, 2026-10-22 replacement A100 reached HTTP 200 (15:50:02Z line); docs/IMPLEMENTATION_STATUS.md 2026-10-22T15:50:02Z"
+        }
+      ]
+    },
+    "deployment_parity": {
+      "evidence": [
+        {
+          "source_sha": "be9cbd2baf08ee1d9f1bbd192982c94575f57aeb",
+          "deployed_sha": "be9cbd2baf08ee1d9f1bbd192982c94575f57aeb",
+          "command": "read git HEAD of /tmp/AI-PLAYBOOK on A100 gom4ualdk47qrj over SSH",
+          "timestamp_utc": "2026-10-22T15:50:02Z",
+          "result": "deployed_sha_read",
+          "evidence_kind": "live",
+          "detail": "START.sh logged source be9cbd2. The checkout stayed be9cbd2 and was not reset. It is behind GitHub main.",
+          "citation": "docs/AGENT_HANDOFF.md, pod checkout table row and 2026-10-22 replacement A100 section"
+        }
+      ]
+    },
+    "inference_completion": {
+      "evidence": [
+        {
+          "source_sha": "be9cbd2baf08ee1d9f1bbd192982c94575f57aeb",
+          "deployed_sha": "be9cbd2baf08ee1d9f1bbd192982c94575f57aeb",
+          "command": "one chat completion through the gateway on :8010 (exact command line not recorded)",
+          "timestamp_utc": "2026-10-22T15:49:11Z",
+          "result": "completion_ok",
+          "evidence_kind": "live",
+          "detail": "HTTP 200, text PONG. Sent after the 15:49:11Z health poll; the exact second was not recorded, so the poll time is used.",
+          "citation": "docs/AGENT_HANDOFF.md, 2026-10-22 one new A100 deployed section"
+        },
+        {
+          "source_sha": "be9cbd2baf08ee1d9f1bbd192982c94575f57aeb",
+          "deployed_sha": "be9cbd2baf08ee1d9f1bbd192982c94575f57aeb",
+          "command": "one chat completion through the gateway on :8010 (exact command line not recorded)",
+          "timestamp_utc": "2026-10-22T15:50:02Z",
+          "result": "completion_ok",
+          "evidence_kind": "live",
+          "detail": "Gateway HTTP 200, content PLATFORM_OK. Sent after the 15:50:02Z health poll; the exact second was not recorded, so the poll time is used.",
+          "citation": "docs/AGENT_HANDOFF.md, 2026-10-22 replacement A100 reached HTTP 200 section"
+        }
+      ]
+    },
+    "rag_cited_and_abstain": {
+      "evidence": [
+        {
+          "source_sha": "be9cbd2baf08ee1d9f1bbd192982c94575f57aeb",
+          "deployed_sha": "be9cbd2baf08ee1d9f1bbd192982c94575f57aeb",
+          "command": "one RAG question on the demo expenses corpus through the gateway (exact command line not recorded)",
+          "timestamp_utc": "2026-10-22T15:50:02Z",
+          "result": "rag_cited_answer_ok",
+          "evidence_kind": "live",
+          "detail": "HTTP 200, status answered, 10 business days, source expenses-policy.md, 2 sources. Sent after the 15:50:02Z health poll.",
+          "citation": "docs/AGENT_HANDOFF.md, 2026-10-22 replacement A100 reached HTTP 200 section"
+        },
+        {
+          "source_sha": "be9cbd2baf08ee1d9f1bbd192982c94575f57aeb",
+          "deployed_sha": "be9cbd2baf08ee1d9f1bbd192982c94575f57aeb",
+          "command": "one RAG question on the demo expenses policy through the gateway (exact command line not recorded)",
+          "timestamp_utc": "2026-10-22T15:49:11Z",
+          "result": "rag_answer_returned",
+          "evidence_kind": "live",
+          "detail": "HTTP 200, answer named the GBP 100 approval threshold. A citation for this answer was not recorded. Sent after the 15:49:11Z health poll.",
+          "citation": "docs/AGENT_HANDOFF.md, 2026-10-22 one new A100 deployed section"
+        }
+      ]
+    },
+    "microsoft_mailbox_read": {
+      "evidence": []
+    },
+    "second_endpoint": {
+      "evidence": []
+    },
+    "blackwell": {
+      "evidence": []
+    },
+    "fresh_recovery": {
+      "evidence": []
+    },
+    "independent_weight_backup": {
+      "evidence": []
+    }
+  },
+  "offline": [
+    {
+      "id": "local_suite",
+      "description": "python -m ops.run_tests exits 0 on this Windows PC",
+      "evidence": null
+    },
+    {
+      "id": "acceptance_board_tests",
+      "description": "ops.test_acceptance_board passes (push, HTTP 200, stale, mailbox and NO-GO rules)",
+      "evidence": null
+    },
+    {
+      "id": "web_server_tests",
+      "description": "web.test_server passes",
+      "evidence": null
+    },
+    {
+      "id": "release_archive_current_tip",
+      "description": "Release archive of the current tip was packaged and read back",
+      "evidence": null
+    }
+  ]
+}

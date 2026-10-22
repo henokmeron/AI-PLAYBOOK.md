@@ -526,9 +526,20 @@ class ConsoleTests(unittest.TestCase):
         self.assertLess(payload["live_acceptance_percent"], 100)
         self.assertEqual(payload["overall_percent"], payload["live_acceptance_percent"])
         self.assertIn("not a production GO", payload["note"])
-        self.assertIn("deployed commit equals intended Git tip", payload["failing_acceptance"])
-        lanes = {row["lane"] for row in payload["workstreams"]}
-        self.assertEqual(lanes, {"offline", "live"})
+        self.assertIn("Deployed commit equals the intended Git tip", payload["failing_acceptance"])
+        score = payload["live_score"]
+        self.assertLess(score["passed"], score["total"])
+        self.assertEqual(score["text"], f"{score['passed']}/{score['total']}")
+        self.assertEqual(score["passed"], sum(1 for g in payload["live_gates"] if g["passed"]))
+        for gate in payload["live_gates"]:
+            self.assertIn(gate["status"], {"PASS", "FAIL", "STALE", "NO EVIDENCE", "NOT CONFIGURED"})
+            self.assertIsInstance(gate["stale"], bool)
+            for item in gate["evidence"]:
+                self.assertIn(item["evidence_kind"], {"live", "local", "mock", "none"})
+                self.assertIn("timestamp_utc", item)
+        deployment = next(g for g in payload["live_gates"] if g["id"] == "deployment_parity")
+        self.assertFalse(deployment["passed"])
+        self.assertIn("percent", payload["offline"])
         self.assertNotIn("BEGIN OPENSSH PRIVATE KEY", body.decode("utf-8"))
         status, script = self.request(base, "GET", "/static/app.js")
         script_text = script.decode("utf-8")
@@ -536,6 +547,8 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("Offline implementation", script_text)
         self.assertIn("Live acceptance", script_text)
         self.assertIn("not a production GO", script_text)
+        self.assertIn("STALE", script_text)
+        self.assertIn("live_score", script_text)
 
     def test_status_reports_ready_without_leaking_health_extras(self) -> None:
         gateway = FakeGateway()

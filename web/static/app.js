@@ -465,15 +465,52 @@
     return track;
   }
 
-  function renderAcceptanceRow(row) {
+  function shortSha(sha) {
+    return sha ? String(sha).slice(0, 12) : "none";
+  }
+
+  function evidenceLine(item) {
+    var parts = [
+      "Kind " + String(item.evidence_kind || "none").toUpperCase(),
+      "result " + (item.result || "none"),
+      "at " + (item.timestamp_utc || "no timestamp"),
+      item.age_hours == null ? "age unknown" : "age " + item.age_hours + "h",
+      item.stale ? "STALE" : "current",
+      "deployed " + shortSha(item.deployed_sha),
+      "source " + shortSha(item.source_sha)
+    ];
+    var text = parts.join(" · ");
+    if (item.command) text += ". Command: " + item.command;
+    if (item.detail) text += ". " + item.detail;
+    if (item.citation) text += " Cited in " + item.citation + ".";
+    return el("li", item.stale ? "evidence-stale" : null, text);
+  }
+
+  function renderGate(gate) {
     var section = el("section", "acceptance-row");
-    section.appendChild(el("h3", null, row.name + " " + row.percent + "%"));
-    section.appendChild(acceptanceBar(row.percent, row.lane === "live"));
-    section.appendChild(el("p", "meta", "Completed: " + ((row.completed || []).join("; ") || "None")));
-    section.appendChild(el("p", "meta", "Remaining: " + ((row.remaining || []).join("; ") || "None")));
-    section.appendChild(el("p", "meta", "Evidence: " + (row.evidence || "")));
-    section.appendChild(el("p", "meta", "Next: " + (row.next_action || "") + " Blocker: " + (row.blocker || "")));
+    var head = el("h3", null, gate.description + " ");
+    head.appendChild(el("span", "gate-status gate-" + String(gate.status || "").toLowerCase().replace(/\s+/g, "-"), gate.status));
+    section.appendChild(head);
+    section.appendChild(el("p", "meta", (gate.mandatory ? "Mandatory" : "Optional") + ". Needs live " + (gate.required_results || []).join(" + ") + " within " + gate.freshness_hours + "h." + (gate.stale ? " Evidence is STALE and does not count." : "")));
+    if (gate.reasons && gate.reasons.length) {
+      section.appendChild(el("p", "meta", "Not passed: " + gate.reasons.join("; ")));
+    }
+    var list = el("ul", "evidence-list");
+    if (!gate.evidence || !gate.evidence.length) {
+      list.appendChild(el("li", null, "Kind NONE · no recorded evidence"));
+    } else {
+      gate.evidence.forEach(function (item) { list.appendChild(evidenceLine(item)); });
+    }
+    section.appendChild(list);
     return section;
+  }
+
+  function renderOfflineCriterion(item) {
+    var latest = (item.evidence || [])[0];
+    var label = item.done ? "DONE" : (item.stale ? "STALE" : "OPEN");
+    var text = label + " · " + item.description;
+    if (latest) text += " · " + String(latest.evidence_kind || "none").toUpperCase() + " at " + (latest.timestamp_utc || "no timestamp");
+    return el("li", item.stale ? "evidence-stale" : null, text);
   }
 
   function renderAcceptance(board) {
@@ -483,28 +520,31 @@
     if (!decision || !rows) return;
     rows.textContent = "";
     if (summary) summary.textContent = "";
-    if (!board || !Array.isArray(board.workstreams)) {
+    if (!board || !Array.isArray(board.live_gates) || !board.live_score) {
       decision.textContent = "The acceptance board could not be loaded.";
       return;
     }
+    var score = board.live_score;
     decision.className = "acceptance-decision";
-    decision.textContent = "Production decision " + board.decision + ". Offline implementation is not a production GO. Live acceptance " + board.live_acceptance_percent + "%. " + (board.note || "");
+    decision.textContent = "Production decision " + board.decision + ". Live acceptance " + score.text + " gates (mandatory " + score.mandatory_text + "). Offline implementation is not a production GO. " + (board.note || "");
     if (summary) {
+      var live = el("section", "acceptance-row");
+      live.appendChild(el("h3", null, "Live acceptance " + score.text + " (" + board.live_acceptance_percent + "%)"));
+      live.appendChild(acceptanceBar(board.live_acceptance_percent, true));
+      live.appendChild(el("p", "meta", "Evaluated " + board.evaluated_at_utc + " against intended tip " + shortSha(board.intended_source_tip) + " (" + board.intended_tip_source + ")." + (board.evidence_file_error ? " " + board.evidence_file_error + "." : "")));
+      summary.appendChild(live);
       var offline = el("section", "acceptance-row");
-      offline.appendChild(el("h3", null, "Offline implementation " + board.offline_percent + "%"));
+      var off = board.offline || {};
+      offline.appendChild(el("h3", null, "Offline implementation " + (off.text || "0/0") + " (" + board.offline_percent + "%), separate from the live score"));
       offline.appendChild(acceptanceBar(board.offline_percent, false));
       summary.appendChild(offline);
-      var live = el("section", "acceptance-row");
-      live.appendChild(el("h3", null, "Live acceptance " + board.live_acceptance_percent + "%"));
-      live.appendChild(acceptanceBar(board.live_acceptance_percent, true));
-      summary.appendChild(live);
     }
-    var offlineRows = board.workstreams.filter(function (row) { return row.lane !== "live"; });
-    var liveRows = board.workstreams.filter(function (row) { return row.lane === "live"; });
-    rows.appendChild(el("h3", "lane-label", "Offline implementation"));
-    offlineRows.forEach(function (row) { rows.appendChild(renderAcceptanceRow(row)); });
     rows.appendChild(el("h3", "lane-label", "Live acceptance"));
-    liveRows.forEach(function (row) { rows.appendChild(renderAcceptanceRow(row)); });
+    board.live_gates.forEach(function (gate) { rows.appendChild(renderGate(gate)); });
+    rows.appendChild(el("h3", "lane-label", "Offline implementation"));
+    var offlineList = el("ul", "evidence-list");
+    ((board.offline || {}).criteria || []).forEach(function (item) { offlineList.appendChild(renderOfflineCriterion(item)); });
+    rows.appendChild(offlineList);
   }
 
   function renderChat() {

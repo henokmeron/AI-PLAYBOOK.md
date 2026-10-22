@@ -1,25 +1,104 @@
-"""Recorded offline implementation and live acceptance for System Status.
+"""Live acceptance score computed from recorded evidence.
 
-Offline percent counts offline criteria only. Live acceptance percent counts
-live criteria only. ``overall_percent`` is the live figure so an offline 100
-cannot be read as production GO. Decision stays NO-GO while any live gate fails.
-A temp extract is not a fresh machine. A push is not a deployment.
+Gate rules live here. Observations live in ``docs/results/acceptance-evidence.json``.
+A live gate passes only when, for every result token it requires, there is a
+record with ``evidence_kind`` ``live``, that exact ``result``, and a
+``timestamp_utc`` inside the gate's freshness window. Deployment also needs
+``deployed_sha`` equal to the intended source tip, so a push (``source_sha``
+only) never passes. ``http_200`` satisfies the health gate and nothing else.
+
+Offline implementation progress is computed separately from LOCAL/MOCK records
+and never enters the live score or the production decision.
 """
 from __future__ import annotations
 
-# Local/mock checks run on this Windows PC. They do not start the pod.
-LOCAL_SUITE_PASSED = True
-ISOLATED_RECOVER_PASSED = True
-# True only after the archive bytes were read back. This recording commit is not inside that archive.
-CODE_TIP_ARCHIVE_READ_BACK = True
+import json
+import os
+import re
+import shutil
+import subprocess
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-ACCEPTANCE_GATES = (
-    ("deployed commit equals intended Git tip", False),
-    ("mail end-to-end", False),
-    ("second endpoint", False),
-    ("Blackwell live acceptance", False),
-    ("fresh-environment recovery", False),
+REPO_ROOT = Path(__file__).resolve().parents[1]
+EVIDENCE_PATH = REPO_ROOT / "docs" / "results" / "acceptance-evidence.json"
+INTENDED_TIP_ENV = "AI_PLAYBOOK_INTENDED_TIP"
+GIT_ENV = "AI_PLAYBOOK_GIT"
+DOC_ONLY_PATHSPECS = ("docs/**", "*.md")
+
+EVIDENCE_KINDS = ("live", "local", "mock", "none")
+OFFLINE_FRESHNESS_HOURS = 168
+FUTURE_TOLERANCE = timedelta(minutes=5)
+_SHA = re.compile(r"^[0-9a-f]{40}$")
+
+LIVE_GATES = (
+    {
+        "id": "live_health",
+        "description": "Qwen, gateway, and console health return HTTP 200 on the running pod",
+        "mandatory": True,
+        "required_results": ["http_200"],
+        "freshness_hours": 24,
+    },
+    {
+        "id": "deployment_parity",
+        "description": "Deployed commit equals the intended Git tip",
+        "mandatory": True,
+        "required_results": ["deployed_sha_read"],
+        "freshness_hours": 24,
+        "requires_tip_parity": True,
+    },
+    {
+        "id": "inference_completion",
+        "description": "A live chat completion returned content",
+        "mandatory": True,
+        "required_results": ["completion_ok"],
+        "freshness_hours": 24,
+    },
+    {
+        "id": "rag_cited_and_abstain",
+        "description": "Live RAG returned a cited answer and abstained on an unanswerable question",
+        "mandatory": True,
+        "required_results": ["rag_cited_answer_ok", "rag_abstention_ok"],
+        "freshness_hours": 24,
+    },
+    {
+        "id": "microsoft_mailbox_read",
+        "description": "A real Microsoft mailbox read succeeded from the running console",
+        "mandatory": True,
+        "required_results": ["mailbox_read_ok"],
+        "freshness_hours": 24,
+    },
+    {
+        "id": "second_endpoint",
+        "description": "A second Windows computer ran the endpoint worker",
+        "mandatory": True,
+        "required_results": ["second_endpoint_worker_ok"],
+        "freshness_hours": 168,
+    },
+    {
+        "id": "blackwell",
+        "description": "Live install, serve, and infer on a CC 12.0 (Blackwell) GPU",
+        "mandatory": True,
+        "required_results": ["blackwell_inference_ok"],
+        "freshness_hours": 168,
+    },
+    {
+        "id": "fresh_recovery",
+        "description": "Recovery on a fresh machine or a new pod (a temp extract does not count)",
+        "mandatory": True,
+        "required_results": ["fresh_recovery_ok"],
+        "freshness_hours": 168,
+    },
+    {
+        "id": "independent_weight_backup",
+        "description": "Weight shards were copied off the Global Volume and verified",
+        "mandatory": False,
+        "required_results": ["weight_backup_verified"],
+        "freshness_hours": 168,
+    },
 )
+
+MICROSOFT_GATE = "microsoft_mailbox_read"
 
 
 def _bar(percent: int) -> str:
@@ -27,228 +106,338 @@ def _bar(percent: int) -> str:
     return "[" + ("#" * filled) + ("-" * (20 - filled)) + "]"
 
 
-def _row(
-    name: str,
-    lane: str,
-    criteria: list[tuple[str, bool]],
-    evidence: str,
-    next_action: str,
-    blocker: str,
-) -> dict:
-    done = [text for text, flag in criteria if flag]
-    remaining = [text for text, flag in criteria if not flag]
-    percent = (100 * len(done)) // len(criteria) if criteria else 0
+def _parse_time(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
+def _iso(moment: datetime) -> str:
+    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _git_dir(root: Path) -> Path | None:
+    marker = root / ".git"
+    if marker.is_dir():
+        return marker
+    if marker.is_file():
+        text = marker.read_text(encoding="utf-8", errors="replace").strip()
+        if text.startswith("gitdir:"):
+            return (root / text[len("gitdir:"):].strip()).resolve()
+    return None
+
+
+def read_git_head(root: Path) -> str | None:
+    """Return the checked-out commit without running git. None when unreadable."""
+    try:
+        git = _git_dir(root)
+        if git is None:
+            return None
+        head = (git / "HEAD").read_text(encoding="utf-8").strip()
+        if not head.startswith("ref:"):
+            return head if _SHA.match(head) else None
+        ref = head[len("ref:"):].strip()
+        common = git
+        if (git / "commondir").is_file():
+            common = (git / (git / "commondir").read_text(encoding="utf-8").strip()).resolve()
+        for base in (git, common):
+            path = base / ref
+            if path.is_file():
+                value = path.read_text(encoding="utf-8").strip()
+                return value if _SHA.match(value) else None
+        packed = common / "packed-refs"
+        if packed.is_file():
+            for line in packed.read_text(encoding="utf-8").splitlines():
+                parts = line.strip().split(" ")
+                if len(parts) == 2 and parts[1] == ref and _SHA.match(parts[0]):
+                    return parts[0]
+    except OSError:
+        return None
+    return None
+
+
+def _resolve_tip(intended_tip: str | None, repo_root: Path) -> tuple[str | None, str]:
+    if intended_tip is not None:
+        tip = intended_tip.strip().lower()
+        return (tip, "argument") if _SHA.match(tip) else (None, "argument (not a full SHA)")
+    env = os.environ.get(INTENDED_TIP_ENV, "").strip().lower()
+    if env:
+        return (env, INTENDED_TIP_ENV) if _SHA.match(env) else (None, f"{INTENDED_TIP_ENV} (not a full SHA)")
+    head = read_git_head(repo_root)
+    if head:
+        runtime = read_runtime_tip(repo_root, head)
+        if runtime:
+            if runtime == head:
+                return head, "git HEAD of this checkout"
+            return runtime, f"latest commit outside {', '.join(DOC_ONLY_PATHSPECS)} (HEAD {_short(head)} adds docs only)"
+        return head, "git HEAD of this checkout (git unavailable; docs-only commits not discounted)"
+    return None, "unknown"
+
+
+def read_runtime_tip(root: Path, head: str) -> str | None:
+    """Latest commit at or before HEAD that changes anything outside the docs.
+
+    Recording evidence is itself a commit, so the deployed code can never equal
+    the HEAD that records it. Docs-only commits do not change what is served.
+    None when git cannot be run; callers then keep the stricter HEAD.
+    """
+    git = os.environ.get(GIT_ENV, "").strip() or shutil.which("git")
+    if not git:
+        return None
+    excludes = [f":(exclude,glob){spec}" for spec in DOC_ONLY_PATHSPECS]
+    try:
+        done = subprocess.run(
+            [git, "-C", str(root), "log", "-1", "--format=%H", head, "--", ".", *excludes],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    value = done.stdout.strip().lower()
+    return value if done.returncode == 0 and _SHA.match(value) else None
+
+
+def _load(path: Path) -> tuple[dict, str]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}, f"evidence file not found: {path.name}"
+    except (OSError, ValueError) as exc:
+        return {}, f"evidence file unreadable: {type(exc).__name__}"
+    if not isinstance(data, dict):
+        return {}, "evidence file is not a JSON object"
+    return data, ""
+
+
+def _records(value: object) -> list[dict]:
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+def _short(sha: object) -> str:
+    return sha[:12] if isinstance(sha, str) and sha else "none"
+
+
+def _assess(record: dict, now: datetime, freshness: timedelta) -> dict:
+    """Common checks for one record. ``problems`` empty means it is live, timed, and fresh."""
+    kind = record.get("evidence_kind")
+    when = _parse_time(record.get("timestamp_utc"))
+    problems: list[str] = []
+    stale = False
+    age_hours = None
+    if kind not in EVIDENCE_KINDS:
+        problems.append(f"evidence_kind {kind!r} is not one of {', '.join(EVIDENCE_KINDS)}")
+    if when is None:
+        problems.append("timestamp_utc is missing or not an ISO-8601 UTC time")
+    elif when > now + FUTURE_TOLERANCE:
+        problems.append("timestamp_utc is in the future")
+    else:
+        age = now - when
+        age_hours = round(age.total_seconds() / 3600, 2)
+        if age > freshness:
+            stale = True
     return {
-        "name": name,
-        "lane": lane,
-        "percent": percent,
-        "bar": _bar(percent),
-        "completed": done,
-        "remaining": remaining,
-        "evidence": evidence,
-        "next_action": next_action,
-        "blocker": blocker,
+        "source_sha": record.get("source_sha"),
+        "deployed_sha": record.get("deployed_sha"),
+        "command": record.get("command") or "",
+        "timestamp_utc": record.get("timestamp_utc"),
+        "result": record.get("result"),
+        "evidence_kind": kind if kind in EVIDENCE_KINDS else "none",
+        "detail": record.get("detail") or "",
+        "citation": record.get("citation") or "",
+        "age_hours": age_hours,
+        "stale": stale,
+        "problems": problems,
     }
 
 
-def _average(rows: list[dict]) -> int:
-    if not rows:
-        return 0
-    return sum(row["percent"] for row in rows) // len(rows)
+def _evaluate_gate(gate: dict, entry: dict, now: datetime, tip: str | None) -> dict:
+    hours = entry.get("freshness_hours", gate["freshness_hours"])
+    if not isinstance(hours, (int, float)) or isinstance(hours, bool) or hours <= 0:
+        hours = gate["freshness_hours"]
+    freshness = timedelta(hours=hours)
+    evidence = [_assess(record, now, freshness) for record in _records(entry.get("evidence"))]
+    required = list(gate["required_results"])
+    reasons: list[str] = []
+    satisfied: list[str] = []
+    stale_only: list[str] = []
+
+    for item in evidence:
+        if item["result"] not in required:
+            reasons.append(f"result {item['result']!r} does not satisfy {' + '.join(required)}")
+
+    for token in required:
+        matches = [item for item in evidence if item["result"] == token]
+        if not matches:
+            reasons.append(f"no {token} evidence")
+            continue
+        qualified = False
+        blocked_by_staleness = False
+        for item in matches:
+            own: list[str] = list(item["problems"])
+            if item["evidence_kind"] != "live":
+                own.append(f"{token} evidence is {item['evidence_kind']}, not live")
+            if gate.get("requires_tip_parity"):
+                deployed = item["deployed_sha"]
+                if not deployed:
+                    own.append("push or source_sha only: no deployed_sha was read from the serving host")
+                elif tip is None:
+                    own.append("intended Git tip is unknown")
+                elif str(deployed).lower() != tip:
+                    own.append(f"deployed_sha {_short(deployed)} is not the intended tip {_short(tip)}")
+            if not own and not item["stale"]:
+                qualified = True
+                break
+            if not own and item["stale"]:
+                blocked_by_staleness = True
+            reasons.extend(own)
+        if qualified:
+            satisfied.append(token)
+        elif blocked_by_staleness:
+            stale_only.append(token)
+            reasons.append(f"{token} evidence is older than {hours:g}h (STALE)")
+
+    passed = len(satisfied) == len(required)
+    stale = bool(stale_only) and not passed
+    if passed:
+        status = "PASS"
+    elif stale and len(satisfied) + len(stale_only) == len(required):
+        status = "STALE"
+    elif gate["id"] == MICROSOFT_GATE:
+        status = "NOT CONFIGURED"
+    elif not evidence:
+        status = "NO EVIDENCE"
+    else:
+        status = "FAIL"
+    for item in evidence:
+        item.pop("problems")
+    return {
+        "id": gate["id"],
+        "description": gate["description"],
+        "mandatory": gate["mandatory"],
+        "required_results": required,
+        "freshness_hours": hours,
+        "passed": passed,
+        "stale": stale,
+        "status": status,
+        "reasons": [] if passed else list(dict.fromkeys(reasons)),
+        "evidence": evidence,
+    }
 
 
-def workstreams() -> list[dict]:
-    offline = [
-        _row(
-            "Source and local tests",
-            "offline",
-            [
-                ("Suite entry is python -m ops.run_tests", True),
-                ("This session's local suite exited 0", LOCAL_SUITE_PASSED),
-                ("Auth unit tests passed in that suite", LOCAL_SUITE_PASSED),
-                ("Host and origin regressions passed in that suite", LOCAL_SUITE_PASSED),
-            ],
-            "LOCAL/MOCK on Python 3.11. python -m ops.run_tests was 44 modules, 0 failed, exit 0, about 114 seconds. integrations.tests.test_endpoint skipped 1. api.test_gateway_reliability was 31 tests, logged a Windows socket abort, and still passed. web.test_server passed on its automatic retry, 31 tests. The pod was not used.",
-            "Keep the local suite green on the next code change. That does not deploy it.",
-            "code",
-        ),
-        _row(
-            "RAG offline cases",
-            "offline",
-            [
-                ("Empty collection abstains", True),
-                ("Malformed file is skipped and does not fail the collection", True),
-                ("Duplicate evidence collapses to one group", True),
-                ("Unavailable embedding does not replace BM25", True),
-            ],
-            "rag.tests.test_retrieval_pipeline.OfflineEdgeTests. Retrieval stays lexical BM25. No embedding service is called for ranking. Live Qwen generation was not run.",
-            "Re-run live RAG only after the pod is Running on the deployed tip.",
-            "code",
-        ),
-        _row(
-            "Release packaging and temp extract",
-            "offline",
-            [
-                ("Checksum sidecar is stored outside the archive", True),
-                ("Isolated temp extract of 6f07b58", ISOLATED_RECOVER_PASSED),
-                ("The extract is labelled a temp extract and not a fresh machine", ISOLATED_RECOVER_PASSED),
-            ],
-            "python -m ops.release.recover extracted commit 6f07b581f4dd4a7ee2811a99e9ac62edbee3eac8 into %TEMP%\\ai-playbook-recover-6f07b58-temp-extract. Sidecar SHA-256 3cf154feb99536781232408ea06cc93373e14fe69e1d866daffa64ecdb015de7 matched. ops/release/START.sh was present. This is a temp extract, not a fresh machine, not a second computer, and not a deployment.",
-            "Package the new tip locally after it is pushed. Do not copy it to the volume.",
-            "code",
-        ),
-        _row(
-            "Git parity",
-            "offline",
-            [
-                ("Checker refuses a different origin", True),
-                ("Checker refuses a force push", True),
-                ("This checkout origin was read without pushing", True),
-            ],
-            "git ls-remote after the push showed 00894206db6fec0238c6243e83ee7a5e18c7df08 on HEAD, main, feature/qwen-a100-start-hardening, and feature/qwen3.5-27b-integration. That push was a fast-forward from f7043f8ad8ed9ac39423f96fe7fcbd12f21fe7ba. A matching SHA is not a deployment.",
-            "After each push, run python -m ops.git_parity --ls-remote and require one SHA on those three refs.",
-            "code",
-        ),
-        _row(
-            "Documentation",
-            "offline",
-            [
-                ("Playbook, handoff, status, matrix, manual, and recovery describe the offline and live split", True),
-                ("Second endpoint and Blackwell stay labelled NOT TESTED", True),
-                ("Those procedures were not marked executed", True),
-            ],
-            "Docs record HTTP 200, one completion, and one grounded RAG answer on gom4ualdk47qrj, and that the pod checkout is not this Git tip. They do not mark mail, a second endpoint, Blackwell, or a fresh machine as passed. Production stays NO-GO.",
-            "Update the same docs when the next verified fact changes.",
-            "code",
-        ),
-        _row(
-            "Source archive of this tip",
-            "offline",
-            [
-                ("GitHub origin is the expected repository", True),
-                ("Local archive of the latest packaged code tip was read back", CODE_TIP_ARCHIVE_READ_BACK),
-                ("No new archive was copied to the Global Volume", True),
-            ],
-            "Python read the archive of 00894206db6fec0238c6243e83ee7a5e18c7df08 back from %LOCALAPPDATA%\\AI-PLAYBOOK\\releases\\00894206db6fec0238c6243e83ee7a5e18c7df08\\AI-PLAYBOOK-00894206db6fec0238c6243e83ee7a5e18c7df08.tar.gz. 719707 bytes, 383 members, SHA-256 bf4355541d1dbeecfe6681c9bdfbe5235bff0dceed8a1570bb1e9d522e4f48be. The sidecar matched. It contains model_engine_dead. This recording commit is not inside that archive. It was not copied to the Global Volume. The older temp extract of 6f07b58 is not a fresh machine.",
-            "Package again after the next code change. Do not copy the archive to the volume unless the owner approves.",
-            "code",
-        ),
-    ]
-    live = [
-        _row(
-            "RunPod deployment parity",
-            "live",
-            [
-                ("Deployed commit equals the intended Git tip", False),
-                ("Current pod health was read while the pod was Running this session", True),
-            ],
-            "On 2026-10-22 at 15:50:02Z, A100 gom4ualdk47qrj (excessive_gray_crocodile) was Running at $1.80/hr. Qwen :8002, gateway :8010, and console :8080 returned HTTP 200. The pod checkout stayed be9cbd2baf08ee1d9f1bbd192982c94575f57aeb, which is not this Git tip. This session did not run START.sh, did not restart Qwen, and did not write the Global Volume. HTTP 200 is not a deployment.",
-            "Do not start the H100. Do not run START.sh while those ports stay healthy. Do not copy this tip to the volume unless the owner approves.",
-            "user approval",
-        ),
-        _row(
-            "Inference and one RAG answer",
-            "live",
-            [
-                ("One completion returned PLATFORM_OK or PONG", True),
-                ("One grounded RAG answer was returned on 2026-10-22", True),
-                ("That answer was served by the intended Git tip", False),
-            ],
-            "LIVE VERIFIED for inference and one RAG answer only. Around 15:50Z on 2026-10-22 the gateway returned PLATFORM_OK, and a completion in the same bring-up returned PONG. One RAG answer on the demo expenses policy named 10 business days and cited expenses-policy.md. Another named the £100 approval threshold. The serving checkout was be9cbd2baf08ee1d9f1bbd192982c94575f57aeb, not this Git tip. This sample is not mail, a second endpoint, Blackwell, or a fresh machine.",
-            "Leave the running vLLM in place. Do not treat this sample as production GO.",
-            "user approval",
-        ),
-        _row(
-            "Microsoft mail",
-            "live",
-            [
-                ("A running console has loaded the application id", False),
-                ("A mailbox read succeeded", False),
-            ],
-            "NOT CONFIGURED. The saved redirect is http://127.0.0.1:18080/api/microsoft/callback with delegated User.Read and Mail.Read only. The running console on gom4ualdk47qrj has no MICROSOFT_CLIENT_ID and no token file. This session did not open Azure, did not create a secret, and did not read a mailbox. No running console loaded the application id. In this source, an empty tenant and common both resolve to directory d595636e-9ef4-4890-b8a7-bde8dd5cab03 and are not placed on authorize or token URLs. That source was not loaded into the running console.",
-            "One consent click only after an approved console deploy of this code. Do not create an Azure resource and do not restart the A100 to load it.",
-            "user approval",
-        ),
-        _row(
-            "Second endpoint",
-            "live",
-            [
-                ("A second Windows computer ran the endpoint worker", False),
-            ],
-            "This development PC is not a second endpoint. Its collectors are not that result.",
-            "Use another Windows computer. Do not count this PC.",
-            "hardware",
-        ),
-        _row(
-            "Blackwell",
-            "live",
-            [
-                ("Live install, serve, and infer on a CC 12.0 GPU", False),
-            ],
-            "NOT TESTED. The running A100 is not a CC 12.0 GPU. The stopped H100 is not a Blackwell result. No Blackwell pod was started.",
-            "Use a CC 12.0 GPU and driver 575 or newer. Do not claim the A100 or the H100 as that result.",
-            "hardware",
-        ),
-        _row(
-            "Fresh environment",
-            "live",
-            [
-                ("Recovery on a fresh machine or a new pod", False),
-            ],
-            "The temp extract of 6f07b58 is not a fresh machine and not a new pod.",
-            "Run recovery on a machine that does not already have this checkout, or on a new pod with this volume, after approval.",
-            "hardware",
-        ),
-        _row(
-            "Volume and weights",
-            "live",
-            [
-                ("This tip was copied to the Global Volume", False),
-                ("Weight shards were copied off the volume and verified", False),
-            ],
-            "On mlar88u3ku8utm at 2026-10-22T14:22:23Z, START.sh was still 3517 bytes, the runtime archive was still 4060580548 bytes, and the 6f07b58 snapshot was still 696562 bytes. The script said nothing on /workspace was deleted or overwritten. Shard bytes were not copied off the volume. Those paths were not stat'd again after SSH to that pod failed. The new pod Volumes tab showed 0 Bytes, which is not a file listing.",
-            "Do not copy the volume or the ~52 GB shards unless the owner approves that backup.",
-            "user approval",
-        ),
-    ]
-    return offline + live
+def _offline(items: object, now: datetime) -> dict:
+    freshness = timedelta(hours=OFFLINE_FRESHNESS_HOURS)
+    criteria = []
+    for raw in items if isinstance(items, list) else []:
+        if not isinstance(raw, dict) or not raw.get("id"):
+            continue
+        evidence = [_assess(record, now, freshness) for record in _records(raw.get("evidence"))]
+        done = any(
+            not item["problems"] and not item["stale"]
+            and item["evidence_kind"] in {"local", "mock"} and item["result"] == "pass"
+            for item in evidence
+        )
+        for item in evidence:
+            item.pop("problems")
+        criteria.append({
+            "id": str(raw["id"]),
+            "description": str(raw.get("description") or raw["id"]),
+            "done": done,
+            "stale": bool(evidence) and not done and any(item["stale"] for item in evidence),
+            "evidence": evidence,
+        })
+    done_count = sum(1 for item in criteria if item["done"])
+    percent = (100 * done_count) // len(criteria) if criteria else 0
+    return {
+        "label": "Offline implementation",
+        "done": done_count,
+        "total": len(criteria),
+        "text": f"{done_count}/{len(criteria)}",
+        "percent": percent,
+        "bar": _bar(percent),
+        "freshness_hours": OFFLINE_FRESHNESS_HOURS,
+        "criteria": criteria,
+    }
 
 
-def board() -> dict:
-    rows = workstreams()
-    offline_rows = [row for row in rows if row["lane"] == "offline"]
-    live_rows = [row for row in rows if row["lane"] == "live"]
-    offline_percent = _average(offline_rows)
-    live_percent = _average(live_rows)
-    failing = [name for name, passed in ACCEPTANCE_GATES if not passed]
-    decision = "GO" if not failing and live_percent == 100 else "NO-GO"
+def board(
+    *,
+    evidence_path: Path | None = None,
+    now: datetime | None = None,
+    intended_tip: str | None = None,
+    repo_root: Path | None = None,
+) -> dict:
+    path = Path(evidence_path) if evidence_path is not None else EVIDENCE_PATH
+    moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    tip, tip_source = _resolve_tip(intended_tip, Path(repo_root) if repo_root else REPO_ROOT)
+    data, error = _load(path)
+    gate_data = data.get("gates") if isinstance(data.get("gates"), dict) else {}
+
+    gates = []
+    for gate in LIVE_GATES:
+        entry = gate_data.get(gate["id"])
+        gates.append(_evaluate_gate(gate, entry if isinstance(entry, dict) else {}, moment, tip))
+
+    passed = sum(1 for g in gates if g["passed"])
+    mandatory = [g for g in gates if g["mandatory"]]
+    mandatory_passed = sum(1 for g in mandatory if g["passed"])
+    failing = [g for g in mandatory if not g["passed"]]
+    decision = "NO-GO" if failing or error else "GO"
+    live_percent = (100 * passed) // len(gates) if gates else 0
+    offline = _offline(data.get("offline"), moment)
+    mail = next(g for g in gates if g["id"] == MICROSOFT_GATE)
+
     return {
         "decision": decision,
         "production_decision": decision,
-        "offline_percent": offline_percent,
-        "offline_bar": _bar(offline_percent),
-        "offline_label": "Offline implementation",
+        "evaluated_at_utc": _iso(moment),
+        "evidence_file": str(path.relative_to(REPO_ROOT)) if path.is_relative_to(REPO_ROOT) else path.name,
+        "evidence_file_error": error,
+        "intended_source_tip": tip,
+        "intended_tip_source": tip_source,
+        "live_label": "Live acceptance",
+        "live_score": {
+            "passed": passed,
+            "total": len(gates),
+            "text": f"{passed}/{len(gates)}",
+            "mandatory_passed": mandatory_passed,
+            "mandatory_total": len(mandatory),
+            "mandatory_text": f"{mandatory_passed}/{len(mandatory)}",
+        },
         "live_acceptance_percent": live_percent,
         "live_acceptance_bar": _bar(live_percent),
-        "live_label": "Live acceptance",
         "overall_percent": live_percent,
         "overall_bar": _bar(live_percent),
+        "live_gates": gates,
+        "failing_mandatory": [g["id"] for g in failing],
+        "failing_acceptance": [g["description"] for g in failing],
+        "stale_gates": [g["id"] for g in gates if g["stale"]],
+        "offline": offline,
+        "offline_label": offline["label"],
+        "offline_percent": offline["percent"],
+        "offline_bar": offline["bar"],
         "offline_is_not_production_go": True,
-        "failing_acceptance": failing,
-        "microsoft_status": "NOT CONFIGURED",
+        "microsoft_status": "MAILBOX READ VERIFIED" if mail["passed"] else "NOT CONFIGURED",
         "microsoft_reason": (
-            "Portal configuration is not a mailbox read. "
-            "No running console has loaded the application id."
+            "A live mailbox read was recorded inside the freshness window."
+            if mail["passed"]
+            else "No fresh live mailbox_read_ok record. Portal configuration or HTTP 200 is not a mailbox read."
         ),
         "note": (
-            "Offline implementation percent is not a production GO. "
-            "Live acceptance is separate. "
-            "A temp extract is not a fresh machine. "
-            "A push is not a deployment. "
-            "HTTP 200, one completion, and one RAG answer on the running A100 are not a production GO. "
-            "The pod checkout is not this Git tip."
+            "Offline implementation percent is not a production GO and does not change the live score. "
+            "Live gates count only fresh live evidence. "
+            "A push is not a deployment. HTTP 200 is not inference. "
+            "Stale evidence is shown as STALE and does not count."
         ),
-        "workstreams": rows,
-        "offline_workstreams": offline_rows,
-        "live_workstreams": live_rows,
     }
