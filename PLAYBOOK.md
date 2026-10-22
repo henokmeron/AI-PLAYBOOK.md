@@ -302,6 +302,11 @@ Phase 7 — Advanced model customisation
 - Treat the playbook as a reproducible blueprint for future AI-assisted automation.
 
 ## 13. Change log
+### 2026-10-22 — Read-only Windows collectors
+- **Implemented and tested on the development PC:** fixed collectors for `win.activation.inspect`, `hw.usb.inspect`, `net.wifi.inspect`, `net.proxy.inspect`, `net.tls.inspect`, `app.browser.inspect`, `app.permissions.inspect`, and `app.crash.evidence`. No product key, Wi-Fi password, proxy credential, private-key export, ACL change, firewall change, process kill, or browser-profile reset. `problem_resolved` stays false. Heartbeat checks were not expanded.
+- **VERIFIED:** `python -m ops.run_tests` on Python 3.11.9, 38 modules, 0 failed, 1 skipped, exit 0. H100 pod `xx9cjogra5vcwl` was read-only inspected and left running. Inventory: `docs/results/asset-inventory-2026-10-22.md`.
+- **NOT TESTED / NOT CONFIGURED:** live Blackwell, mail Graph (`User.Read` only), a second Windows computer. Go-live **NO-GO**.
+
 ### 2026-10-21 — Living playbook lean trim
 - Trimmed **Mandatory living playbook — continuously maintained** (A–F) to vital operational rules only. No feature claims.
 

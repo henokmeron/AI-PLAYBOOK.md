@@ -23,6 +23,14 @@ _LIVE_RAN_ON_THIS_PC = frozenset({
     "win.events.recurring",
     "win.startup.inspect",
     "win.performance.inspect",
+    "win.activation.inspect",
+    "hw.usb.inspect",
+    "net.wifi.inspect",
+    "net.proxy.inspect",
+    "net.tls.inspect",
+    "app.browser.inspect",
+    "app.permissions.inspect",
+    "app.crash.evidence",
 })
 _DENIED_RUNNERS = frozenset({"propose_only", "deny_driver_install", "deny_destructive"})
 

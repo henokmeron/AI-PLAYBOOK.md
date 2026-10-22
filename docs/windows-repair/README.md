@@ -12,7 +12,7 @@ From `C:\Users\kokob\src\AI-PLAYBOOK.md`:
 python -m unittest windows_repair.tests.test_windows_repair windows_repair.tests.test_live_diagnostics ops_centre.tests.test_director -v
 ```
 
-The Windows integration test reads disk and printer evidence on this PC. It does not restart a service.
+The Windows integration test reads disk, printer, activation, USB, Wi-Fi, proxy, TLS, browser, permissions, and crash evidence on this PC. It does not restart a service, read a product key or password, or change ACLs.
 
 The agent tools `windows_repair_plan`, `windows_repair_diagnose`, and `windows_repair_request_change` use the same catalogue. Diagnose can run one registered read-only collector. Its timeout is 25 seconds, the script timeout is 18 seconds, and each call is appended to a hash-chained audit record. Collector text is untrusted data: it cannot mark the fault fixed or skip approval. `windows_repair_request_change` pauses until a person approves that procedure id, then records `approved_not_run_on_this_host` or `denied`. It does not restart a service.
 

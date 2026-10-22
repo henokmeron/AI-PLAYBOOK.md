@@ -56,6 +56,132 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(evidence["spooler"], "Running")
         self.assertEqual(evidence["printers"][0]["name"], "Office")
 
+    def test_new_collectors_drop_secrets_and_keep_counts(self) -> None:
+        activation = normalise_live("win.activation.inspect", {
+            "activation_status": "Licensed",
+            "license_name": "Windows",
+            "PartialProductKey": "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE",
+        })
+        activation_blob = json.dumps(activation)
+        self.assertEqual(activation["evidence_source"], "live_windows")
+        self.assertFalse(activation["mocked"])
+        self.assertEqual(activation["activation_status"], "Licensed")
+        self.assertNotIn("AAAAA", activation_blob)
+        self.assertNotIn("PartialProductKey", activation)
+
+        proxy = normalise_live("net.proxy.inspect", {
+            "proxy": "user:secret@proxy.example:8080",
+            "vpn": "connected",
+            "winhttp": "direct",
+            "ProxyPassword": "secret",
+        })
+        proxy_blob = json.dumps(proxy)
+        self.assertNotIn("secret", proxy_blob)
+        self.assertNotIn("@", proxy["proxy"])
+        self.assertEqual(proxy["vpn"], "connected")
+        self.assertNotIn("ProxyPassword", proxy)
+
+        wifi = normalise_live("net.wifi.inspect", {
+            "ssid": "Cafe",
+            "radio": "Hardware On",
+            "adapter_status": "Up",
+            "signal_percent": 40,
+            "KeyContent": "supersecret",
+        })
+        self.assertNotIn("supersecret", json.dumps(wifi))
+        self.assertNotIn("KeyContent", wifi)
+        self.assertEqual(wifi["ssid"], "Cafe")
+        self.assertEqual(wifi["signal_percent"], 40)
+
+        tls = normalise_live("net.tls.inspect", {
+            "certificate_error": "none",
+            "user_my_count": 2,
+            "user_my_expired": 0,
+            "user_my_expiring_30d": 1,
+            "user_private_key_count": 1,
+            "machine_root_count": 10,
+            "schannel_error_count": 0,
+            "schannel_ids": [36871, "nope"],
+            "private_key_pem": "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
+        })
+        tls_blob = json.dumps(tls)
+        self.assertNotIn("BEGIN PRIVATE", tls_blob)
+        self.assertEqual(tls["user_private_key_count"], 1)
+        self.assertEqual(tls["schannel_ids"], [36871])
+        self.assertEqual(tls["user_my_expiring_30d"], 1)
+
+        permissions = normalise_live("app.permissions.inspect", {
+            "path": "user_profile,temp,local_appdata",
+            "access": "readable",
+            "checks": [{"label": "temp", "exists": True, "access": "readable"}],
+        })
+        self.assertNotIn("\\", permissions["path"])
+        self.assertEqual(permissions["checks"][0]["label"], "temp")
+
+        crash = normalise_live("app.crash.evidence", {
+            "application": "Application Error",
+            "fault": "event_id=1000",
+            "event_count": 1,
+            "events": [{"Id": 1000, "ProviderName": "Application Error", "LevelDisplayName": "Error", "TimeCreated": "2026-10-22", "Message": "secret path"}],
+        })
+        self.assertNotIn("Message", json.dumps(crash))
+        self.assertNotIn("secret path", json.dumps(crash))
+        self.assertEqual(crash["events"][0]["provider"], "Application Error")
+
+    def test_execute_forces_problem_resolved_false_for_new_collectors(self) -> None:
+        from windows_repair.engine import execute
+
+        class Provider:
+            def collect(self, procedure_id: str, timeout: float = 18) -> dict:
+                return {
+                    "procedure_id": procedure_id,
+                    "evidence_source": "live_windows",
+                    "mocked": False,
+                    "ok": True,
+                    "status": "collected",
+                    "problem_resolved": True,
+                    "activation_status": "Notification",
+                    "license_name": "Windows",
+                    "PartialProductKey": "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE",
+                    "devices": [{"name": "USB Input Device", "class": "USB", "status": "OK", "problem": ""}],
+                    "device_count": 1,
+                    "problem_count": 0,
+                    "ssid": "Cafe",
+                    "radio": "Hardware On",
+                    "adapter_status": "Up",
+                    "proxy": "direct",
+                    "vpn": "none",
+                    "certificate_error": "none",
+                    "user_my_expiring_30d": 0,
+                    "browser": "Microsoft Edge",
+                    "error": "none",
+                    "path": "user_profile,temp,local_appdata",
+                    "access": "readable",
+                    "application": "Application Error",
+                    "fault": "event_id=1000",
+                }
+
+        for procedure_id in (
+            "win.activation.inspect",
+            "hw.usb.inspect",
+            "net.wifi.inspect",
+            "net.proxy.inspect",
+            "net.tls.inspect",
+            "app.browser.inspect",
+            "app.permissions.inspect",
+            "app.crash.evidence",
+        ):
+            with self.subTest(procedure_id=procedure_id):
+                result = execute(procedure_id, provider=Provider())
+                blob = json.dumps(result)
+                self.assertEqual(result["evidence_source"], "live_windows")
+                self.assertFalse(result["mocked"])
+                self.assertFalse(result["problem_resolved"])
+                self.assertFalse(result["changed_device"])
+                self.assertEqual(result["status"], "diagnosed")
+                self.assertNotIn("AAAAA", blob)
+                self.assertNotRegex(blob, r"-----BEGIN")
+
     def test_fixture_is_labelled_fixture(self) -> None:
         evidence = FixtureProvider().collect("print.diagnose")
         self.assertEqual(evidence["evidence_source"], "fixture")
@@ -234,6 +360,50 @@ class WindowsIntegrationTests(unittest.TestCase):
             self.assertEqual(store.job_states[envelope["job_id"]]["lifecycle"], "accepted")
             self.assertGreaterEqual(store.summary()["live_accepted_jobs"], 1)
             self.assertNotIn(secret, json.dumps(store.summary()))
+
+    def test_new_read_only_collectors_run_on_this_pc(self) -> None:
+        from windows_repair.engine import execute
+        from windows_repair.providers import LiveWindowsProvider
+
+        provider = LiveWindowsProvider()
+        secret_patterns = (
+            r"\b[A-Z0-9]{5}(?:-[A-Z0-9]{5}){4}\b",
+            r"(?i)key content",
+            r"-----BEGIN",
+            r"(?i)password\s*[:=]",
+        )
+        for procedure_id in (
+            "win.activation.inspect",
+            "hw.usb.inspect",
+            "net.wifi.inspect",
+            "net.proxy.inspect",
+            "net.tls.inspect",
+            "app.browser.inspect",
+            "app.permissions.inspect",
+            "app.crash.evidence",
+        ):
+            with self.subTest(procedure_id=procedure_id):
+                collected = provider.collect(procedure_id, timeout=25)
+                self.assertEqual(collected["evidence_source"], "live_windows", collected.get("detail"))
+                self.assertTrue(collected.get("ok"), collected.get("detail"))
+                self.assertFalse(collected["mocked"])
+                self.assertFalse(collected["problem_resolved"])
+                collected_blob = json.dumps(collected)
+                for pattern in secret_patterns:
+                    self.assertNotRegex(collected_blob, pattern)
+                if procedure_id == "app.permissions.inspect":
+                    self.assertNotIn("\\", str(collected.get("path")))
+                    self.assertNotIn(":", str(collected.get("path")))
+                if procedure_id == "net.proxy.inspect":
+                    self.assertNotIn("@", str(collected.get("proxy")))
+                result = execute(procedure_id, script_timeout=25)
+                self.assertEqual(result["evidence_source"], "live_windows")
+                self.assertFalse(result["problem_resolved"])
+                self.assertFalse(result["changed_device"])
+                self.assertEqual(result["status"], "diagnosed")
+                result_blob = json.dumps(result)
+                for pattern in secret_patterns:
+                    self.assertNotRegex(result_blob, pattern)
 
 
 class DirectorGapTests(unittest.TestCase):

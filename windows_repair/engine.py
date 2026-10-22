@@ -188,10 +188,95 @@ def _events(evidence: dict[str, Any]) -> dict[str, Any]:
 
 def _app(evidence: dict[str, Any]) -> dict[str, Any]:
     return _unfixed(
-        "Application evidence recorded.",
-        facts=[f"{evidence.get('application') or 'unknown'} fault={evidence.get('fault') or 'unspecified'}."],
+        "Application evidence recorded. No software was reinstalled.",
+        facts=[f"{_plain(evidence.get('application') or 'unknown', 80)} fault={_plain(evidence.get('fault') or 'unspecified', 40)}."],
         hypotheses=["A crash module is a clue. It is not approval to reinstall Windows or the application."],
         procedure_id="app.crash.evidence",
+    )
+
+
+def _activation(evidence: dict[str, Any]) -> dict[str, Any]:
+    status = _plain(evidence.get("activation_status") or "unknown", 40)
+    if "redacted" in status.casefold() or "-" in status and len(status) >= 29:
+        status = "redacted"
+    return _unfixed(
+        "Activation status recorded. No product key was read or changed.",
+        facts=[f"Activation status is {status}."],
+        hypotheses=["A status string is not proof the licence is valid and does not authorise a key change."],
+        procedure_id="win.activation.inspect",
+    )
+
+
+def _usb(evidence: dict[str, Any]) -> dict[str, Any]:
+    return _unfixed(
+        "USB and peripheral inventory recorded. No driver was installed.",
+        facts=[
+            f"Device count {evidence.get('device_count')}. Problem count {evidence.get('problem_count')}.",
+            f"First device {_plain(evidence.get('device_name') or 'none', 80)}.",
+        ],
+        hypotheses=["A missing peripheral may need physical reconnection. This check does not install a driver."],
+        procedure_id="hw.usb.inspect",
+    )
+
+
+def _wifi(evidence: dict[str, Any]) -> dict[str, Any]:
+    return _unfixed(
+        "Wi-Fi reading recorded. No wireless profile or password was read.",
+        facts=[
+            f"Adapter {_plain(evidence.get('adapter_status') or 'unknown', 40)}.",
+            f"Radio {_plain(evidence.get('radio') or 'unknown', 40)}.",
+            f"SSID {_plain(evidence.get('ssid') or 'none', 64)}.",
+        ],
+        hypotheses=["Radio state is evidence only. It does not authorise a profile or firewall change."],
+        procedure_id="net.wifi.inspect",
+    )
+
+
+def _proxy(evidence: dict[str, Any]) -> dict[str, Any]:
+    return _unfixed(
+        "Proxy and VPN state recorded. No credential was read and no proxy was changed.",
+        facts=[
+            f"Proxy {_plain(evidence.get('proxy') or 'unknown', 120)}.",
+            f"VPN {_plain(evidence.get('vpn') or 'unknown', 20)}.",
+        ],
+        hypotheses=["A proxy value is evidence only. It does not authorise disabling a proxy or VPN."],
+        procedure_id="net.proxy.inspect",
+    )
+
+
+def _tls(evidence: dict[str, Any]) -> dict[str, Any]:
+    return _unfixed(
+        "Certificate counts recorded. No certificate or private key was exported.",
+        facts=[
+            f"Certificate error label is {_plain(evidence.get('certificate_error') or 'none', 80)}.",
+            f"Certificates expiring in 30 days: {evidence.get('expiring_count')}.",
+        ],
+        hypotheses=["A count is evidence. It does not authorise installing or deleting a certificate."],
+        procedure_id="net.tls.inspect",
+    )
+
+
+def _browser(evidence: dict[str, Any]) -> dict[str, Any]:
+    return _unfixed(
+        "Browser presence recorded. The profile was not read or reset.",
+        facts=[
+            f"Browser {_plain(evidence.get('browser') or 'unknown', 80)}.",
+            f"Error label {_plain(evidence.get('error') or 'none', 40)}.",
+        ],
+        hypotheses=["A browser reading is a clue. It is not approval to reset a profile."],
+        procedure_id="app.browser.inspect",
+    )
+
+
+def _permissions(evidence: dict[str, Any]) -> dict[str, Any]:
+    return _unfixed(
+        "Fixed folder access recorded. ACLs were not changed.",
+        facts=[
+            f"Labels {_plain(evidence.get('path') or 'none', 80)}.",
+            f"Access {_plain(evidence.get('access') or 'unknown', 40)}.",
+        ],
+        hypotheses=["An access result for a fixed folder is not approval to take ownership."],
+        procedure_id="app.permissions.inspect",
     )
 
 
@@ -226,16 +311,16 @@ _RUNNERS = {
     "interpret_update": _update,
     "interpret_events": _events,
     "interpret_app": _app,
-    "interpret_activation": lambda evidence: _note("win.activation.inspect", evidence),
+    "interpret_activation": _activation,
     "interpret_startup": lambda evidence: _startup_reading("win.startup.inspect", evidence),
     "interpret_services": _services,
     "interpret_performance": lambda evidence: _startup_reading("win.performance.inspect", evidence),
-    "interpret_usb": lambda evidence: _note("hw.usb.inspect", evidence),
-    "interpret_wifi": lambda evidence: _note("net.wifi.inspect", evidence),
-    "interpret_proxy": lambda evidence: _note("net.proxy.inspect", evidence),
-    "interpret_tls": lambda evidence: _note("net.tls.inspect", evidence),
-    "interpret_browser": lambda evidence: _note("app.browser.inspect", evidence),
-    "interpret_permissions": lambda evidence: _note("app.permissions.inspect", evidence),
+    "interpret_usb": _usb,
+    "interpret_wifi": _wifi,
+    "interpret_proxy": _proxy,
+    "interpret_tls": _tls,
+    "interpret_browser": _browser,
+    "interpret_permissions": _permissions,
 }
 
 
@@ -267,6 +352,50 @@ def _adapt_live(procedure_id: str, live: dict[str, Any]) -> dict[str, Any]:
             "queue": "reported",
             "jobs": live.get("jobs") if isinstance(live.get("jobs"), list) else [],
             "spooler": str(live.get("spooler") or "unknown").casefold(),
+        }
+    if procedure_id == "win.activation.inspect":
+        return {
+            "activation_status": live.get("activation_status") or "unknown",
+            "license_name": live.get("license_name") or "",
+        }
+    if procedure_id == "hw.usb.inspect":
+        devices = live.get("devices") if isinstance(live.get("devices"), list) else []
+        first = devices[0] if devices and isinstance(devices[0], dict) else {}
+        return {
+            "device_name": first.get("name") or "none",
+            "device_count": live.get("device_count"),
+            "problem_count": live.get("problem_count"),
+        }
+    if procedure_id == "net.wifi.inspect":
+        return {
+            "ssid": live.get("ssid") or "",
+            "radio": live.get("radio") or "unknown",
+            "adapter_status": live.get("adapter_status") or "unknown",
+        }
+    if procedure_id == "net.proxy.inspect":
+        return {
+            "proxy": live.get("proxy") or "unknown",
+            "vpn": live.get("vpn") or "none",
+        }
+    if procedure_id == "net.tls.inspect":
+        return {
+            "certificate_error": live.get("certificate_error") or "none",
+            "expiring_count": live.get("user_my_expiring_30d"),
+        }
+    if procedure_id == "app.browser.inspect":
+        return {
+            "browser": live.get("browser") or "none",
+            "error": live.get("error") or "none",
+        }
+    if procedure_id == "app.permissions.inspect":
+        return {
+            "path": live.get("path") or "",
+            "access": live.get("access") or "unknown",
+        }
+    if procedure_id == "app.crash.evidence":
+        return {
+            "application": live.get("application") or "none",
+            "fault": live.get("fault") or "none",
         }
     return {key: value for key, value in live.items() if key not in {"gateway", "addresses"}}
 

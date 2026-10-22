@@ -17,6 +17,8 @@ Each report includes disk, memory, and boot time, plus these registered read-onl
 - `win.events.recurring`
 - `win.startup.inspect`
 
+These are the heartbeat checks. On-demand device jobs can also run the other registered read-only collectors, including activation, USB, Wi-Fi, proxy, TLS, browser, permissions, and application-crash evidence. Those collectors are not part of this heartbeat list.
+
 The console stores a short summary, the evidence source, and whether the check succeeded. `live_windows` means the registered script ran on the computer that is running the worker. `unavailable` means that check did not succeed. Fixture data is rejected. A check time more than five minutes away from the report time is rejected. The Director does not call the fleet HEALTHY when the stored collection time is missing or older than one day, or when a registered check failed. A report from this development PC is that PC, not a customer endpoint. `collection_scope` is `computer_running_the_worker`.
 
 `repair_authority` stays false. The model cannot add a command, a path, or a credential to the report.

@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-21** (release recovery hardening is on GitHub `main`; focused release tests **PASS** in Actions run 39690350318 and a 374-member archive was produced for code-bearing commit b25294644ffd69415ecb4291723047ec647e8b41, SHA-256 `e92c9005052d63006a03004bfe212ace11969074a86be6c3c2b333624b33fdf1`. Full suite **NOT RUN**. Local working-tree state, RunPod inventory, and Global Volume contents remain inaccessible. Live Blackwell **NOT TESTED**. Volume copy **BLOCKED**. Go-live **NO-GO**.)
+Last updated: **2026-10-22** (read-only Windows collectors for activation, USB, Wi-Fi, proxy, TLS, browser, permissions, and crash evidence ran on this development PC; full local suite **PASS**. H100 pod `xx9cjogra5vcwl` was inspected and left running. Go-live **NO-GO**.)
 
 ## Only this repository
 
@@ -12,7 +12,7 @@ Do not create a new project, a new GitHub repo, or a new folder. All work stays 
 
 | | |
 | --- | --- |
-| Local folder | `C:\Users\kokob\src\AI-PLAYBOOK.md` |
+| Local folder | `C:\Users\henok\src\AI-PLAYBOOK.md` |
 | GitHub | `https://github.com/henokmeron/AI-PLAYBOOK.md.git` (remote name `origin`) |
 | Work branch | `main` only. Do not open a feature branch. |
 | `main` | Commit and push this branch. Never force-push. |
@@ -46,13 +46,13 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 | Item | Value | Status |
 | --- | --- | --- |
-| Active test Pod | RunPod `4lvr54b0wmkz6c` (“rising_chocolate_locust”), **A100-SXM4-80GB**, **$1.79/hr**, driver **580.126.16** | Redeployed 2026-10-15 after `1cj381fjuujeq7` disappeared from the Pods list (likely terminated). Same Global Volume. Prefer **Stop** when idle. Do **not** Terminate without approval. |
+| Active test Pod | RunPod `xx9cjogra5vcwl` (“reliable_moccasin_hummingbird”), **H100 NVL**, **$3.20/hr** | **VERIFIED** running on 2026-10-22. Pods list showed one pod, GPU util 0%, memory rings 23% and 89%, disk 20%. `nvidia-smi` reported 85,415 MiB used of 95,830 MiB, driver **595.91.07**. Not stopped, started, resized, or reloaded. |
 | Prior Pod | `1cj381fjuujeq7` / `vx4oe3oyfsqnz8` | Gone from console / left alone. Do not recreate extras. |
-| SSH (TCP) | Last running address `root@154.54.102.40 -p 13212`, key `%USERPROFILE%\.ssh\id_ed25519` | **VERIFIED** 2026-10-15, then the Pod was stopped. On 2026-10-18 this machine got connection refused on `13212` and on old `19091`. The key file is not on this machine. Read the new port from the RunPod page after Start. |
-| GPU / driver | 81,920 MiB, ~**71,091 MiB used**, driver **580.126.16** | **VERIFIED.** |
+| SSH (TCP) | `root@216.81.245.55 -p 25839`, key `%USERPROFILE%\.ssh\id_ed25519` | **VERIFIED** read-only on 2026-10-22. The key file is present on this PC. Do not print it. |
+| GPU / driver | H100 NVL, **85,415 MiB used** of **95,830 MiB**, driver **595.91.07** | **VERIFIED** 2026-10-22 by `nvidia-smi`. Console GPU util was 0%. |
 | Container | PyTorch 2.8.0; runtime in `/tmp/vllm-qwen-env` | Restored from volume archive. |
-| Global Volume | `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` | **VERIFIED.** |
-| Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | **VERIFIED** HTTP 200. Console tip **`c069674`**. Live IT Helpdesk **VERIFIED**. |
+| Global Volume | Console id `cmv2p5m0d000007jk9o3931ea` (“New model container”), filesystem `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (`fuse.geesefs`) | **VERIFIED** 2026-10-22. Storage page: 126.0 GB, 1,794 objects, $11.34/mo. No volume was created or written. |
+| Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | **VERIFIED** 2026-10-22: `:8002/health` 200, `:8010/health` 200, `:8080/` 200, `:8080/api/status` 200. Pod checkout `/tmp/AI-PLAYBOOK` is **`a0e9422145aae4e38025709d1ca88288e42f375b`**, behind GitHub `main`. Do not claim the running console is the latest commit. |
 | Other Pod | Older idle/terminated Pods | Leave alone unless user says otherwise |
 
 ### Exact volume paths that must remain
@@ -164,6 +164,16 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-22 — read-only collectors and asset inventory
+
+- `CURSOR_AI_PLATFORM_FINISH_INSTRUCTIONS.md` was not in the local tree, Downloads, Documents, the Cursor project folder, or GitHub `main` (raw URL 404). Work followed this handoff and the owner's order.
+- Eight catalogue procedures now have fixed PowerShell collectors: `win.activation.inspect`, `hw.usb.inspect`, `net.wifi.inspect`, `net.proxy.inspect`, `net.tls.inspect`, `app.browser.inspect`, `app.permissions.inspect`, `app.crash.evidence`. They do not accept a model-supplied command or path. They do not read a product key, Wi-Fi password, proxy credential, or private key, and they do not change ACLs, the firewall, processes, or browser profiles. `problem_resolved` stays false. The endpoint heartbeat list in `integrations/endpoint.py` was not expanded.
+- **VERIFIED** on this development PC, which is not a customer endpoint and not a repair: `python -m unittest windows_repair.tests.test_live_diagnostics.WindowsIntegrationTests.test_new_read_only_collectors_run_on_this_pc` exit 0. Full suite: `python -m ops.run_tests` with `C:\Users\henok\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\python.exe` (Python 3.11.9, PyYAML 6.0.3), 38 modules, 0 failed, 1 skipped (`integrations.tests.test_endpoint`), exit 0. `windows_repair.tests.test_live_diagnostics` hit one transient Windows state-file error and passed on the runner's automatic retry.
+- RunPod console was signed in. One running pod: `xx9cjogra5vcwl` / `reliable_moccasin_hummingbird`, H100 NVL, $3.20/hr. Header balance text was $18.13. Nothing was started, stopped, resized, or reloaded. Read-only SSH confirmed Qwen `:8002/health` 200, gateway `:8010/health` 200, console `:8080/` and `/api/status` 200. Pod git is `a0e9422145aae4e38025709d1ca88288e42f375b`.
+- Volume checksums computed this session are in `docs/results/asset-inventory-2026-10-22.md`. The 11 weight shards were listed and not re-hashed. No archive was copied onto the volume. `%LOCALAPPDATA%\AI-PLAYBOOK\releases` does not exist on this PC.
+- Entra app `llmfortestingclientid` (`07634d62-4b0e-4572-b586-c5922bb01570`, created 2026-10-21) is in the signed-in Default Directory. The only API permission listed was Microsoft Graph `User.Read` (delegated). `Mail.Read` was not listed. No Graph call was made and the Pod was not given this application id. Microsoft mail stays **NOT CONFIGURED**. Azure showed £150.95 credits expiring 2026-11-20. No Azure resource was created.
+- Live Blackwell **NOT TESTED**. Production **NO-GO**.
 
 ### 2026-10-21 — release archive extraction hardening
 

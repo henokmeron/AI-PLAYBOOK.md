@@ -232,7 +232,7 @@ SSH IP/port **change** when RunPod places the Pod on a new machine. Read them fr
 | System Status | System Status | Console → gateway health | Works when Pod is up |
 | **Security & Operations Centre** | **Operations** | `ops_centre/` events, health, alerts, incidents | **Implemented in source** (local); live Pod not required to develop/test |
 | **Operations Director report** | `python -m ops_centre.director`, or `GET /api/ops/director` when the console is up | `ops_centre/director.py` | **In source**. Not live-verified on the Pod. No schedule. See `docs/ops_centre/DIRECTOR.md`. |
-| **Windows repair catalogue** | `python -m windows_repair`, `python -m windows_repair.test_device self-test`, or the Windows repair page | `windows_repair/` | **Local development**. Live read-only PowerShell diagnostics run on Windows. Printer spooler restart is approved in tests and refused on this PC. Remote desktop is not connected. See `docs/windows-repair/README.md`. |
+| **Windows repair catalogue** | `python -m windows_repair`, `python -m windows_repair.test_device self-test`, or the Windows repair page | `windows_repair/` | **Local development**. Live read-only PowerShell diagnostics run on Windows, including activation, USB, Wi-Fi, proxy, TLS, browser, permissions, and crash evidence as of 2026-10-22. Those runs were on this development PC. Printer spooler restart is approved in tests and refused on this PC. Remote desktop is not connected. See `docs/windows-repair/README.md`. |
 | Microsoft mail | Connected accounts | Entra app id + OAuth | **Not configured** |
 | Enrolled PC remote control | Enrolled computers | Endpoint agent | **Not live** / no remote shell |
 
@@ -371,6 +371,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 
 | Date | Change |
 | --- | --- |
+| 2026-10-22 | Read-only collectors for activation, USB, Wi-Fi, proxy, TLS, browser, permissions, and crash evidence. Ran on this development PC. Heartbeat list unchanged. H100 pod inspected and not restarted. See `docs/results/asset-inventory-2026-10-22.md`. Not deployed. |
 | 2026-10-21 | Release recovery rejects symlink/hardlink/device/FIFO archive members, cross-platform traversal paths, Windows alternate data streams, and symlink destinations. Focused release tests passed in Actions run 39690350318; commit b25294644ffd69415ecb4291723047ec647e8b41 archive SHA-256 `e92c9005052d63006a03004bfe212ace11969074a86be6c3c2b333624b33fdf1` (374 members). Artifact was not copied to the Global Volume; full suite and live deployment remain unverified. |
 | 2026-10-21 | Agent Windows diagnose tool runs registered read-only collectors, audits the call, and treats the text as untrusted. Elevated approval does not change this PC. Not deployed. |
 | 2026-10-20 | Canonical PC checkout is `C:\Users\kokob\src\AI-PLAYBOOK.md`. Repair jobs now record issued, accepted, and expired. A missing or stale device check-in is not HEALTHY in the Director report. Not deployed. |
