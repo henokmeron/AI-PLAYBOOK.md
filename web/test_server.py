@@ -1168,6 +1168,8 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("text/html", content_type)
         self.assertIn(b"Microsoft sign-in did not finish", body)
+        self.assertIn(b"Microsoft sign-in state expired", body)
+        self.assertIn(b"reason=state_expired", body)
         self.assertIn(b"Continue to the Agent page", body)
         self.assertNotIn(b"access_token", body)
         cancelled, cancelled_body = self.request(
@@ -1183,6 +1185,65 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(failed, 200)
         self.assertIn(b"could not be confirmed", failed_body)
         self.assertNotIn(b"token-secret", failed_body)
+        self.assertNotIn(b"reason=", failed_body)
+        personal, personal_body = self.request(
+            base,
+            "GET",
+            "/api/microsoft/callback?error=invalid_request&error_description="
+            "AADSTS50020%3A%20User%20account%20%27person%40example.com%27%20"
+            "from%20identity%20provider%20%27live.com%27%20does%20not%20exist%20in%20tenant",
+        )
+        self.assertEqual(personal, 200)
+        self.assertIn(b"personal Microsoft account is not in this directory (AADSTS50020)", personal_body)
+        self.assertIn(b"reason=personal_account", personal_body)
+        self.assertNotIn(b"person@example.com", personal_body)
+        self.assertNotIn(b"live.com", personal_body)
+        self.assertNotIn(b"identity provider", personal_body)
+        rejected, rejected_body = self.request(
+            base, "GET", "/api/microsoft/callback?error=invalid_grant&error_description=refresh-token-secret",
+        )
+        self.assertEqual(rejected, 200)
+        self.assertIn(b"Microsoft rejected the token", rejected_body)
+        self.assertIn(b"reason=token_rejected", rejected_body)
+        self.assertNotIn(b"refresh-token-secret", rejected_body)
+
+    def test_callback_names_token_and_account_failures_without_secrets(self) -> None:
+        from integrations.errors import AuthenticationError
+
+        class RejectToken:
+            def complete(self, code: str, state: str) -> None:
+                raise AuthenticationError("Microsoft did not issue an access token.")
+
+        class RejectAccount:
+            def complete(self, code: str, state: str) -> None:
+                raise AuthenticationError("Microsoft did not confirm the signed-in account.")
+
+        base = self.web(None)
+        self.servers[-1].oauth = RejectToken()  # type: ignore[attr-defined]
+        token_status, token_body = self.request(
+            base, "GET", "/api/microsoft/callback?code=unit-test-code&state=unit-test-state",
+        )
+        self.assertEqual(token_status, 200)
+        self.assertIn(b"Microsoft rejected the token", token_body)
+        self.assertIn(b"reason=token_rejected", token_body)
+        self.assertNotIn(b"unit-test-code", token_body)
+        self.assertNotIn(b"unit-test-state", token_body)
+        self.servers[-1].oauth = RejectAccount()  # type: ignore[attr-defined]
+        account_status, account_body = self.request(
+            base, "GET", "/api/microsoft/callback?code=unit-test-code&state=unit-test-state",
+        )
+        self.assertEqual(account_status, 200)
+        self.assertIn(b"Microsoft did not confirm the signed-in account", account_body)
+        self.assertIn(b"reason=account_unconfirmed", account_body)
+        self.assertNotIn(b"unit-test-code", account_body)
+        status, script = self.request(base, "GET", "/static/app.js")
+        script_text = script.decode("utf-8")
+        self.assertEqual(status, 200)
+        self.assertIn("personal_account", script_text)
+        self.assertIn("A personal Microsoft account is not in this directory (AADSTS50020)", script_text)
+        self.assertIn("Microsoft sign-in state expired", script_text)
+        self.assertIn("Microsoft rejected the token", script_text)
+        self.assertIn("hasOwnProperty.call(MICROSOFT_FAILURES, reason)", script_text)
 
     def test_device_check_in_is_read_only_and_hides_the_secret(self) -> None:
         base = self.web(FakeGateway())

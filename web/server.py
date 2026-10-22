@@ -11,6 +11,7 @@ import hmac
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import urllib.error
@@ -400,11 +401,53 @@ _CALLBACK_PAGES = {
     ),
 }
 
+# Fixed sentences only. Provider text, addresses, and tokens are never copied in.
+_FAILURE_DETAILS = {
+    "personal_account": (
+        "A personal Microsoft account is not in this directory (AADSTS50020). No mailbox was read."
+    ),
+    "state_expired": "Microsoft sign-in state expired. No mailbox was read.",
+    "token_rejected": "Microsoft rejected the token. No mailbox was read.",
+    "account_unconfirmed": "Microsoft did not confirm the signed-in account. No mailbox was read.",
+}
 
-def callback_document(result: str) -> bytes:
-    """Browser page for the OAuth redirect. The result is one of three fixed words."""
+
+def callback_failure_reason(
+    *,
+    error: str = "",
+    description: str = "",
+    missing_code_or_state: bool = False,
+    auth_message: str = "",
+) -> str:
+    """Map a callback failure to a fixed reason code. The provider text is not returned."""
+    if "AADSTS50020" in f"{error}\n{description}".upper():
+        return "personal_account"
+    if (
+        missing_code_or_state
+        or "state is missing or expired" in auth_message
+        or "usable sign-in code" in auth_message
+    ):
+        return "state_expired"
+    if "did not issue an access token" in auth_message or error == "invalid_grant":
+        return "token_rejected"
+    if (
+        "did not confirm the signed-in account" in auth_message
+        or "did not return an account address" in auth_message
+    ):
+        return "account_unconfirmed"
+    return ""
+
+
+def callback_document(result: str, reason: str = "") -> bytes:
+    """Browser page for the OAuth redirect. The result and reason are fixed words."""
     title, detail = _CALLBACK_PAGES[result]
-    target = "/?microsoft=" + result + "#agent"
+    safe_reason = reason if result == "failed" and reason in _FAILURE_DETAILS else ""
+    if safe_reason:
+        detail = _FAILURE_DETAILS[safe_reason]
+    query = "microsoft=" + result
+    if safe_reason:
+        query += "&reason=" + safe_reason
+    target = "/?" + query + "#agent"
     page = (
         "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
@@ -1116,28 +1159,41 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_redirect(target)
 
-    def send_callback_page(self, result: str) -> None:
-        self.send_bytes(200, callback_document(result), "text/html; charset=utf-8")
+    def send_callback_page(self, result: str, reason: str = "") -> None:
+        safe_reason = reason if reason in _FAILURE_DETAILS else ""
+        if result == "failed":
+            # Reason code only. The query can hold a code, a token, or an address.
+            print("microsoft callback failed: " + (safe_reason or "unspecified"), flush=True)
+        self.send_bytes(200, callback_document(result, safe_reason), "text/html; charset=utf-8")
 
     def handle_microsoft_callback(self, parsed) -> None:
         query = parse_qs(parsed.query)
         error = (query.get("error") or [""])[0]
+        description = (query.get("error_description") or [""])[0]
+        if not isinstance(error, str):
+            error = ""
+        if not isinstance(description, str):
+            description = ""
+        description = description[:500]
         if error == "access_denied":
             self.send_callback_page("cancelled")
             return
         if error:
-            self.send_callback_page("failed")
+            self.send_callback_page(
+                "failed",
+                callback_failure_reason(error=error, description=description),
+            )
             return
         code = (query.get("code") or [""])[0]
         state = (query.get("state") or [""])[0]
         if not code or not state:
-            self.send_callback_page("failed")
+            self.send_callback_page("failed", "state_expired")
             return
         try:
             self.server.oauth.complete(code, state)  # type: ignore[attr-defined]
             self.server.microsoft.apply(self.server.desk.catalog, CONSOLE_TENANT)  # type: ignore[attr-defined]
-        except AuthenticationError:
-            self.send_callback_page("failed")
+        except AuthenticationError as exc:
+            self.send_callback_page("failed", callback_failure_reason(auth_message=exc.message))
             return
         self.send_callback_page("connected")
 

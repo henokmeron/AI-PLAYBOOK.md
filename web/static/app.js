@@ -1180,7 +1180,9 @@
       connected: "Microsoft is connected.",
       error: "Microsoft sign-in needs attention."
     };
-    if (notice === "connected" && state !== "connected") {
+    if (notice.result === "failed") {
+      status.textContent = "Microsoft sign-in did not finish";
+    } else if (notice.result === "connected" && state !== "connected") {
       status.textContent = "Microsoft is disconnected.";
     } else {
       status.textContent = labels[state] || "Microsoft status is unknown.";
@@ -1211,25 +1213,37 @@
       mail.textContent = signIn.mail_read
         ? "Verified account " + signIn.account + ". Mail search is read-only."
         : "Verified account " + signIn.account + ". Mail.Read was not granted, so mail search stays unavailable.";
-    } else if (notice === "connected") {
+    } else if (notice.result === "connected") {
       mail.textContent = "The browser returned from Microsoft, but this server has not confirmed an account.";
-    } else if (notice === "cancelled") {
+    } else if (notice.result === "cancelled") {
       mail.textContent = "Microsoft sign-in was cancelled. No mailbox was read.";
-    } else if (notice === "failed") {
-      mail.textContent = "Microsoft sign-in did not finish. No mailbox was read.";
+    } else if (notice.result === "failed") {
+      mail.textContent = MICROSOFT_FAILURES[notice.reason] || "The sign-in could not be confirmed. No mailbox was read.";
     } else {
       mail.textContent = "";
     }
   }
 
+  var MICROSOFT_FAILURES = {
+    personal_account: "A personal Microsoft account is not in this directory (AADSTS50020). No mailbox was read.",
+    state_expired: "Microsoft sign-in state expired. No mailbox was read.",
+    token_rejected: "Microsoft rejected the token. No mailbox was read.",
+    account_unconfirmed: "Microsoft did not confirm the signed-in account. No mailbox was read."
+  };
+
   function microsoftNotice() {
     var params = new URLSearchParams(location.search);
     var result = params.get("microsoft");
-    if (result !== "connected" && result !== "cancelled" && result !== "failed") return "";
+    var reason = params.get("reason") || "";
+    if (result !== "connected" && result !== "cancelled" && result !== "failed") {
+      return { result: "", reason: "" };
+    }
+    if (!Object.prototype.hasOwnProperty.call(MICROSOFT_FAILURES, reason)) reason = "";
     params.delete("microsoft");
+    params.delete("reason");
     var query = params.toString();
     history.replaceState(null, "", location.pathname + (query ? "?" + query : "") + (location.hash || "#agent"));
-    return result;
+    return { result: result, reason: reason };
   }
 
   function loadConnectors() {
