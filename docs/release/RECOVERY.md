@@ -89,13 +89,13 @@ Blackwell needs a GPU of compute capability 12.0 and a driver of 575 or newer, t
 
 ## Which pod to recover
 
-Checked against the 2026-10-22T13:01Z record. The running pod is A100 `mlar88u3ku8utm` (`screeching_crimson_vole`) at **$1.80/hr**. Global Volume “New model container” (`cmv2p5m0d000007jk9o3931ea`) is already mounted at `/workspace`. `bash /workspace/ai-platform-release/START.sh --preflight` returned **PREFLIGHT_PASS** at 2026-10-22T13:02:45Z and did not load Qwen. The next cold start, only after the GPU load is approved, is:
+Checked against the 2026-10-22T15:49Z record. The running pod is A100 `gom4ualdk47qrj` (`excessive_gray_crocodile`) at **$1.80/hr**. Global Volume “New model container” (`cmv2p5m0d000007jk9o3931ea`) is mounted at `/workspace`. One `bash /workspace/ai-platform-release/START.sh` already finished at 15:48:46Z, and `:8002`, `:8010`, and `:8080` returned HTTP 200. Do not run that command again while those ports stay healthy. A check that does not start another copy is:
 
 ```bash
-bash /workspace/ai-platform-release/START.sh
+bash /workspace/ai-platform-release/START.sh --check
 ```
 
-H100 `xx9cjogra5vcwl` (`reliable_moccasin_hummingbird`) is **Stopped** at **$0.00/hr**. Do not start it. Do not create a volume, a pod, or an S3 API key. Weights and the runtime archive stay only on this volume. There is no independent weight backup. This command was not run from the session that wrote this paragraph. Production stays **NO-GO**.
+`mlar88u3ku8utm` was terminated. H100 `xx9cjogra5vcwl` (`reliable_moccasin_hummingbird`) was not started. Do not start it. Do not create a volume, a pod, or an S3 API key. Weights and the runtime archive stay only on this volume. There is no independent weight backup. Mail, a second computer, and Blackwell were not tested. Production stays **NO-GO**.
 
 ## Reading the volume
 

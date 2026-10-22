@@ -369,6 +369,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 
 | Date | Change |
 | --- | --- |
+| 2026-10-22 | One new A100 `gom4ualdk47qrj` at $1.80/hr replaced `mlar88u3ku8utm`, which was terminated. One `START.sh` reached health HTTP 200. One completion returned `PONG`. One RAG answer named £100. The H100 was not started. Mail, a second computer, and Blackwell were not tested. Production **NO-GO**. |
 | 2026-10-22 | A100 `gom4ualdk47qrj` at $1.80/hr finished loading Qwen. This session watched the load and did not run `START.sh`. Health at 15:50:02Z was HTTP 200 on `:8002`, `:8010`, and `:8080`. One completion returned `PLATFORM_OK`. One RAG answer cited 10 business days. The H100 was not started. No second pod was created. Mail, a second computer, Blackwell, and a fresh machine stay blocked. Production **NO-GO**. |
 | 2026-10-22 | `START.sh` on `mlar88u3ku8utm` began at 13:11:19Z and exited 1 at 14:22:07Z. Health stayed HTTP 000. That pod id left the list. `gom4ualdk47qrj` was not given `START.sh` by that session. The H100 was not started. Volume `START.sh`, the runtime archive, and the `6f07b58` snapshot were unchanged at 14:22:23Z. Production **NO-GO**. |
 | 2026-10-22 | Local archive of `00894206db6fec0238c6243e83ee7a5e18c7df08` SHA-256 `bf4355541d1dbeecfe6681c9bdfbe5235bff0dceed8a1570bb1e9d522e4f48be`, 383 members. This note is not inside that archive. Not copied to the volume. Production **NO-GO**. |

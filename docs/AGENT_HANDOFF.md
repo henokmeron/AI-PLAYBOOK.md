@@ -52,7 +52,7 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 | GPU / driver | NVIDIA A100-SXM4-80GB, **81920 MiB** total, driver **595.91.07**. At 15:50:02Z, after startup, **70647 MiB** used. At the completion sample, **70901 MiB**. | **VERIFIED** 80GB-class GPU on `gom4ualdk47qrj`. |
 | Container | `/tmp/vllm-qwen-env` is the running interpreter for vLLM pid **1826**, started 15:23Z. | The env lives under `/tmp`, not on the volume. |
 | Global Volume | Console id `cmv2p5m0d000007jk9o3931ea` (“New model container”), type **Global**, mounted at `/workspace`. `findmnt` source `5aac0c77-6fcc-4be9-a112-dfe3890e1373`, fstype `fuse.geesefs`. | Same source read on `gom4ualdk47qrj` at 2026-10-22T15:33:19Z. Direct S3 API is **not** supported. No new volume was created. Weights were not downloaded. |
-| Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | **VERIFIED** HTTP **200 / 200 / 200** at 2026-10-22T15:50:02Z. One completion and one RAG question passed after that. This session did not start `START.sh` and did not start a second vLLM. |
+| Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | **VERIFIED** HTTP **200 / 200 / 200** at 2026-10-22T15:49:11Z and again at 15:50:02Z. One `START.sh` finished with `FIRST_RELEASE_READY` at 15:48:46Z. Do not start a second copy. |
 | Pod checkout | `/tmp/AI-PLAYBOOK` on `gom4ualdk47qrj` stayed `be9cbd2baf08ee1d9f1bbd192982c94575f57aeb`. | This session did not reset it. It is behind GitHub `main`. |
 | Other Pod | Older idle/terminated Pods | Leave alone unless user says otherwise |
 
@@ -162,6 +162,16 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-22 — one new A100 deployed; old pod terminated; health 200
+
+- The owner asked for one replacement near **$1.80/hr**, with Global Volume `cmv2p5m0d000007jk9o3931ea` on `/workspace`, and for `mlar88u3ku8utm` to be turned off. H100 `xx9cjogra5vcwl` was not started. No second volume was created. Weights were not downloaded. The Network Volume S3 API was not used.
+- Prices on the deploy page after the CUDA filter was limited to **13.0–13.4**: B300 **$8.99/hr** 288GB, B200 **$7.99/hr** 180GB, H200 SXM **$5.29/hr** 141GB, RTX PRO 6000 **$2.49/hr** 96GB, **A100 SXM $1.79/hr 80GB**, H100 SXM **$3.99/hr** 80GB, A40 **$0.59/hr** 48GB, L40S **$1.09/hr** 48GB, PRO 6000 MIG 48GB **$1.29/hr**, RTX 5090 **$1.19/hr** 32GB, RTX PRO 4500 **$0.72/hr** 32GB, RTX PRO 4500 SE **$0.72/hr** 32GB, RTX 4090 **$0.89/hr** 24GB, L4 **$0.59/hr** 24GB, PRO 6000 MIG 24GB **$0.69/hr**, RTX 4000 Ada **$0.28/hr** 20GB. Before that filter the same A100 SXM was **$1.79/hr**, and the list also showed RTX 6000 Ada **$0.99/hr** 48GB and RTX A6000 **$0.59/hr** 48GB. The 48GB cards cannot hold this BF16 model. H100 and the larger cards were above the A100 price. One A100 was deployed.
+- New pod: `gom4ualdk47qrj` (“excessive_gray_crocodile”), 1× A100 SXM, checkout total **$1.80/hr**, offered CUDA **13.2**. `findmnt /workspace` source `5aac0c77-6fcc-4be9-a112-dfe3890e1373`. `nvidia-smi`: NVIDIA A100-SXM4-80GB, **81920 MiB**, driver **595.91.07**. The volume attached while the old pod was still running. After the new pod was Running and that filesystem was mounted, `mlar88u3ku8utm` was stopped and then terminated. Both dialogs named `screeching_crimson_vole`. The pods list then contained only `gom4ualdk47qrj`.
+- `bash /workspace/ai-platform-release/START.sh --preflight` returned **PREFLIGHT_PASS**. One `bash /workspace/ai-platform-release/START.sh` began at **15:15:17Z**, logged source `be9cbd2`, started vLLM at **15:23:09Z**, and logged `FIRST_RELEASE_READY` at **15:48:46Z** (Qwen ready after about **1530s**). No second copy. Gemma was not loaded.
+- Shard samples from the new log, GPU memory, health `:8002/:8010/:8080`: restore and **0 MiB** / **000** through 15:21:09Z; **0/11** and **51923 MiB** at 15:25:10Z; **2/11** at 15:27:10Z (`75.88s/it`); the captured line stayed on **2/11** through 15:35:10Z; **3/11** at 15:37:10Z; **7/11** at 15:39:11Z; **9/11** at 15:41:11Z; **11/11** complete at 15:43:11Z in **19:09**; health **200/200/200** and **70647 MiB** at 15:49:11Z. That was not a 25-minute stall.
+- One completion: HTTP **200**, text `PONG`. One RAG question on the demo expenses policy: HTTP **200**, answer named the **£100** approval threshold. The gateway key was not printed. A later watch of the same stack also recorded `PLATFORM_OK` and a 10-business-day RAG answer.
+- Mail was not read. No second computer was set up. This GPU is an A100, not Blackwell. Production stays **NO-GO** on those gates. Do not start a second `START.sh` while health stays 200. Do not start the H100. Do not deploy another pod.
 
 ### 2026-10-22 — replacement A100 reached HTTP 200; this session only watched the load
 
