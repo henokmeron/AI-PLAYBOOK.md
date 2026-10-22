@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-22** (Integrator fetched `main` at `6d479937bc90b2bf6054d9de8ab2bfecfd3b465f`. The A100 load recorded in `06e47834ed6578ff5b368783bd31d4380d325cce` was still in progress at 13:58:38Z: shard **2/11**, GPU **51923 MiB / 81920 MiB**, health HTTP **000**. This session did not SSH and has no later evidence that the load finished. Do **not** start a second `START.sh`. Do not reload Qwen onto a newer commit. H100 stays **Stopped**. Production **NO-GO**.)
+Last updated: **2026-10-22** (A100 `mlar88u3ku8utm` Qwen load is still in progress. The 13:11:19Z `START.sh` waiter exited **1** at 14:22:07Z after 2700s, with vLLM pid **12621** left running. At 14:48:01Z that process was still loading safetensors shard **5/11**, GPU **51923 MiB / 81920 MiB**, and `:8002` / `:8010` / `:8080` were HTTP **000**. Do **not** start a second `START.sh` while pid 12621 is alive. Pod checkout `/tmp/AI-PLAYBOOK` is `f7043f8ad8ed9ac39423f96fe7fcbd12f21fe7ba`. Do not reload Qwen onto a newer commit. H100 stays **Stopped**. Live health is **not** VERIFIED. Production **NO-GO**.)
 
 ## Only this repository
 
@@ -48,12 +48,12 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 | --- | --- | --- |
 | Active test Pod | RunPod `mlar88u3ku8utm` (“screeching_crimson_vole”), **A100 SXM** | **VERIFIED Running** on 2026-10-22. Page `https://console.runpod.io/pods?id=mlar88u3ku8utm` showed a Stop button, **A100 SXM x1**, **$1.80/hr**. The H100 `xx9cjogra5vcwl` (“reliable_moccasin_hummingbird”) stayed **Stopped** at **$0.00/hr**. Start was not clicked. The A100 was not stopped. |
 | Prior Pod | `xx9cjogra5vcwl` H100, and older `1cj381fjuujeq7` / `vx4oe3oyfsqnz8` | H100 left **Stopped**. Older pods left alone. Do not start the H100 to compensate. Do not recreate extras. |
-| SSH (TCP) | `root@195.26.233.38` port `53380`, key `%USERPROFILE%\.ssh\id_ed25519`. | **VERIFIED** again at 2026-10-22T13:58:38Z. The Connect panel still showed `195.26.233.38 : 53380`. The key was not printed. |
-| GPU / driver | NVIDIA A100-SXM4-80GB, **81920 MiB** total. At 13:58:38Z: **51923 MiB** used, utilization 7%. | Weights are still loading. This is **not** a finished load and **not** a health pass. |
+| SSH (TCP) | `root@195.26.233.38` port `53380`, key `%USERPROFILE%\.ssh\id_ed25519`. | **VERIFIED** again at 2026-10-22T14:02Z on the Connect panel, and SSH on that port worked through 14:48:01Z. The key was not printed. |
+| GPU / driver | NVIDIA A100-SXM4-80GB, **81920 MiB** total. At 14:48:01Z: **51923 MiB** used, utilization 0%. | Weights are still loading (shard 5/11). This is **not** a finished load and **not** a health pass. |
 | Container | `/tmp/vllm-qwen-env` is present, **9.5G**, restored by the already-running official script. | Restore finished between 13:34:47Z and 13:37:40Z. The env is under `/tmp`, not on the volume. |
 | Global Volume | Console id `cmv2p5m0d000007jk9o3931ea` (“New model container”), type **Global**, mounted at `/workspace`. `findmnt` source `5aac0c77-6fcc-4be9-a112-dfe3890e1373`, fstype `fuse.geesefs`. | **VERIFIED** on this running A100 at 2026-10-22T13:01:34Z. The Volumes panel showed **126 GB** and **1,804 objects**. No `/workspace` file had an mtime in the 30 minutes before 13:03:23Z. Direct S3 API is **not** supported. No new volume was created. |
-| Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | **DOWN** at 2026-10-22T13:58:38Z. All three returned HTTP **000**. vLLM pid **12621** is loading safetensors shard **2/11** and is not serving. Gateway and console have not started. Live health is **not** VERIFIED. |
-| Pod checkout | `/tmp/AI-PLAYBOOK` `main` at `f7043f8ad8ed9ac39423f96fe7fcbd12f21fe7ba`. | Recorded at 2026-10-22T13:58:38Z. The running load was **not** restarted onto a newer GitHub commit. |
+| Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | **DOWN** at 2026-10-22T14:48:01Z. All three returned HTTP **000**. vLLM pid **12621** (parent pid 1) is loading safetensors shard **5/11** and is not serving. The start waiter exited at 14:22:07Z. Gateway and console have not started. Live health is **not** VERIFIED. |
+| Pod checkout | `/tmp/AI-PLAYBOOK` `main` at `f7043f8ad8ed9ac39423f96fe7fcbd12f21fe7ba`. | Recorded again at 2026-10-22T14:48:01Z. The running load was **not** restarted onto a newer GitHub commit. |
 | Other Pod | Older idle/terminated Pods | Leave alone unless user says otherwise |
 
 ### Exact volume paths that must remain
@@ -69,7 +69,7 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 ### Git
 
-- Current pod checkout on `mlar88u3ku8utm`, read at 2026-10-22T13:58:38Z, is `/tmp/AI-PLAYBOOK` `main` at `f7043f8ad8ed9ac39423f96fe7fcbd12f21fe7ba`. Preflight had cloned `cbbf185eecc6e46130ac4bdc1a8089fba0e89052`; the official start fast-forwarded that checkout before vLLM launched. Do not pull a newer commit into this running load. The `vx4oe3oyfsqnz8` sentence below is an older pod.
+- Current pod checkout on `mlar88u3ku8utm`, read again at 2026-10-22T14:48:01Z, is `/tmp/AI-PLAYBOOK` `main` at `f7043f8ad8ed9ac39423f96fe7fcbd12f21fe7ba`. Preflight had cloned `cbbf185eecc6e46130ac4bdc1a8089fba0e89052`; the official start fast-forwarded that checkout before vLLM launched. Do not pull a newer commit into this running load. The `vx4oe3oyfsqnz8` sentence below is an older pod.
 - **GitHub** feature branches include the Qwen routing work. `main` is fast-forwarded to the same tip and pushed. It is not force-pushed.
 - `e1e360f` is the parent of **`c2323238041cea8317d2322e6d16554d0bc967bc`** (Qwen routing). That push is a fast-forward. The `ninja` PATH change itself is **`083fa58`**, already inside `e1e360f`.
 - Local checkout for new work is `main`. Keep `feature/qwen-a100-start-hardening` and `feature/qwen3.5-27b-integration` on the same commit by fast-forward only.
@@ -156,7 +156,7 @@ The pod that is running is A100 `mlar88u3ku8utm` (`screeching_crimson_vole`), $1
 bash /workspace/ai-platform-release/START.sh
 ```
 
-That process began about 2026-10-22T13:11:19Z. At 13:58:38Z it was still running (`start-first-release.sh --start`, vLLM pid 12621 loading shards). Do **not** start a second copy. If that waiter later exits with “process still running; re-run later to reuse it”, leave vLLM alone while pid 12621 is alive. Do not start H100 `xx9cjogra5vcwl`. Do not create a volume or a pod. Do not click Stop, Terminate, or Resize.
+That process began about 2026-10-22T13:11:19Z. At 14:22:07Z the waiter exited **1** with `Qwen not ready after 2700s (process 12621 still running; re-run later to reuse it)`. vLLM pid **12621** was still loading shard **5/11** at 14:48:01Z, parent pid 1, GPU **51923 MiB**. Do **not** start a second copy while pid 12621 is alive. Preflight will refuse (`qwen-not-already-starting`, GPU not free). After `:8002` is healthy, one later `START.sh` can reuse that process and start the gateway and console. Do not start H100 `xx9cjogra5vcwl`. Do not create a volume or a pod. Do not click Stop, Terminate, or Resize.
 
 ```bash
 bash /workspace/ai-platform-release/START.sh --check
@@ -168,6 +168,15 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-22 — A100 still on shard 5; start waiter exited; health still down
+
+- Connect panel re-read before this watch: SSH over exposed TCP is still `195.26.233.38 : 53380`. The key was not printed. `screeching_crimson_vole` (`mlar88u3ku8utm`) stayed **Running**, A100 SXM, **$1.80/hr**. Stop, Terminate, Resize, and Start were not clicked. H100 `xx9cjogra5vcwl` was not started. No second `START.sh` was launched. No new file was written on `/workspace`.
+- Samples from 2026-10-22T14:03:34Z through 14:48:01Z, about every 2.5 minutes. `:8002/health`, `:8010/health`, and `:8080/api/status` stayed HTTP **000 / 000 / 000**. GPU stayed **51923 MiB / 81920 MiB**. Utilization was 0% on these samples. EngineCore pid 13527 held **51914 MiB**. `/tmp/AI-PLAYBOOK` stayed `f7043f8ad8ed9ac39423f96fe7fcbd12f21fe7ba`. Qwen was not reloaded onto a newer commit.
+- Shard progress in `/workspace/platform-diagnostics/first-release/qwen-vllm.log`: **2/11** at 14:03:34Z (vLLM elapsed 26:32, pids 2824 and 2826 still alive); **3/11** at 14:07:26Z (`[28:00<1:17:48, 583.52s/it]`); **4/11** at 14:22:39Z (`[43:30<1:24:02, 720.39s/it]`); **5/11** at 14:37:53Z (`[58:49<1:19:12, 792.02s/it]`). At 14:48:01Z the log was still **5/11** (9354 bytes). vLLM pid **12621** elapsed **1:10:59**, stat `SLl`, parent pid **1**. EngineCore **13527** elapsed **1:10:26**.
+- The original waiter exited between the 14:20:07Z sample (pids 2824 and 2826 alive) and 14:22:39Z (those pids gone). Its own output, from the 13:11:19Z session, is `ERROR: Qwen not ready after 2700s (process 12621 still running; re-run later to reuse it)`, then `START_EXIT:1` and `START_END:2026-10-22T14:22:07Z`. vLLM was not killed. The GPU was not idle, so nothing was relaunched.
+- No completion was sent. No RAG question was sent. Services were not restarted. Live health is **not** VERIFIED. Mail, a second endpoint, Blackwell, and fresh-machine recovery stay blocked. Production stays **NO-GO**.
+- Next agent: leave pid 12621 alone while shards are still loading. A new `START.sh` fails preflight until this vLLM exits or `:8002` is healthy. When `:8002` is healthy, one `START.sh` can reuse it and bring up `:8010` and `:8080`. Do not start the H100.
 
 ### 2026-10-22 — integrator: area commits are on main; production NO-GO
 
