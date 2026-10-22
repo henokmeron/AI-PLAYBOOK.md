@@ -161,6 +161,37 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(parsed["connection"], "ready")
         self.assertGreater(len(result["body"].encode("utf-8")), 400)
 
+    def test_off_pod_body_is_not_copied_forward_as_healthy(self) -> None:
+        def probe(url: str, _timeout: float) -> dict:
+            if "8002" in url:
+                body = json.dumps({"status": "ok", "reason": "model_engine_dead"})
+            elif "readyz" in url:
+                body = json.dumps({
+                    "status": "not_ready",
+                    "reason": "model_engine_dead",
+                    "health": {"status": "ok", "upstream": "ok"},
+                })
+            elif "livez" in url:
+                return {"ok": True, "http_status": 200, "detail": "alive", "latency_ms": 1, "body": "{}"}
+            else:
+                body = json.dumps({
+                    "connection": "ready",
+                    "upstream": "unavailable",
+                    "pod": "stopped",
+                    "health": {"status": "ok", "upstream": "ok"},
+                })
+            return {"ok": True, "http_status": 200, "detail": "HTTP 200", "latency_ms": 1, "body": body}
+
+        snap = HealthAggregator(probe=probe).snapshot()
+        names = {item["name"]: item for item in snap["services"]}
+        self.assertEqual(names["qwen"]["state"], "unavailable")
+        self.assertEqual(names["gateway_ready"]["state"], "degraded")
+        self.assertEqual(names["console"]["state"], "unavailable")
+        self.assertIn("not copied forward", names["console"]["detail"])
+        self.assertIn("not copied forward", names["qwen"]["detail"])
+        self.assertNotEqual(snap["overall"], "healthy")
+        self.assertEqual(names["gateway_live"]["state"], "healthy")
+
 
 class DetectionAlertIncidentTests(unittest.TestCase):
     def test_pipeline(self) -> None:

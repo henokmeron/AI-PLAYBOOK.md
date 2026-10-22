@@ -16,6 +16,39 @@ from .store import utc_now
 
 ProbeFn = Callable[[str, float], dict[str, Any]]
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost"})
+_POD_OFF = frozenset({"off", "stopped", "exited", "dead"})
+_ENGINE_OFF_STATUS = frozenset({"error", "dead", "stopped", "off", "failed", "unavailable", "not_ready"})
+_ENGINE_OFF_REASON = frozenset({"model_engine_dead", "model_server_absent", "no_models_reported"})
+
+
+def _body_payload(result: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(result.get("body") or "")
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _current_signal_is_off(payload: dict[str, Any]) -> bool:
+    """Current pod or engine fields. A nested health object is not read."""
+    for key in ("pod", "pod_state"):
+        if str(payload.get(key) or "").strip().casefold() in _POD_OFF:
+            return True
+    upstream = str(payload.get("upstream") or "").strip().casefold()
+    if upstream in {"unavailable", "unreachable", "off", "stopped"}:
+        return True
+    reason = str(payload.get("reason") or "").strip().casefold()
+    if reason in _ENGINE_OFF_REASON:
+        return True
+    status = str(payload.get("status") or "").strip().casefold()
+    if status in _ENGINE_OFF_STATUS:
+        return True
+    error = payload.get("error")
+    if isinstance(error, str) and error.strip():
+        return True
+    return isinstance(error, dict) and bool(error)
 
 
 class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
@@ -166,7 +199,25 @@ class HealthAggregator:
                 return ServiceState.DEGRADED.value, "alive but upstream not ready"
             if not result.get("ok"):
                 return ServiceState.UNAVAILABLE.value, str(result.get("detail") or "unreachable")
+            payload = _body_payload(result)
+            if payload is not None and _current_signal_is_off(payload):
+                return (
+                    ServiceState.DEGRADED.value,
+                    "upstream is off; a previous ready status was not copied forward",
+                )
             return ServiceState.HEALTHY.value, "upstream ready"
+
+        def model_liveness(result: dict[str, Any]) -> tuple[str, str]:
+            if not result.get("ok"):
+                return ServiceState.UNAVAILABLE.value, str(result.get("detail") or "unreachable")
+            payload = _body_payload(result)
+            if payload is not None and _current_signal_is_off(payload):
+                return (
+                    ServiceState.UNAVAILABLE.value,
+                    "model engine is off; a previous health status was not copied forward",
+                )
+            detail = str(result.get("detail") or "process alive")
+            return ServiceState.HEALTHY.value, detail
 
         def console_status(result: dict[str, Any]) -> tuple[str, str]:
             if not result.get("ok"):
@@ -175,6 +226,13 @@ class HealthAggregator:
                 payload = json.loads(result.get("body") or "{}")
             except json.JSONDecodeError:
                 return ServiceState.DEGRADED.value, "console responded but status JSON was invalid"
+            if not isinstance(payload, dict):
+                return ServiceState.DEGRADED.value, "console responded but status JSON was invalid"
+            if _current_signal_is_off(payload):
+                return (
+                    ServiceState.UNAVAILABLE.value,
+                    "pod is off; a previous health object was not copied forward",
+                )
             connection = str(payload.get("connection") or "unknown")
             if connection == "ready":
                 return ServiceState.HEALTHY.value, f"connection={connection}"
@@ -184,7 +242,7 @@ class HealthAggregator:
 
         services.append(self._one("gateway_live", self.gateway_live_url, check_kind="liveness", interpret=gateway_live))
         services.append(self._one("gateway_ready", self.gateway_ready_url, check_kind="readiness", interpret=gateway_ready))
-        services.append(self._one("qwen", self.qwen_url, check_kind="liveness"))
+        services.append(self._one("qwen", self.qwen_url, check_kind="liveness", interpret=model_liveness))
         services.append(self._one("console", self.console_url, check_kind="functional", interpret=console_status))
 
         # Local resources — observed when readable; unknown otherwise (no fake numbers).

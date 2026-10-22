@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -63,10 +64,54 @@ _STATE = {
 }
 
 
+_EVIDENCE_MAX_AGE_SECONDS = 86400
+_EVIDENCE_FUTURE_SKEW_SECONDS = 120
+_POD_OFF = frozenset({"off", "stopped", "exited", "dead"})
+_ENGINE_OFF_REASON = frozenset({"model_engine_dead", "model_server_absent", "no_models_reported"})
+
+
 def map_state(raw: str | None) -> str:
     if raw is None:
         return "UNKNOWN"
     return _STATE.get(str(raw).strip().casefold(), "UNKNOWN")
+
+
+def _collection_is_fresh(collected_at: object, age_seconds: object) -> bool:
+    """True only when a collection time exists and is inside the one-day window."""
+    if isinstance(collected_at, bool) or not isinstance(collected_at, int):
+        return False
+    if isinstance(age_seconds, bool) or not isinstance(age_seconds, int):
+        return False
+    return -_EVIDENCE_FUTURE_SKEW_SECONDS <= age_seconds <= _EVIDENCE_MAX_AGE_SECONDS
+
+
+def _service_says_pod_off(item: dict[str, Any]) -> bool:
+    """An explicit off signal on this row. A nested previous status is ignored."""
+    for key in ("pod", "pod_state"):
+        if str(item.get(key) or "").strip().casefold() in _POD_OFF:
+            return True
+    reason = str(item.get("reason") or "").strip().casefold()
+    if reason in _ENGINE_OFF_REASON:
+        return True
+    detail = str(item.get("detail") or "").casefold()
+    return "model_engine_dead" in detail or "pod is off" in detail
+
+
+def _observed_service_state(item: dict[str, Any], *, now: datetime) -> str:
+    """Do not carry a healthy label forward when the pod is off or the probe is stale."""
+    if _service_says_pod_off(item):
+        return "DEGRADED"
+    state = map_state(item.get("state"))
+    if state != "HEALTHY":
+        return state
+    current = within_window(
+        item.get("verified_at"),
+        now=now,
+        window_seconds=failure_window_seconds(),
+    )
+    if current is not True:
+        return "UNKNOWN"
+    return "HEALTHY"
 
 
 def _service_rows(health: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -140,9 +185,15 @@ def _endpoint_fleet(verified_at: str | None) -> dict[str, Any]:
         elif int(snapshot["failed_checks"]):
             state = "DEGRADED"
             detail = "One or more registered diagnostics failed."
-        elif evidence_stale:
+        elif evidence_stale or not _collection_is_fresh(
+            snapshot.get("evidence_collected_at"),
+            snapshot.get("evidence_age_seconds"),
+        ):
             state = "DEGRADED"
-            detail = "Registered diagnostics are present, but the collection time is missing or older than one day. Stale evidence is not healthy."
+            detail = (
+                "Registered diagnostics are present, but the collection time is missing or older than one day. "
+                "A newer check-in does not copy stale evidence forward."
+            )
         else:
             state = "HEALTHY"
             detail = "Registered read-only diagnostics are fresh. This is not remote control or a repair."
@@ -217,6 +268,14 @@ def _repair_jobs(verified_at: str | None) -> dict[str, Any]:
         elif live < 1:
             state = "UNKNOWN"
             detail = "No accepted job has fresh live_windows evidence. A mock, fixture, or unlabelled result is not healthy."
+        elif not _collection_is_fresh(
+            summary.get("evidence_collected_at"),
+            summary.get("evidence_age_seconds"),
+        ):
+            state = "DEGRADED"
+            detail = (
+                "A later device check-in does not copy missing or stale diagnostic evidence forward as current health."
+            )
         else:
             state = "HEALTHY"
             detail = "A read-only live_windows job with a fresh collection time was accepted. This is not a repair and not a deployment."
@@ -449,6 +508,75 @@ def _rag_health(verified_at: str | None) -> dict[str, Any]:
     )
 
 
+def _microsoft_graph(verified_at: str | None) -> dict[str, Any]:
+    """Label Graph from local files only. This function does not call Microsoft."""
+    client_id = os.environ.get("MICROSOFT_CLIENT_ID", "").strip()
+    if not client_id:
+        return _component(
+            "microsoft_graph",
+            "NOT CONFIGURED",
+            evidence=["MICROSOFT_CLIENT_ID is unset", "graph_called=false"],
+            detail="Outlook mail search is not connected in this process.",
+            checked_at=verified_at,
+        )
+    evidence = ["MICROSOFT_CLIENT_ID is set", "graph_called=false"]
+    token_path = os.environ.get("MICROSOFT_TOKEN_FILE", "").strip()
+    if not token_path:
+        return _component(
+            "microsoft_graph",
+            "UNKNOWN",
+            evidence=evidence + ["MICROSOFT_TOKEN_FILE is unset"],
+            detail="An application id is configured. No token file was read and no Graph call was made.",
+            checked_at=verified_at,
+        )
+    path = Path(token_path)
+    if path.is_symlink() or not path.is_file():
+        return _component(
+            "microsoft_graph",
+            "UNKNOWN",
+            evidence=evidence + ["token file is missing"],
+            detail="The token file is missing. A client id is not evidence that mail can be read.",
+            checked_at=verified_at,
+        )
+    try:
+        raw_text = path.read_text(encoding="utf-8")
+        if len(raw_text) > 100_000:
+            raise ValueError("token file is too large")
+        raw = json.loads(raw_text)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        return _component(
+            "microsoft_graph",
+            "DEGRADED",
+            evidence=evidence + ["token file could not be read"],
+            detail="The token file is present but unusable. It was not treated as a healthy Graph connection.",
+            checked_at=verified_at,
+        )
+    expires_at = raw.get("expires_at") if isinstance(raw, dict) else None
+    if isinstance(expires_at, bool) or not isinstance(expires_at, (int, float)):
+        return _component(
+            "microsoft_graph",
+            "UNKNOWN",
+            evidence=evidence + ["token expiry is missing"],
+            detail="The saved sign-in has no expiry. Missing evidence is not a healthy mailbox.",
+            checked_at=verified_at,
+        )
+    if time.time() >= float(expires_at):
+        return _component(
+            "microsoft_graph",
+            "DEGRADED",
+            evidence=evidence + ["token_expired=true"],
+            detail="The saved Microsoft sign-in is expired. This report did not call Graph.",
+            checked_at=verified_at,
+        )
+    return _component(
+        "microsoft_graph",
+        "UNKNOWN",
+        evidence=evidence + ["token_expired=false"],
+        detail="A saved sign-in has not expired. This report did not call Graph, so mail is not marked healthy.",
+        checked_at=verified_at,
+    )
+
+
 def build_report(centre: OpsCentre, *, desk: Any | None = None) -> dict[str, Any]:
     """Return a Director status report. Side effect: one append-only audit event."""
     if desk is not None:
@@ -469,6 +597,12 @@ def build_report(centre: OpsCentre, *, desk: Any | None = None) -> dict[str, Any
     overview = centre.overview()
     services = _service_rows(health)
     verified_at = health.get("verified_at") if isinstance(health.get("verified_at"), str) else None
+    now = datetime.now(timezone.utc)
+    report_is_current = within_window(
+        verified_at,
+        now=now,
+        window_seconds=failure_window_seconds(),
+    ) is True
 
     def from_probe(label: str, *keys: str) -> dict[str, Any]:
         found = [services[key] for key in keys if key in services]
@@ -480,7 +614,7 @@ def build_report(centre: OpsCentre, *, desk: Any | None = None) -> dict[str, Any
                 detail="This report cannot check this component. The probe is not configured.",
                 checked_at=verified_at,
             )
-        states = [map_state(item.get("state")) for item in found]
+        states = [_observed_service_state(item, now=now) for item in found]
         if "DEGRADED" in states:
             state = "DEGRADED"
         elif "UNKNOWN" in states:
@@ -500,6 +634,13 @@ def build_report(centre: OpsCentre, *, desk: Any | None = None) -> dict[str, Any
                 details.append(str(item.get("detail")))
             if item.get("verified_at"):
                 stamps.append(str(item.get("verified_at")))
+        if any(_service_says_pod_off(item) for item in found):
+            evidence.append("previous_health_not_copied_forward=true")
+        if any(
+            map_state(item.get("state")) == "HEALTHY" and _observed_service_state(item, now=now) != "HEALTHY"
+            for item in found
+        ):
+            evidence.append("stale_or_off_probe_not_current=true")
         return _component(
             label,
             state,
@@ -515,8 +656,12 @@ def build_report(centre: OpsCentre, *, desk: Any | None = None) -> dict[str, Any
         from_probe("local_disk", "disk"),
         _component(
             "monitoring",
-            "HEALTHY" if verified_at else "UNKNOWN",
-            evidence=["this process built a report from OpsCentre"] if verified_at else ["health snapshot had no timestamp"],
+            "HEALTHY" if report_is_current else "UNKNOWN",
+            evidence=(
+                ["this process built a report from OpsCentre"]
+                if report_is_current
+                else ["health snapshot timestamp is missing or stale"]
+            ),
             detail="The Operations Centre process answered. External log export is not configured. A local hash chain is not tamper-proof storage.",
             checked_at=verified_at,
         ),
@@ -525,22 +670,7 @@ def build_report(centre: OpsCentre, *, desk: Any | None = None) -> dict[str, Any
     components.append(_agent_health(centre, verified_at))
     components.append(_rag_health(verified_at))
 
-    if os.environ.get("MICROSOFT_CLIENT_ID", "").strip():
-        components.append(_component(
-            "microsoft_graph",
-            "UNKNOWN",
-            evidence=["MICROSOFT_CLIENT_ID is set; no Graph call was made by this report"],
-            detail="An application id is configured. This report did not sign in or read mail.",
-            checked_at=verified_at,
-        ))
-    else:
-        components.append(_component(
-            "microsoft_graph",
-            "NOT CONFIGURED",
-            evidence=["MICROSOFT_CLIENT_ID is unset"],
-            detail="Outlook mail search is not connected in this process.",
-            checked_at=verified_at,
-        ))
+    components.append(_microsoft_graph(verified_at))
 
     try:
         from windows_repair.engine import list_procedures

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -296,6 +297,206 @@ class DirectorReportTests(unittest.TestCase):
             self.assertIn("citation_file=warranty.txt", rag["evidence"])
             self.assertIn("abstained=true", rag["evidence"])
             self.assertNotIn("fourteen months", json.dumps(rag))
+
+    def test_graph_is_not_healthy_when_evidence_is_missing_or_stale(self) -> None:
+        secret = "graph-token-must-not-print"
+        client_id = "graph-client-must-not-print"
+        with tempfile.TemporaryDirectory() as tmp:
+            centre = self._centre(tmp)
+            token_path = Path(tmp) / "token.json"
+            snapshot = self._healthy_snapshot()
+            snapshot["verified_at"] = datetime_now()
+
+            def report_for(env: dict[str, str]) -> dict:
+                with patch.object(centre.health, "snapshot", return_value=snapshot):
+                    with patch.dict(os.environ, env, clear=False):
+                        os.environ.pop("RAG_DOCS_DIR", None)
+                        return build_report(centre)
+
+            base = {
+                "OPERATOR_AUTH_DIR": tmp,
+                "ENDPOINT_STATE_FILE": "",
+                "REPAIR_DEVICE_STATE": "",
+                "MICROSOFT_TOKEN_FILE": "",
+            }
+            missing = report_for({**base, "MICROSOFT_CLIENT_ID": ""})
+            graph = next(item for item in missing["components"] if item["name"] == "microsoft_graph")
+            self.assertEqual(graph["state"], "NOT CONFIGURED")
+            self.assertIn("graph_called=false", graph["evidence"])
+            self.assertNotEqual(graph["state"], "HEALTHY")
+
+            configured = report_for({**base, "MICROSOFT_CLIENT_ID": client_id})
+            graph = next(item for item in configured["components"] if item["name"] == "microsoft_graph")
+            self.assertEqual(graph["state"], "UNKNOWN")
+            self.assertNotEqual(graph["state"], "HEALTHY")
+            self.assertNotIn(client_id, json.dumps(configured))
+
+            token_path.write_text(json.dumps({
+                "access_token": secret,
+                "refresh_token": secret,
+                "expires_at": 1_000,
+            }), encoding="utf-8")
+            stale = report_for({
+                **base,
+                "MICROSOFT_CLIENT_ID": client_id,
+                "MICROSOFT_TOKEN_FILE": str(token_path),
+            })
+            graph = next(item for item in stale["components"] if item["name"] == "microsoft_graph")
+            self.assertEqual(graph["state"], "DEGRADED")
+            self.assertIn("token_expired=true", graph["evidence"])
+            self.assertNotEqual(graph["state"], "HEALTHY")
+            self.assertNotIn(secret, json.dumps(stale))
+
+            token_path.write_text(json.dumps({
+                "access_token": secret,
+                "expires_at": int(time.time()) + 3600,
+            }), encoding="utf-8")
+            fresh_token = report_for({
+                **base,
+                "MICROSOFT_CLIENT_ID": client_id,
+                "MICROSOFT_TOKEN_FILE": str(token_path),
+            })
+            graph = next(item for item in fresh_token["components"] if item["name"] == "microsoft_graph")
+            self.assertEqual(graph["state"], "UNKNOWN")
+            self.assertIn("graph_called=false", graph["evidence"])
+            self.assertNotEqual(graph["state"], "HEALTHY")
+            self.assertNotIn(secret, json.dumps(fresh_token))
+
+    def test_stale_fleet_and_repair_evidence_are_not_healthy(self) -> None:
+        import time as time_mod
+
+        from integrations.endpoint import DeviceRegistry
+        from web.auth.store import SessionRecord
+        from windows_repair.device_store import DeviceStore, grant_from_session
+
+        class Provider:
+            def collect(self, _procedure_id: str) -> dict:
+                return {
+                    "evidence_source": "live_windows",
+                    "mocked": False,
+                    "status": "collected",
+                    "ok": True,
+                    "problem_resolved": False,
+                    "collected_at_unix": int(time_mod.time()),
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            centre = self._centre(tmp)
+            now = time_mod.time()
+            registry_path = Path(tmp) / "devices.json"
+            registry = DeviceRegistry(registry_path, clock=lambda: now)
+            created = registry.create_enrolment("local-console")
+            device_secret = "e" * 32
+            registry.enrol(created["enrolment_code"], "Office PC", device_secret)
+            registry.submit(device_secret, {
+                "os_family": "windows",
+                "os_version": "test",
+                "disk_free_bytes": 10,
+                "disk_total_bytes": 20,
+                "memory_total_bytes": 30,
+                "boot_time_unix": 100,
+                "collected_at_unix": 1000,
+                "checks": [{
+                    "procedure_id": "win.storage.space",
+                    "evidence_source": "live_windows",
+                    "ok": True,
+                    "collected_at_unix": 1000,
+                    "summary": "disks=1",
+                }],
+            })
+
+            repair_path = Path(tmp) / "device.json"
+            store = DeviceStore(repair_path, ttl=10)
+            repair_secret = "d" * 32
+            device_id = store.enrol("acme", repair_secret)
+            end = now + 3600
+            grant = grant_from_session(SessionRecord(
+                "sess-ada", "op-ada", "ada", "operator", "csrf-ada", now, now, end, end,
+            ), "acme")
+            envelope = store.issue(
+                tenant_id="acme",
+                device_id=device_id,
+                procedure_id="win.storage.space",
+                grant=grant,
+            )
+            store.accept(repair_secret, envelope, provider=Provider())
+            raw = json.loads(repair_path.read_text(encoding="utf-8"))
+            raw["devices"][device_id]["last_seen"] = time_mod.time()
+            for state in raw["job_states"].values():
+                state["collected_at_unix"] = int(time_mod.time()) - 90_000
+                state["evidence_fresh"] = True
+            repair_path.write_text(json.dumps(raw), encoding="utf-8")
+
+            snapshot = self._healthy_snapshot()
+            snapshot["verified_at"] = datetime_now()
+            with patch.object(centre.health, "snapshot", return_value=snapshot):
+                with patch.dict(os.environ, {
+                    "OPERATOR_AUTH_DIR": tmp,
+                    "ENDPOINT_STATE_FILE": str(registry_path),
+                    "REPAIR_DEVICE_STATE": str(repair_path),
+                    "MICROSOFT_CLIENT_ID": "",
+                    "MICROSOFT_TOKEN_FILE": "",
+                }, clear=False):
+                    os.environ.pop("RAG_DOCS_DIR", None)
+                    report = build_report(centre)
+            fleet = next(item for item in report["components"] if item["name"] == "endpoint_fleet")
+            jobs = next(item for item in report["components"] if item["name"] == "repair_jobs")
+            self.assertEqual(fleet["state"], "DEGRADED")
+            self.assertNotEqual(fleet["state"], "HEALTHY")
+            self.assertIn("evidence_stale=true", fleet["evidence"])
+            self.assertEqual(jobs["state"], "DEGRADED")
+            self.assertNotEqual(jobs["state"], "HEALTHY")
+            self.assertTrue(any(
+                item.startswith("evidence_age_seconds=") and int(item.split("=", 1)[1]) > 86400
+                for item in jobs["evidence"]
+            ))
+            blob = json.dumps(report)
+            self.assertNotIn(device_secret, blob)
+            self.assertNotIn(repair_secret, blob)
+
+    def test_off_pod_is_not_copied_forward_as_current_health(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            centre = self._centre(tmp)
+            fresh = datetime_now()
+            snapshot = self._healthy_snapshot()
+            snapshot["verified_at"] = fresh
+            by_name = {item["name"]: item for item in snapshot["services"]}
+            by_name["qwen"]["verified_at"] = "2020-01-01T00:00:00Z"
+            by_name["qwen"]["state"] = "healthy"
+            by_name["gateway_ready"]["state"] = "healthy"
+            by_name["gateway_ready"]["verified_at"] = fresh
+            by_name["gateway_ready"]["pod"] = "stopped"
+            by_name["gateway_ready"]["health"] = {"status": "ok", "upstream": "ok"}
+            by_name["console"]["state"] = "healthy"
+            by_name["console"]["verified_at"] = fresh
+            by_name["console"]["detail"] = "model_engine_dead"
+            with patch.object(centre.health, "snapshot", return_value=snapshot):
+                with patch.dict(os.environ, {
+                    "OPERATOR_AUTH_DIR": tmp,
+                    "ENDPOINT_STATE_FILE": "",
+                    "REPAIR_DEVICE_STATE": "",
+                    "MICROSOFT_CLIENT_ID": "",
+                    "MICROSOFT_TOKEN_FILE": "",
+                }, clear=False):
+                    os.environ.pop("RAG_DOCS_DIR", None)
+                    report = build_report(centre)
+            model = next(item for item in report["components"] if item["name"] == "model")
+            gateway = next(item for item in report["components"] if item["name"] == "gateway")
+            console = next(item for item in report["components"] if item["name"] == "console")
+            self.assertEqual(model["state"], "UNKNOWN")
+            self.assertIn("stale_or_off_probe_not_current=true", model["evidence"])
+            self.assertEqual(gateway["state"], "DEGRADED")
+            self.assertIn("previous_health_not_copied_forward=true", gateway["evidence"])
+            self.assertEqual(console["state"], "DEGRADED")
+            self.assertNotEqual(report["overall"], "HEALTHY")
+            for component in (model, gateway, console):
+                self.assertNotEqual(component["state"], "HEALTHY")
+
+
+def datetime_now() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 if __name__ == "__main__":
