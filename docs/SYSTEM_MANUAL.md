@@ -8,7 +8,7 @@
 | --- | --- |
 | **Last updated** | 2026-10-22 |
 | **Git tip (code)** | see `git log -1`. A push is not the pod checkout. |
-| **Live Pod** | Approved A100 `mlar88u3ku8utm` ran `START.sh` at 13:11:19Z. That command exited 1 at 14:22:07Z and the pod id is no longer listed. A different A100, `gom4ualdk47qrj`, was running before 15:24:59Z and was not given `START.sh`. Do not start the H100 `xx9cjogra5vcwl`. Qwen health was not verified. |
+| **Live Pod** | A100 `gom4ualdk47qrj` (`excessive_gray_crocodile`), **$1.80/hr**. Health at 15:50:02Z was HTTP 200 on `:8002`, `:8010`, and `:8080`. Do not start a second copy. Do not start the H100 `xx9cjogra5vcwl`. The old pod `mlar88u3ku8utm` is gone. |
 | **Global Volume** | `cmv2p5m0d000007jk9o3931ea` (“New model container”), filesystem `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` |
 | **GitHub** | `https://github.com/henokmeron/AI-PLAYBOOK.md.git` |
 | **Your PC copy** | `C:\Users\henok\src\AI-PLAYBOOK.md` |
@@ -279,15 +279,9 @@ So: the Helpdesk agent is a **controlled coworker** for diagnosis and safe local
 
 ### A. Start after Stop (same volume)
 
-1. The approved pod `mlar88u3ku8utm` is no longer in the pod list. Do not start it again from an old button, and do not start the H100 `xx9cjogra5vcwl`. Do not create a new volume, a new pod, or an S3 API key. The S3 API does not list this Global Volume. `gom4ualdk47qrj` is a different A100 that was already running; do not run `START.sh` there unless that pod is the one you approved.
-2. SSH TCP `195.26.233.38` port `53380` worked until the load and then refused. Do not reuse that port. Read the Connect panel of the pod you actually intend to use.
-3. `bash /workspace/ai-platform-release/START.sh` already ran once on `mlar88u3ku8utm`, from 13:11:19Z to exit 1 at 14:22:07Z. Health never returned 200. Do not launch it again while a vLLM process from that start is still loading. The next command, only after you approve a new GPU load, is:
-
-```bash
-bash /workspace/ai-platform-release/START.sh
-```
-
-The full command restores the runtime under `/tmp` and loads Qwen. The 13:11:19Z run did that and exited 1 before `:8002` was healthy. A second run needs a new approval.
+1. The live pod is A100 `gom4ualdk47qrj` at **$1.80/hr**. Do not revive `mlar88u3ku8utm`. Do not start the H100 `xx9cjogra5vcwl`. Do not create a new volume, a new pod, or an S3 API key.
+2. Read the Connect panel of `gom4ualdk47qrj`. At 15:33Z, SSH over exposed TCP was `root@154.54.102.41` port `12572`. Do not reuse `195.26.233.38:53380`.
+3. Qwen, the gateway, and the console were HTTP 200 at 15:50:02Z. Do not run `START.sh` again while that vLLM is healthy. A new load needs a new approval, and only after this one is stopped.
 
 4. Tunnel to `:8080` and open the UI.
 5. Prefer **Stop** when idle. Prefer **not** Terminate (keeps the Pod definition; volume is separate either way).
@@ -375,7 +369,8 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 
 | Date | Change |
 | --- | --- |
-| 2026-10-22 | `START.sh` on `mlar88u3ku8utm` began at 13:11:19Z and exited 1 at 14:22:07Z. Health stayed HTTP 000. That pod id left the list. `gom4ualdk47qrj` was not given `START.sh`. The H100 was not started. Volume `START.sh`, the runtime archive, and the `6f07b58` snapshot were unchanged at 14:22:23Z. Production **NO-GO**. |
+| 2026-10-22 | A100 `gom4ualdk47qrj` at $1.80/hr finished loading Qwen. This session watched the load and did not run `START.sh`. Health at 15:50:02Z was HTTP 200 on `:8002`, `:8010`, and `:8080`. One completion returned `PLATFORM_OK`. One RAG answer cited 10 business days. The H100 was not started. No second pod was created. Mail, a second computer, Blackwell, and a fresh machine stay blocked. Production **NO-GO**. |
+| 2026-10-22 | `START.sh` on `mlar88u3ku8utm` began at 13:11:19Z and exited 1 at 14:22:07Z. Health stayed HTTP 000. That pod id left the list. `gom4ualdk47qrj` was not given `START.sh` by that session. The H100 was not started. Volume `START.sh`, the runtime archive, and the `6f07b58` snapshot were unchanged at 14:22:23Z. Production **NO-GO**. |
 | 2026-10-22 | Local archive of `00894206db6fec0238c6243e83ee7a5e18c7df08` SHA-256 `bf4355541d1dbeecfe6681c9bdfbe5235bff0dceed8a1570bb1e9d522e4f48be`, 383 members. This note is not inside that archive. Not copied to the volume. Production **NO-GO**. |
 | 2026-10-22 | Recovery follows running A100 `mlar88u3ku8utm` (`screeching_crimson_vole`) at $1.80/hr. Volume `cmv2p5m0d000007jk9o3931ea` is already on `/workspace`. Next cold start is `bash /workspace/ai-platform-release/START.sh`. Preflight already passed. The full command was not run. H100 `xx9cjogra5vcwl` stays Stopped. A listed model id is not healthy when engine `/health` is dead. Weights stay only on that volume. Production **NO-GO**. |
 | 2026-10-22 | Running pod is A100 `mlar88u3ku8utm` at $1.80/hr with Global Volume `cmv2p5m0d000007jk9o3931ea` on `/workspace`. Health ports refused connections. `START.sh --preflight` returned **PREFLIGHT_PASS**. Qwen was not loaded. The H100 stayed Stopped. The volume was not written. Production **NO-GO**. |
