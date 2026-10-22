@@ -31,3 +31,18 @@ python eval/rag/run_limits_probe.py --base-url http://127.0.0.1:8014 --key-file 
 It refuses the live ports.
 
 The 2026-10-14 numbers are in `docs/results/rag-benchmark-2026-10-14.md`.
+
+## Numbered quiz, no GPU
+
+`document_quiz_regression.py` builds its own sections. It does not read the
+handbook and it does not score memorised answers. It compares the old
+2,000-character prefix with the current question limit, packs the same
+retrieval at the spreadsheet ratio and at the prose ratio, and checks
+abstention and citations.
+
+```bash
+python eval/rag/document_quiz_regression.py
+```
+
+Exit 0 when every check passes. The 2026-10-23 counts are in
+`docs/results/document-quiz-regression-2026-10-23.md`.
