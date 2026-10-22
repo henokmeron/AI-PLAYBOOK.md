@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-22** (Recovery follows the running A100 `mlar88u3ku8utm` / `screeching_crimson_vole` at $1.80/hr. Volume `cmv2p5m0d000007jk9o3931ea` is mounted at `/workspace`. Preflight **passed**. The next cold start is `bash /workspace/ai-platform-release/START.sh`. It was **not** run. H100 `xx9cjogra5vcwl` stays **Stopped**. Production **NO-GO**.)
+Last updated: **2026-10-22** (Code commit `00894206db6fec0238c6243e83ee7a5e18c7df08` is on `main` and both feature branches. Local archive SHA-256 `bf4355541d1dbeecfe6681c9bdfbe5235bff0dceed8a1570bb1e9d522e4f48be`. Next cold start is `bash /workspace/ai-platform-release/START.sh` on running A100 `mlar88u3ku8utm`. It was **not** run. H100 stays **Stopped**. Production **NO-GO**.)
 
 ## Only this repository
 
@@ -168,6 +168,12 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-22 — archive of 0089420 recorded after the fact
+
+- Code commit `00894206db6fec0238c6243e83ee7a5e18c7df08` was pushed to `main` and fast-forwarded onto `feature/qwen-a100-start-hardening` and `feature/qwen3.5-27b-integration`. `git ls-remote` showed that SHA on `HEAD`, `main`, and both feature branches. The parent was `f7043f8ad8ed9ac39423f96fe7fcbd12f21fe7ba`. Nothing was force-pushed.
+- Local archive, read back in Python: `%LOCALAPPDATA%\AI-PLAYBOOK\releases\00894206db6fec0238c6243e83ee7a5e18c7df08\AI-PLAYBOOK-00894206db6fec0238c6243e83ee7a5e18c7df08.tar.gz`. 719,707 bytes, 383 tar members, SHA-256 `bf4355541d1dbeecfe6681c9bdfbe5235bff0dceed8a1570bb1e9d522e4f48be`. The sidecar matched. It contains `model_engine_dead` and the running A100 in `docs/release/RECOVERY.md`. This recording commit is not inside that archive. The archive was not copied to the volume. It was not extracted onto a fresh machine.
+- The first `git archive` attempt did not see the new directory. The directory was created and the same commit was archived, then the bytes were read back. Weights were not copied. The H100 stayed **Stopped**. Production **NO-GO**.
 
 ### 2026-10-22 — recovery path is the running A100; a dead engine is not healthy
 
