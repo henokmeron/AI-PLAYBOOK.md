@@ -138,7 +138,8 @@ flowchart LR
 | `/workspace/rag-managed-docs/` | Documents you upload in Document Q&A | Grows with use |
 | `/workspace/agent-task-history/` | Saved helpdesk/agent task records | Small JSON files |
 | `/workspace/ai-platform-release/START.sh` | Volume copy of the launcher | Tiny |
-| `/workspace/ai-platform-backups/source-snapshots/` | Tarball backups of repo tips | Hundreds of MB each |
+| `/workspace/ai-platform-backups/source-snapshots/` | Tarball backups of repo tips | Hundreds of MB each. Newest checked copy: `AI-PLAYBOOK.md-runpod-first-6f07b58.tar.gz`, SHA-256 `3cf154feb99536781232408ea06cc93373e14fe69e1d866daffa64ecdb015de7` |
+| `/workspace/platform-state/operator-backups/20261022T015922Z/` | Scrypt operator backup from 2026-10-22 | Small. Sessions and the gateway key are not in it |
 
 Optional / leave alone unless you deliberately switch models: Gemma weights (if present under `/workspace/models/…`).
 
@@ -285,6 +286,8 @@ bash /workspace/ai-platform-release/START.sh --preflight
 bash /workspace/ai-platform-release/START.sh
 ```
 
+The 2026-10-22 weights and source snapshot are on Global Volume `cmv2p5m0d000007jk9o3931ea`. Attach that existing volume. Do not create a new volume. Run the two commands only after the new pod is Running. They were not run during the shutdown save.
+
 4. Tunnel to `:8080` and open the UI.
 5. Prefer **Stop** when idle. Prefer **not** Terminate (keeps the Pod definition; volume is separate either way).
 
@@ -371,6 +374,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 
 | Date | Change |
 | --- | --- |
+| 2026-10-22 | Shutdown save. Source snapshot `6f07b58` and operator backup `20261022T015922Z` were written to the existing Global Volume and checksum-checked. Weights, runtime archive, RAG, `START.sh`, and older snapshots were not replaced. The gateway key was not copied. Next start, after a pod with this volume is Running: `bash /workspace/ai-platform-release/START.sh --preflight` then `bash /workspace/ai-platform-release/START.sh`. Not run during the save. Production **NO-GO**. |
 | 2026-10-22 | System Status shows the finish-order board from `GET /api/acceptance`. Decision **NO-GO**. Saved Entra redirect re-read. `update-source-only.sh` now checks the GitHub origin and was not run on the H100. Volume snapshot script stays dry-run without `VOLUME_COPY_APPROVED=yes`. Second endpoint and live Blackwell remain **NOT TESTED**. Not deployed. |
 | 2026-10-22 | Release helper finds a working git binary, and `update-source-only.sh` can fast-forward a checkout without signalling Qwen. That script was not run on the H100. Default Microsoft sign-in requests `User.Read` and `Mail.Read` only. Mail remains **NOT CONFIGURED**. Not deployed. |
 | 2026-10-22 | Read-only collectors for activation, USB, Wi-Fi, proxy, TLS, browser, permissions, and crash evidence. Ran on this development PC. Heartbeat list unchanged. H100 pod inspected and not restarted. See `docs/results/asset-inventory-2026-10-22.md`. Not deployed. |

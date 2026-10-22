@@ -1,5 +1,24 @@
 # Asset inventory — 2026-10-22
 
+## Shutdown save the same day
+
+The pod was left running. No service was restarted. No Azure resource was created. No secret is recorded here. New files were written only at the paths below. Older volume files were not overwritten.
+
+| Item | Evidence | Label |
+| --- | --- | --- |
+| Source snapshot `6f07b581f4dd4a7ee2811a99e9ac62edbee3eac8` | `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-runpod-first-6f07b58.tar.gz` | **VERIFIED**. 696,562 bytes, 380 members, SHA-256 `3cf154feb99536781232408ea06cc93373e14fe69e1d866daffa64ecdb015de7`. `sha256sum -c` OK against `/workspace/ai-platform-backups/manifests/AI-PLAYBOOK.md-runpod-first-6f07b58.sha256`. |
+| Release manifest and sidecar | `/workspace/ai-platform-backups/manifests/AI-PLAYBOOK-6f07b581f4dd4a7ee2811a99e9ac62edbee3eac8.manifest.json` and `...tar.gz.sha256` | **VERIFIED** copied. File SHA-256 `6e1a628b9adcec49c6e8b4db4ded7c58540875c0b60079255e97ee17cc684426` and `1e401f38395f08eb8e055c4c4ed7e46fb70ac9241c3b63cbfb1179a9f104dc8a`. |
+| Save note | `/workspace/ai-platform-backups/manifests/shutdown-asset-manifest-6f07b58-20261022T015922Z.txt` | Written. No secrets. |
+| Operator backup | `/workspace/platform-state/operator-backups/20261022T015922Z/` | **VERIFIED** read-back. `operators.json` 378 bytes, SHA-256 `41811efc68d6723d5dc77dc1af06c882397b793ec9d5d0eae03ea9bef91ac6bf`, one enabled admin, scrypt. `SHA256SUMS` present. |
+| Runtime archive | `sha256sum -c /workspace/runtime-setup/qwen-vllm/SHA256SUMS` | **VERIFIED** OK. `vllm-qwen-env.tar.zst` line remains `666bb7c3fde67503c1d728d7d9501d597069e527eabb617228beebe5e626c9fb`. Not re-downloaded. |
+| Weights | 11 shard files listed under the known directory, about 52G | Shard bytes **NOT RECOMPUTED**. Small manifest file still SHA-256 `8f4e2624e9d53ece3c7590b02b6cdde16d7072b2aa98687225a77abe7ea60185`. |
+| Launcher | `/workspace/ai-platform-release/START.sh` | **VERIFIED** unchanged. SHA-256 `41af7e93f34f2d28d9b97d53b18a4c58565dcb50e35bcdd6e71e40cfdaf92ca6`. Same as git `ops/release/START.sh`. |
+| Older snapshot `01e7692` | re-hashed | **VERIFIED** still `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370`. |
+| Health after the copy | `2026-10-22T02:00:24Z` | `:8002/health` 200, `:8010/health` 200, `:8080/api/status` 200. |
+| Not copied | `/tmp/platform-gateway.key`, `/tmp/console-operators/sessions.json`, `/tmp/console-operator.secret`, `/tmp/vllm-qwen-env` | Left on pod-local disk. The token file was absent. The gateway key is recreated on start. |
+
+The full `snapshot-published-tip.sh` path was not used, because that path also installs `START.sh` and appends `VERSION.txt`. The archive bytes are the local package of `6f07b58`. A documentation commit after this inventory is not required on the volume.
+
 ## Later the same day (read-only recheck)
 
 No Pod was started, stopped, resized, reloaded, or redeployed. No volume file was written. No Azure resource was created. No secret was opened or copied into this file.

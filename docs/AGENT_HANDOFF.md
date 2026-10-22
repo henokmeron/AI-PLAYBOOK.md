@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-22** (third pass: saved loopback redirect re-read on Authentication; billing re-read; release checksum sidecar, source-update preflight, and volume-transfer dry-run added. Go-live **NO-GO**.)
+Last updated: **2026-10-22** (shutdown save: source snapshot `6f07b58` and one operator backup are on the Global Volume and checksum-checked. The pod was left running. Go-live **NO-GO**.)
 
 ## Only this repository
 
@@ -51,7 +51,7 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 | SSH (TCP) | `root@216.81.245.55 -p 25839`, key `%USERPROFILE%\.ssh\id_ed25519` | **VERIFIED** read-only on 2026-10-22. The key file is present on this PC. Do not print it. |
 | GPU / driver | H100 NVL, **85,415 MiB used** of **95,830 MiB**, driver **595.91.07** | **VERIFIED** 2026-10-22 by `nvidia-smi`. Console GPU util was 0%. |
 | Container | PyTorch 2.8.0; runtime in `/tmp/vllm-qwen-env` | Restored from volume archive. |
-| Global Volume | Console id `cmv2p5m0d000007jk9o3931ea` (“New model container”), filesystem `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (`fuse.geesefs`) | **VERIFIED** 2026-10-22. Storage page: 126.0 GB, 1,794 objects, $11.34/mo. No volume was created or written. |
+| Global Volume | Console id `cmv2p5m0d000007jk9o3931ea` (“New model container”), filesystem `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (`fuse.geesefs`) | **VERIFIED** 2026-10-22. A new source snapshot `6f07b58` and one operator backup were written. Weights, the runtime archive, RAG, `START.sh`, and older snapshots were not overwritten. No new volume was created. |
 | Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | **VERIFIED** 2026-10-22: `:8002/health` 200, `:8010/health` 200, `:8080/` 200, `:8080/api/status` 200. Pod checkout `/tmp/AI-PLAYBOOK` is **`a0e9422145aae4e38025709d1ca88288e42f375b`**, behind GitHub `main`. Do not claim the running console is the latest commit. |
 | Other Pod | Older idle/terminated Pods | Leave alone unless user says otherwise |
 
@@ -62,10 +62,9 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 - RAG wheels: `/workspace/runtime-setup/rag-wheelhouse/`.
 - Launcher: `/workspace/ai-platform-release/START.sh` (canonical in git: `ops/release/START.sh`).
 - Managed docs: `/workspace/rag-managed-docs`.
-- Source snapshot last confirmed **on the volume** is still `01e76922`:  
-  `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-runpod-first-01e7692.tar.gz`  
-  SHA-256: `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370` (re-checked against the file and its manifest on 2026-10-14).  
-  Older snapshots `083fa58` and `0b49946` were still on the volume then. **No newer snapshot was written on 2026-10-15.** The shutdown pass could not SSH to the Pod. See `docs/results/shutdown-recovery-2026-10-15.md`.
+- Source snapshot written and checksum-checked on the volume on 2026-10-22: `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-runpod-first-6f07b58.tar.gz`. SHA-256 `3cf154feb99536781232408ea06cc93373e14fe69e1d866daffa64ecdb015de7` (696,562 bytes, 380 members, commit `6f07b581f4dd4a7ee2811a99e9ac62edbee3eac8`). Checksum file `/workspace/ai-platform-backups/manifests/AI-PLAYBOOK.md-runpod-first-6f07b58.sha256` (`sha256sum -c` OK).
+- Operator backup: `/workspace/platform-state/operator-backups/20261022T015922Z/` (`operators.json` SHA-256 `41811efc68d6723d5dc77dc1af06c882397b793ec9d5d0eae03ea9bef91ac6bf`, plus `SHA256SUMS`). Scrypt hash only.
+- Older snapshot `01e7692` was re-checked the same day and still SHA-256 `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370`. It was not overwritten.
 
 ### Git
 
@@ -164,6 +163,18 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-22 — volume snapshot before the owner stops the H100
+
+- Remote was `https://github.com/henokmeron/AI-PLAYBOOK.md.git`. `git ls-remote` showed `6f07b581f4dd4a7ee2811a99e9ac62edbee3eac8` on `main`, `feature/qwen-a100-start-hardening`, and `feature/qwen3.5-27b-integration`. Local HEAD matched. Untracked `__pycache__` was left uncommitted. The pod was not stopped, resized, reloaded, or redeployed. Qwen, the gateway, and the console were not restarted.
+- Local archive re-hashed before the copy: `%LOCALAPPDATA%\AI-PLAYBOOK\releases\6f07b581f4dd4a7ee2811a99e9ac62edbee3eac8\AI-PLAYBOOK-6f07b581f4dd4a7ee2811a99e9ac62edbee3eac8.tar.gz`, 696,562 bytes, 380 members, SHA-256 `3cf154feb99536781232408ea06cc93373e14fe69e1d866daffa64ecdb015de7`. It contains `ops/release/START.sh`, `snapshot-published-tip.sh`, and `update-source-only.sh`. This note is a later commit and is not inside that archive.
+- `snapshot-published-tip.sh` was not executed. With `VOLUME_COPY_APPROVED=yes` it would also run `install-to-volume.sh` and append `VERSION.txt`. Those existing files were left untouched. The already verified local archive, its manifest, and its sidecar were copied to new paths only.
+- Volume read-back: `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-runpod-first-6f07b58.tar.gz` SHA-256 `3cf154feb99536781232408ea06cc93373e14fe69e1d866daffa64ecdb015de7`, 696,562 bytes, 380 members. `sha256sum -c` of `/workspace/ai-platform-backups/manifests/AI-PLAYBOOK.md-runpod-first-6f07b58.sha256` printed OK. Sidecar and manifest JSON were copied beside it. Manifest text: `/workspace/ai-platform-backups/manifests/shutdown-asset-manifest-6f07b58-20261022T015922Z.txt`.
+- Already on the volume and re-checked: weights directory present (11 shards listed, about 52G; shard bytes **NOT RECOMPUTED**; small manifest file still SHA-256 `8f4e2624e9d53ece3c7590b02b6cdde16d7072b2aa98687225a77abe7ea60185`). Runtime `sha256sum -c SHA256SUMS` OK, including `vllm-qwen-env.tar.zst` `666bb7c3fde67503c1d728d7d9501d597069e527eabb617228beebe5e626c9fb`. RAG docs and wheelhouse present. `/workspace/ai-platform-release/START.sh` SHA-256 `41af7e93f34f2d28d9b97d53b18a4c58565dcb50e35bcdd6e71e40cfdaf92ca6`, same as git `ops/release/START.sh`, and it contains `restore_from_snapshot` with `PLATFORM_BRANCH` default `main`. Older snapshot `01e7692` still `a385f8a8e0f0c9f5db0d8cb48c8bbdde6a627bb6dd19690adb3cff1cd1228370`. Mount remained `fuse.geesefs` `5aac0c77-6fcc-4be9-a112-dfe3890e1373`.
+- Operator file existed only under `/tmp/console-operators/operators.json` (mode 0600, 378 bytes, one enabled admin, scrypt, no plaintext password field). Copied to `/workspace/platform-state/operator-backups/20261022T015922Z/` with `SHA256SUMS`. File SHA-256 `41811efc68d6723d5dc77dc1af06c882397b793ec9d5d0eae03ea9bef91ac6bf`. Sessions were not copied. `/tmp/platform-gateway.key` was not copied; start recreates it. `/tmp/microsoft-365-token.json` was absent. `/tmp/console-operator.secret` (25 bytes, mode 0600) was not copied. `/tmp/vllm-qwen-env` was not copied.
+- SSH read at `2026-10-22T01:55:49Z`: `/tmp/AI-PLAYBOOK` `a0e9422145aae4e38025709d1ca88288e42f375b`, origin correct, no tracked edits. Health 200 on `:8002/health`, `:8010/health`, `:8080/api/status`. GPU NVIDIA H100 NVL, 85,415 MiB of 95,830 MiB, driver 595.91.07, util 0%. Health checked again at `2026-10-22T02:00:24Z` and was still 200. `START.sh` was not run.
+- A pod stop deletes `/tmp` (checkout, restored env, gateway key, sessions, the operator secret). The next start still works because GitHub `main` is cloned by the volume launcher, the runtime archive and weights stay on the volume, and the new snapshot is the offline fallback. After a new pod with this same volume is Running: `bash /workspace/ai-platform-release/START.sh --preflight` then `bash /workspace/ai-platform-release/START.sh`. Do not run that while this pod is still the one being shut down.
+- The commit on the volume is `6f07b581f4dd4a7ee2811a99e9ac62edbee3eac8`. A later documentation commit is not copied to the volume. Production **NO-GO**.
 
 ### 2026-10-22 — finish-order evidence, release checks, still NO-GO
 

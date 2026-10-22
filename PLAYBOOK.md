@@ -311,6 +311,10 @@ Phase 7 — Advanced model customisation
 - Treat the playbook as a reproducible blueprint for future AI-assisted automation.
 
 ## 13. Change log
+### 2026-10-22 — Source snapshot saved before the H100 stop
+
+- **VERIFIED:** Global Volume copy of commit `6f07b581f4dd4a7ee2811a99e9ac62edbee3eac8` at `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-runpod-first-6f07b58.tar.gz`, SHA-256 `3cf154feb99536781232408ea06cc93373e14fe69e1d866daffa64ecdb015de7`. Operator backup `/workspace/platform-state/operator-backups/20261022T015922Z/`. Runtime checksum OK. Weight shards were not re-hashed. The pod was left running. `START.sh` was not run. Go-live **NO-GO**.
+
 ### 2026-10-22 — Saved redirect re-read, release checks, still NO-GO
 
 - **VERIFIED:** Entra Authentication (Preview), not the manifest editor, shows platform Mobile and desktop applications and redirect `http://127.0.0.1:18080/api/microsoft/callback`. Supported accounts: Single tenant only - Default Directory. Tenant ID from Entra overview: `d595636e-9ef4-4890-b8a7-bde8dd5cab03`. Delegated `Mail.Read` and `User.Read` only. No mailbox was read. Microsoft stays **NOT CONFIGURED**. `MICROSOFT_TENANT=common` will not complete sign-in.

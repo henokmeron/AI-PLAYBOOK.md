@@ -63,7 +63,7 @@ Qwen and the gateway are left running if operator recovery fails. Provision an a
 
 Preflight: `/workspace` must be `fuse.geesefs`, the Qwen weights and runtime archive must already be there, and the destination archive must not already exist. Verify: `sha256sum -c` the new checksum file. Rollback: if that check fails, delete only the new archive and its checksum file. Older snapshots, weights, and the runtime archive stay. Acceptance: the printed digest matches the read-back, and Qwen, the gateway, and the console were not signalled.
 
-Do not run that script until the owner approves a volume copy. It was not run on 2026-10-22. `ops/release/volume_transfer.py` only returns this plan. `copied` stays false even when the plan is approved, so importing it cannot write the volume.
+On 2026-10-22 the owner approved one new snapshot. `snapshot-published-tip.sh` was not executed, because it also runs `install-to-volume.sh` and appends `VERSION.txt`. The local archive of `6f07b581f4dd4a7ee2811a99e9ac62edbee3eac8` was copied to `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-runpod-first-6f07b58.tar.gz`. Its SHA-256 is `3cf154feb99536781232408ea06cc93373e14fe69e1d866daffa64ecdb015de7`, and `sha256sum -c` on the volume matched. The operator backup is `/workspace/platform-state/operator-backups/20261022T015922Z/`. The gateway key was not copied. `ops/release/volume_transfer.py` only returns a plan. `copied` stays false even when the plan is approved, so importing it cannot write the volume.
 
 An isolated local recovery is:
 
