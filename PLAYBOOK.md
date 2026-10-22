@@ -311,6 +311,10 @@ Phase 7 — Advanced model customisation
 - Treat the playbook as a reproducible blueprint for future AI-assisted automation.
 
 ## 13. Change log
+### 2026-10-22 — Document path and collection cache
+
+- **VERIFIED locally:** A document filename that contains `:` is rejected. On this Windows PC that name previously attached a stream to another file. A collection path that is a symbolic link to another collection is rejected for list and upload. Invalidating one BM25 folder no longer drops a sibling folder whose path only shares a prefix. `python -m ops.run_tests` was 41 modules, 0 failed, exit 0. Live Qwen was not run. Go-live **NO-GO**.
+
 ### 2026-10-22 — Local archive of 5cb961b
 
 - **VERIFIED locally:** `%LOCALAPPDATA%\AI-PLAYBOOK\releases\5cb961b29173dbceb8cfe661bb23a5f0cbeb39c5\AI-PLAYBOOK-5cb961b29173dbceb8cfe661bb23a5f0cbeb39c5.tar.gz`, SHA-256 `3d77ab37436ed25caa8940a3da45a6768cd84943c768e9794c86c35647730984`, 709,868 bytes, 383 members. The sidecar matched. This note is not inside that archive. Not copied to the volume. Temp extract `%TEMP%\ai-playbook-recover-5cb961b-temp-extract` is not a fresh machine. Go-live **NO-GO**.

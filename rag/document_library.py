@@ -39,8 +39,10 @@ def validate_filename(filename: Any) -> str:
         raise DocumentLibraryError(f"filename must be 1–{MAX_FILENAME_CHARS} characters")
     if filename in {".", ".."} or filename.startswith("."):
         raise DocumentLibraryError("hidden or relative filenames are not allowed")
-    if "/" in filename or "\\" in filename or Path(filename).name != filename:
+    if "/" in filename or "\\" in filename or ":" in filename or Path(filename).name != filename:
         raise DocumentLibraryError("filename must be a plain filename without path separators")
+    if filename.endswith((" ", ".")):
+        raise DocumentLibraryError("filename must not end with a space or a dot")
     if any(ord(character) < 32 or ord(character) == 127 for character in filename):
         raise DocumentLibraryError("filename contains a control character")
     suffix = Path(filename).suffix.casefold()
@@ -54,8 +56,11 @@ def validate_filename(filename: Any) -> str:
 def _collection_dir(root: Path, collection: str) -> Path:
     validated = validate_collection_name(collection)
     resolved_root = root.resolve()
-    target = (resolved_root / validated).resolve()
-    if target == resolved_root or resolved_root not in target.parents:
+    raw = resolved_root / validated
+    if raw.is_symlink():
+        raise DocumentLibraryError("collection path must not be a symbolic link")
+    target = raw.resolve()
+    if target == resolved_root or resolved_root not in target.parents or target.is_symlink():
         raise DocumentLibraryError("invalid collection path")
     return target
 

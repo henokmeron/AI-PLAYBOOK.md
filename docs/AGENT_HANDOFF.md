@@ -164,6 +164,14 @@ E2E helper (uses key file; does not print it):
 
 ## Session log (newest first)
 
+### 2026-10-22 — document names and collection cache isolation
+
+- Remote was `https://github.com/henokmeron/AI-PLAYBOOK.md.git`. Before this commit, `git ls-remote` showed `758177dfad9c6ddac588debce55ab0729704c8fd` on `HEAD`, `main`, `feature/qwen-a100-start-hardening`, and `feature/qwen3.5-27b-integration`. Untracked `__pycache__` was left uncommitted. The pod was not started. No volume, S3 key, or other paid resource was created. No secret was printed.
+- A filename containing a colon, such as `notes.txt:hidden.md`, was accepted and on this Windows PC attached a stream to `notes.txt` without replacing the visible text. `validate_filename` now rejects `:`. The same upload is refused and the visible file is unchanged.
+- A collection directory that is a symbolic link to another collection was listed and written as that other collection. `list_documents` and `store_document` now refuse the link. The target collection is unchanged.
+- `FileBackedBm25Store.invalidate` used a path prefix, so invalidating `.../col` dropped the file cache for `.../col2`. It now drops only `resolved-path/` keys. The sibling collection cache stays.
+- LOCAL/MOCK: the three new tests failed before the fix and passed after it. `python -m ops.run_tests` on Python 3.11 was 41 modules, 0 failed, exit 0, about 180 seconds. `integrations.tests.test_endpoint` skipped 1. `api.test_gateway_reliability` logged a Windows socket abort and still passed. Live H100 scripts were not run. Acceptance percentages were not raised. Production **NO-GO**.
+
 ### 2026-10-22 — archive of 5cb961b recorded after the fact
 
 - Code commit `5cb961b29173dbceb8cfe661bb23a5f0cbeb39c5` was pushed to `main` and fast-forwarded onto `feature/qwen-a100-start-hardening` and `feature/qwen3.5-27b-integration`. `git ls-remote` showed that SHA on `HEAD` and all three refs. The parent was `4ee02bd843a8e40d59f8121e09c0b81bdabe7648`. Nothing was force-pushed.

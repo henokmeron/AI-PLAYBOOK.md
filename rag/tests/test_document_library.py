@@ -48,6 +48,30 @@ class DocumentLibraryTests(unittest.TestCase):
         with self.assertRaises(DocumentLibraryError):
             validate_filename("folder\\outside.md")
 
+    def test_colon_name_does_not_attach_a_stream_to_another_file(self) -> None:
+        store_document(self.root, "c", "notes.txt", self.encoded("Visible policy text."))
+        with self.assertRaises(DocumentLibraryError):
+            store_document(self.root, "c", "notes.txt:hidden.md", self.encoded("hidden salary"))
+        self.assertEqual((self.root / "c" / "notes.txt").read_text(encoding="utf-8"), "Visible policy text.")
+        self.assertEqual(
+            [item["filename"] for item in list_documents(self.root, "c")],
+            ["notes.txt"],
+        )
+
+    def test_symlink_collection_does_not_expose_another_collection(self) -> None:
+        store_document(self.root, "hr", "secret.txt", self.encoded("SECRET_SALARY table."))
+        link = self.root / "finance"
+        link.symlink_to(self.root / "hr", target_is_directory=True)
+        with self.assertRaises(DocumentLibraryError):
+            list_documents(self.root, "finance")
+        with self.assertRaises(DocumentLibraryError):
+            store_document(self.root, "finance", "extra.txt", self.encoded("planted text"))
+        self.assertEqual(
+            [item["filename"] for item in list_documents(self.root, "hr")],
+            ["secret.txt"],
+        )
+        self.assertEqual((self.root / "hr" / "secret.txt").read_text(encoding="utf-8"), "SECRET_SALARY table.")
+
     def test_unsupported_extension_is_rejected(self) -> None:
         with self.assertRaises(DocumentLibraryError):
             validate_filename("malware.exe")

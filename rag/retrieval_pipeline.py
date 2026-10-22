@@ -81,9 +81,12 @@ class FileBackedBm25Store:
 
     def invalidate(self, folder: Path) -> None:
         key = str(folder.resolve())
+        # File keys are ``resolved-path/relative``. A bare prefix would also
+        # drop ``resolved-path2/...``, which is a different collection.
+        prefix = key + "/"
         with self._lock:
             self._collections.pop(key, None)
-            for file_key in [k for k in self._files if k.startswith(key)]:
+            for file_key in [k for k in self._files if k.startswith(prefix)]:
                 self._files.pop(file_key, None)
 
     def load(self, folder: Path) -> CollectionIndex:

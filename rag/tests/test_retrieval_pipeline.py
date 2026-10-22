@@ -152,6 +152,20 @@ class StoreTests(unittest.TestCase):
         self.store.invalidate(self.folder)
         self.assertIsNot(self.store.load(self.folder), first)
 
+    def test_invalidate_keeps_a_sibling_whose_path_shares_a_prefix(self) -> None:
+        sibling = self.folder.parent / (self.folder.name + "2")
+        sibling.mkdir()
+        (sibling / "a.txt").write_text("SIBLING_TOKEN expense policy.", encoding="utf-8")
+        self.store.load(self.folder)
+        self.store.load(sibling)
+        sibling_key = str(sibling.resolve())
+        sibling_files = [key for key in self.store._files if key.startswith(sibling_key + "/")]
+        self.assertTrue(sibling_files)
+        self.store.invalidate(self.folder)
+        for key in sibling_files:
+            self.assertIn(key, self.store._files)
+        self.assertIn(sibling_key, self.store._collections)
+
     def test_unreadable_file_is_skipped_not_fatal(self) -> None:
         (self.folder / "broken.docx").write_bytes(b"not a zip")
         index = self.store.load(self.folder)
