@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-22T16:30Z** (Coordinator integrated uncommitted specialist edits on top of `409c891`. A100 `gom4ualdk47qrj` was not restarted. Empty tenant and `common` resolve to directory `d595636e-9ef4-4890-b8a7-bde8dd5cab03` and are not sent. The running console has no `MICROSOFT_CLIENT_ID` and no token file. Mail stays **NOT CONFIGURED**. Inference and one RAG answer from about 15:50Z stay **LIVE VERIFIED** for that sample only. Second endpoint, Blackwell, and fresh-machine recovery stay open. Production **NO-GO**.)
+Last updated: **2026-10-22T18:25Z** (Tip `d1e766e` running in gateway 53074 and console 53091 on `gom4ualdk47qrj`; vLLM 1826 untouched. Live completion and cited RAG verified; RAG regression 5/6. Microsoft configured but not connected; sign-in blocked on operator login. See `docs/results/live-acceptance-2026-10-22.md`.) Previous: **2026-10-22T16:30Z** (Coordinator integrated uncommitted specialist edits on top of `409c891`. A100 `gom4ualdk47qrj` was not restarted. Empty tenant and `common` resolve to directory `d595636e-9ef4-4890-b8a7-bde8dd5cab03` and are not sent. The running console has no `MICROSOFT_CLIENT_ID` and no token file. Mail stays **NOT CONFIGURED**. Inference and one RAG answer from about 15:50Z stay **LIVE VERIFIED** for that sample only. Second endpoint, Blackwell, and fresh-machine recovery stay open. Production **NO-GO**.)
 
 ## Only this repository
 
@@ -162,6 +162,15 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-22 — tip d1e766e deployed to gateway and console on gom4ualdk47qrj; live acceptance
+
+- Full evidence: `docs/results/live-acceptance-2026-10-22.md` (commands, times, HTTP codes, pids, and a JSON block). SSH is now `root@154.54.102.41 -p 12572`; `216.81.245.55:25839` refused.
+- `/tmp/AI-PLAYBOOK` was fast-forwarded `be9cbd2` → `d1e766ebc9afec185c328f279949012447417215` with `ops/release/update-source-only.sh` at 18:17:15Z. No new Python dependency. Only the gateway (12581 → **53074**) and the console (12593 → **53091**) were restarted, with the launcher's commands and environment. Logs now go to `/tmp/platform-diagnostics/`, not `/workspace`. The `.pid` files under `/workspace/platform-diagnostics/first-release/` are stale. vLLM stayed pid **1826**. No endpoint reports a SHA. Both new processes started after the checkout mtime.
+- **LIVE VERIFIED**: the gateway completion, 5 cited RAG answers with matching text (3 demo, 2 managed), 3 abstentions, a 404 for a missing collection, and 400 for malformed uploads with nothing written. `agents.live_smoke` exited 0. `run_live_platform_smoke` exited 0 (6/6) with `VLLM_BASE_URL=http://127.0.0.1:8002/v1`.
+- **FAILED**: `run_live_rag_regression` 5/6. P3 ("train ticket") abstains because the policy says "rail" (BM25 0.77 < 2.30). It also fails on `be9cbd2`, so this deploy did not cause it. `agents.live_async_smoke` exited 1 with 403 because it has no operator session.
+- Microsoft: the console now has `MICROSOFT_CLIENT_ID_FILE=/tmp/microsoft-client-id` (0600) and `MICROSOFT_TENANT=d595636e-…`. The OAuth status is configured and disconnected. The authorize URL uses the tenant path, PKCE S256, and the loopback redirect. `/api/microsoft/start` returns 401 until an operator logs in, and this session has no operator password, so the browser check is **BLOCKED** and no mailbox was read. `microsoft_configuration()`, `ops/preflight.py`, and `ops_centre/director.py` read only `MICROSOFT_CLIENT_ID`, so they still say NOT CONFIGURED when the file is used. Not fixed here.
+- Next agent: do not restart vLLM 1826. If the console is restarted again, pass the same `MICROSOFT_CLIENT_ID_FILE` and `MICROSOFT_TENANT`, or sign-in reverts to 409.
 
 ### 2026-10-22 — coordinator integrated specialist edits; production stays NO-GO
 
