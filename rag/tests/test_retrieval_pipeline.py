@@ -311,6 +311,31 @@ class SearchAndEvidenceTests(unittest.TestCase):
         self.assertEqual([group.chunk.source for group in outcome.groups], ["policy.txt"])
         self.assertTrue(all("museum" not in group.chunk.text.casefold() for group in outcome.groups))
 
+    def test_train_ticket_paraphrase_cites_rail_policy_without_lifting_abstention(self) -> None:
+        index = rp.load_collection(HERE.parent / "sample_docs")
+        outcome = rp.search(
+            "What type of train ticket should employees choose?",
+            index, 4, min_score=2.30, min_coverage=0.15,
+        )
+        self.assertFalse(outcome.abstain, (outcome.reason, outcome.top_score, outcome.top_coverage))
+        chunk = outcome.groups[0].chunk
+        self.assertEqual(chunk.source, "expenses-policy.md")
+        self.assertIn("standard class", chunk.text)
+        self.assertEqual(rp.quote_from_chunk("standard class", chunk.text), "standard class")
+        self.assertIsNone(rp.quote_from_chunk("the maximum ticket price is 50 pounds", chunk.text))
+        for question in (
+            "What colour is the CEO's yacht?",
+            "What is the company's VAT registration number?",
+            "What is the maximum permitted train ticket price?",
+        ):
+            absent = rp.search(question, index, 4, min_score=2.30, min_coverage=0.15)
+            if question.endswith("price?"):
+                if not absent.abstain:
+                    self.assertTrue(all("price" not in group.chunk.text.casefold() for group in absent.groups))
+                continue
+            self.assertTrue(absent.abstain, (question, absent.reason, absent.top_score, absent.top_coverage))
+            self.assertEqual(absent.groups, [])
+
     def test_on_topic_question_passes_coverage_gate(self) -> None:
         outcome = rp.search("How many business days to submit expense receipts?", self.index, 8, min_coverage=0.15)
         self.assertFalse(outcome.abstain)

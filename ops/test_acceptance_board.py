@@ -212,6 +212,15 @@ class AcceptanceBoardTests(unittest.TestCase):
             self.assertEqual(payload["live_score"]["passed"], 0)
             self.assertTrue(payload["evidence_file_error"])
 
+    def test_short_sha_cannot_pass_a_gate(self) -> None:
+        gates = all_passing()
+        gates["inference_completion"] = [record("completion_ok", deployed="be9cbd2")]
+        payload = self.run_board(gates)
+        gate = self.gate(payload, "inference_completion")
+        self.assertFalse(gate["passed"])
+        self.assertIn("40-character SHA", " ".join(gate["reasons"]))
+        self.assertEqual(payload["decision"], "NO-GO")
+
     def test_unknown_intended_tip_fails_deployment(self) -> None:
         gates = all_passing()
         data = {"schema_version": 1, "gates": {k: {"evidence": v} for k, v in gates.items()}}

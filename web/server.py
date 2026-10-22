@@ -532,10 +532,18 @@ class Handler(BaseHTTPRequestHandler):
     def config(self) -> Config:
         return self.server.config  # type: ignore[attr-defined]
 
+    def parse_request(self) -> bool:
+        # One response per connection. HTTP/1.1 keep-alive on Windows aborts
+        # the next read with WinError 10053 after the client has already finished.
+        ok = super().parse_request()
+        self.close_connection = True
+        return ok
+
     def send_bytes(self, status: int, body: bytes, content_type: str) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
         for name, value in SECURITY_HEADERS:
             self.send_header(name, value)
         self.end_headers()
@@ -628,6 +636,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(encoded)))
+        self.send_header("Connection", "close")
         for name, value in SECURITY_HEADERS:
             self.send_header(name, value)
         if set_session is not None:

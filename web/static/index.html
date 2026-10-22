@@ -39,12 +39,12 @@
         </div>
       </div>
       <nav class="nav-list" aria-label="Primary">
-        <button type="button" data-view="chat" id="nav-chat">Chat</button>
-        <button type="button" data-view="documents" id="nav-documents">Document Q&amp;A</button>
-        <button type="button" data-view="agent" id="nav-agent">IT Helpdesk</button>
-        <button type="button" data-view="repair" id="nav-repair">Windows repair</button>
-        <button type="button" data-view="ops" id="nav-ops">Operations</button>
-        <button type="button" data-view="status" id="nav-status-tab">System Status</button>
+        <button type="button" data-view="chat" id="nav-chat" title="Talk to the model. This does not search your documents.">Chat</button>
+        <button type="button" data-view="documents" id="nav-documents" title="Ask a question that must be answered from your uploaded documents, with the source shown.">Document Q&amp;A</button>
+        <button type="button" data-view="agent" id="nav-agent" title="Describe an IT problem. The assistant proposes a change and waits for your approval.">IT Helpdesk</button>
+        <button type="button" data-view="repair" id="nav-repair" title="Check a Windows computer from a checklist. Nothing on that computer changes until you approve it.">Windows repair</button>
+        <button type="button" data-view="ops" id="nav-ops" title="See whether the model, gateway, documents, and Microsoft connection are healthy.">Operations</button>
+        <button type="button" data-view="status" id="nav-status-tab" title="The acceptance checklist. Production stays no-go until every required item passes.">System Status</button>
       </nav>
       <p class="nav-status" id="nav-status" role="status">Checking gateway…</p>
       <div class="operator-bar">

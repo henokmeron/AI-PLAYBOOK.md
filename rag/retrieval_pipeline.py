@@ -29,6 +29,7 @@ from rag_engine import (
     dedupe_ranked_chunks,
     index_terms,
     load_document_chunks,
+    term_covered,
     supported_paths,
 )
 
@@ -347,7 +348,8 @@ def factual_coverage(question: str, chunk: Chunk, index: Bm25Index) -> float:
     total = sum(weights.values())
     if not total:
         return 0.0
-    return sum(weight for term, weight in weights.items() if term in allowed) / total
+    asked = set(q_terms)
+    return sum(weight for term, weight in weights.items() if term_covered(term, allowed, question_terms=asked)) / total
 
 
 def quote_from_chunk(claim: str, chunk_text: str) -> str | None:

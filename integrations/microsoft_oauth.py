@@ -61,6 +61,7 @@ ARM_ROOT = "https://management.azure.com"
 DEFAULT_TENANT = "d595636e-9ef4-4890-b8a7-bde8dd5cab03"
 PERMISSIONS_NOTE = (
     "Sign-in identifies the account and requests delegated User.Read and Mail.Read. "
+    "This directory rejects a personal Microsoft account, including one that uses a Gmail address. "
     "Teams, OneDrive reads, SharePoint, and Azure inventory are not requested. "
     "Creating or updating an unsent mail draft needs a second consent for Mail.ReadWrite. "
     "Uploading, updating, or deleting one named file needs Files.ReadWrite and that path. "
@@ -362,7 +363,9 @@ class MicrosoftOAuth:
                 "directory",
                 self.tenant,
                 "Sign in with your organisation",
-                "This console accepts only the directory it was configured for.",
+                "Use the work account in this directory. A personal account "
+                "(Gmail, Outlook.com, Hotmail, or Live) is rejected by Microsoft "
+                "with AADSTS50020 and does not connect the mailbox.",
             ),)
         return [
             {"id": key, "label": label, "detail": detail, "tenant": tenant}

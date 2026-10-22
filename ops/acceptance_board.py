@@ -238,6 +238,12 @@ def _assess(record: dict, now: datetime, freshness: timedelta) -> dict:
     age_hours = None
     if kind not in EVIDENCE_KINDS:
         problems.append(f"evidence_kind {kind!r} is not one of {', '.join(EVIDENCE_KINDS)}")
+    for key in ("source_sha", "deployed_sha"):
+        value = record.get(key)
+        if value in (None, ""):
+            continue
+        if not isinstance(value, str) or not _SHA.match(value.strip().lower()):
+            problems.append(f"{key} must be a full 40-character SHA")
     if when is None:
         problems.append("timestamp_utc is missing or not an ISO-8601 UTC time")
     elif when > now + FUTURE_TOLERANCE:

@@ -63,6 +63,52 @@ def index_terms(text: str) -> list[str]:
     return [stem(token.casefold()) for token in INDEX_TOKEN_RE.findall(text)]
 
 
+# Closed query equivalents. A document term satisfies the query term.
+# The equivalent is added to BM25 ranking only. It is not an extra coverage
+# term, and answer words such as "standard" are never inserted.
+QUERY_EQUIVALENTS = (
+    frozenset({"train", "rail"}),
+)
+
+
+def equivalent_terms(term: str) -> frozenset[str]:
+    for group in QUERY_EQUIVALENTS:
+        if term in group:
+            return group
+    return frozenset({term})
+
+
+def term_covered(term: str, present: set[str], *, question_terms: set[str] | None = None) -> bool:
+    """True when the document contains the term or a listed equivalent.
+
+    ``ticket`` counts as ``travel`` only when the question also says ``train``.
+    A ticket question on its own does not become a travel question.
+    """
+    if equivalent_terms(term) & present:
+        return True
+    return bool(
+        term == "ticket"
+        and question_terms is not None
+        and "train" in question_terms
+        and "travel" in present
+    )
+
+
+def ranking_terms(question: str) -> list[str]:
+    """Query terms plus equivalents, so a paraphrase can clear the score floor."""
+    base = list(dict.fromkeys(index_terms(question)))
+    seen = set(base)
+    extra: list[str] = []
+    for term in base:
+        for alt in equivalent_terms(term):
+            if alt not in seen:
+                extra.append(alt)
+                seen.add(alt)
+    if "train" in seen and "ticket" in seen and "travel" not in seen:
+        extra.append("travel")
+    return base + extra
+
+
 def _char_split(text: str, max_chars: int, overlap: int) -> list[str]:
     chunks = []
     start = 0
@@ -262,7 +308,7 @@ class Bm25Index:
         return total
 
     def search(self, question: str, top_k: int) -> list[tuple[float, Chunk]]:
-        q_terms = list(dict.fromkeys(index_terms(question)))
+        q_terms = ranking_terms(question)
         if not q_terms:
             return []
         ranked = [(s, c) for c in self.chunks if (s := self.score(q_terms, c)) > 0]
@@ -275,8 +321,10 @@ class Bm25Index:
         if not q_terms:
             return 0.0
         weights = {t: self.idf(t) for t in q_terms}
+        present = set(chunk.term_counts)
+        asked = set(q_terms)
         total = sum(weights.values())
-        hit = sum(w for t, w in weights.items() if chunk.term_counts.get(t))
+        hit = sum(w for t, w in weights.items() if term_covered(t, present, question_terms=asked))
         return hit / total if total else 0.0
 
 

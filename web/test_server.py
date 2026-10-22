@@ -28,6 +28,11 @@ class FakeGatewayHandler(BaseHTTPRequestHandler):
     def log_message(self, format_string: str, *args: object) -> None:
         return
 
+    def parse_request(self) -> bool:
+        ok = super().parse_request()
+        self.close_connection = True
+        return ok
+
     def _record(self) -> dict[str, str]:
         length = int(self.headers.get("Content-Length", "0") or 0)
         raw = self.rfile.read(length) if length else b""
@@ -46,6 +51,7 @@ class FakeGatewayHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
 
@@ -213,6 +219,11 @@ class RecorderHandler(BaseHTTPRequestHandler):
     def log_message(self, format_string: str, *args: object) -> None:
         return
 
+    def parse_request(self) -> bool:
+        ok = super().parse_request()
+        self.close_connection = True
+        return ok
+
     def _hit(self) -> None:
         length = int(self.headers.get("Content-Length", "0") or 0)
         if length:
@@ -223,6 +234,7 @@ class RecorderHandler(BaseHTTPRequestHandler):
         self.send_response(500)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
 
@@ -366,6 +378,13 @@ class ConsoleTests(unittest.TestCase):
     def request(self, base: str, method: str, path: str, payload: dict | None = None, headers: dict | None = None) -> tuple[int, bytes]:
         status, body, _headers = self.request_raw(base, method, path, payload, headers)
         return status, body
+
+    def test_repeated_status_reads_stay_connected(self) -> None:
+        base = self.web(FakeGateway())
+        for _ in range(40):
+            status, body = self.request(base, "GET", "/api/status")
+            self.assertEqual(status, 200)
+            self.assertIn(b"ready", body)
 
     def test_config_rejects_public_targets_and_hides_key(self) -> None:
         with self.assertRaises(ValueError):
