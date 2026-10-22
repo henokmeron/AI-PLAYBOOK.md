@@ -1,5 +1,9 @@
 # Microsoft 365 read-only sign-in
 
+Checked 2026-10-22 on the signed-in Azure portal, Authentication (Preview), which loads saved configuration. App `llmfortestingclientid`. Platform **Mobile and desktop applications**. Redirect **`http://127.0.0.1:18080/api/microsoft/callback`**. Supported accounts **Single tenant only - Default Directory**. Tenant ID from the Entra overview: `d595636e-9ef4-4890-b8a7-bde8dd5cab03`. Delegated Graph permissions are `Mail.Read` and `User.Read`. Admin consent required is No. Other permissions granted for the directory: none. No secret was opened. No mailbox was read. The running H100 console was not restarted and has not loaded the application id.
+
+Status: **NOT CONFIGURED**. Portal rows are not a mailbox read. `MICROSOFT_TENANT=common` will not complete sign-in for this single-tenant app. Set `MICROSOFT_TENANT` to the directory id above. The one consent click can happen only after an approved console is serving this code on `127.0.0.1:18080`.
+
 Checked again on 2026-10-21 from this workstation. Cursor browser Local
 Storage showed visits to `portal.azure.com` and `console.runpod.io`, but this
 agent has no tool that can click or drive that browser session, and the
@@ -32,12 +36,13 @@ Publishing this file does not deploy it, and `MICROSOFT_CLIENT_ID` was unset.
 8. Message ids are URL-encoded, including `/`, which real Graph ids contain. `Mail.Send`, Teams send, and calendar changes stay disabled even when `authorised=True`. Teams, OneDrive, SharePoint, and Azure inventory reads are registered and mock-tested. Live Graph and ARM calls still need `MICROSOFT_CLIENT_ID` and consent.
 
 The redirect host is the laptop tunnel, not a public address. The mapped SSH
-port changes when the Pod is recreated. The port seen on 2026-10-15 was
-`19091` on `216.81.248.126`. The tunnel shape is
+port changes when the Pod is recreated. The current pod SSH port is `25839`
+on `216.81.245.55`. The tunnel shape is
 `ssh -N -L 18080:127.0.0.1:8080 -p <mapped-port>`. Keep the console on
 `127.0.0.1`. Microsoft ignores the port when matching a `localhost` redirect,
-but `127.0.0.1` must match exactly. The portal's redirect text box rejects
-`http://127.0.0.1`, so that URI is added in the application manifest.
+but `127.0.0.1` must match exactly. The saved platform is Mobile and desktop
+applications, which is the public/installed client redirect. The code still
+rejects a public web redirect.
 
 ## Exact registration
 
@@ -80,8 +85,10 @@ tests use an in-memory transport and are not a live Microsoft connection.
 Copy the Application (client) ID into the console process as
 `MICROSOFT_CLIENT_ID`, or into a mode-0600 file pointed to by
 `MICROSOFT_CLIENT_ID_FILE` under `/tmp` (never under the repo or `/workspace`).
-Leave `MICROSOFT_TENANT` as `common` unless the organisation requires one
-directory. Leave `MICROSOFT_TOKEN_FILE` at `/tmp/microsoft-365-token.json`.
+This app is single-tenant, so leave `MICROSOFT_TENANT` unset only for a
+multi-tenant registration. For `llmfortestingclientid`, set `MICROSOFT_TENANT`
+to `d595636e-9ef4-4890-b8a7-bde8dd5cab03`. `common` will not complete sign-in.
+Leave `MICROSOFT_TOKEN_FILE` at `/tmp/microsoft-365-token.json`.
 
 Print the portal checklist without secrets:
 

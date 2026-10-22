@@ -188,6 +188,7 @@ def build_manifest(commit: str, archive_name: str, checksum: str, tests: list[st
             "pinned_in_git": False,
         },
         "secrets_included": False,
+        "checksum_file": f"{archive_name}.sha256",
         "persistent_volume_copy": "not verified by this manifest",
         "startup_order": ["Qwen :8002", "gateway :8010", "console :8080"],
         "health_checks": [
@@ -196,6 +197,30 @@ def build_manifest(commit: str, archive_name: str, checksum: str, tests: list[st
             "http://127.0.0.1:8080/api/status",
         ],
     }
+
+
+def checksum_sidecar_name(archive_name: str) -> str:
+    return f"{archive_name}.sha256"
+
+
+def write_checksum_sidecar(directory: Path, archive_name: str, checksum: str) -> Path:
+    """Write the digest beside the archive, never inside it."""
+    digest = checksum.strip().lower()
+    if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+        raise ReleaseError("checksum file requires a lowercase sha256 digest")
+    path = directory / checksum_sidecar_name(archive_name)
+    line = f"{digest}  {archive_name}\n"
+    path.write_text(line, encoding="utf-8", newline="\n")
+    if path.read_text(encoding="utf-8") != line:
+        raise ReleaseError("checksum file read-back did not match")
+    return path
+
+
+def read_checksum_sidecar(path: Path) -> str:
+    parts = path.read_text(encoding="utf-8").split()
+    if len(parts) < 2 or len(parts[0]) != 64:
+        raise ReleaseError("checksum file is not a sha256 record")
+    return parts[0]
 
 
 def write_manifest(path: Path, manifest: dict) -> str:

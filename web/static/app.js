@@ -294,6 +294,7 @@
       applyNavStatus(null, true);
       if (!document.getElementById("status-view").hidden) {
         statusPanel.textContent = "The status check failed. Reload the page if this console just restarted.";
+        loadAcceptance();
       }
     });
   }
@@ -302,7 +303,14 @@
     return [el("dt", null, label), el("dd", null, value)];
   }
 
+  function loadAcceptance() {
+    request("/api/acceptance").then(renderAcceptance).catch(function () {
+      renderAcceptance(null);
+    });
+  }
+
   function renderStatus() {
+    loadAcceptance();
     statusPanel.textContent = "";
     if (!lastStatus) {
       statusPanel.textContent = "Checking the gateway…";
@@ -328,6 +336,32 @@
     rows.forEach(function (node) { list.appendChild(node); });
     statusPanel.appendChild(list);
     statusPanel.appendChild(el("p", "meta", body.detail || ""));
+  }
+
+  function renderAcceptance(board) {
+    var decision = document.getElementById("acceptance-decision");
+    var rows = document.getElementById("acceptance-rows");
+    if (!decision || !rows) return;
+    rows.textContent = "";
+    if (!board || !Array.isArray(board.workstreams)) {
+      decision.textContent = "The acceptance board could not be loaded.";
+      return;
+    }
+    decision.textContent = "Decision " + board.decision + ". Overall " + board.overall_percent + "%. " + (board.note || "");
+    board.workstreams.forEach(function (row) {
+      var section = el("section", "acceptance-row");
+      section.appendChild(el("h3", null, row.name + " " + row.percent + "%"));
+      var track = el("div", "bar-track");
+      var fill = el("div", "bar-fill");
+      fill.style.width = Math.max(0, Math.min(100, Number(row.percent) || 0)) + "%";
+      track.appendChild(fill);
+      section.appendChild(track);
+      section.appendChild(el("p", "meta", "Completed: " + (row.completed || []).join("; ")));
+      section.appendChild(el("p", "meta", "Remaining: " + (row.remaining || []).join("; ")));
+      section.appendChild(el("p", "meta", "Evidence: " + (row.evidence || "")));
+      section.appendChild(el("p", "meta", "Next: " + (row.next_action || "") + " Blocker: " + (row.blocker || "")));
+      rows.appendChild(section);
+    });
   }
 
   function renderChat() {

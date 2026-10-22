@@ -113,8 +113,8 @@ def validate_tenant(value: str) -> str:
 def validate_redirect(value: str) -> str:
     """Loopback only. Microsoft matches localhost ports loosely; 127.0.0.1 must be exact.
 
-    The portal redirect box rejects ``http://127.0.0.1``. That URI has to be added
-    in the application manifest. This process never accepts a public redirect.
+    A public redirect is rejected. The saved Entra platform for this URI is
+    Mobile and desktop applications.
     """
     parts = urllib.parse.urlsplit(value.strip())
     host = (parts.hostname or "").lower()

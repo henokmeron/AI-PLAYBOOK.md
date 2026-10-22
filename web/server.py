@@ -36,6 +36,7 @@ from agents.model import OpenAICompatibleClient
 from agents.workspace import CONSOLE_TENANT, AgentDesk
 from auth import AuthService, Permission
 from auth.service import COOKIE_NAME, CSRF_HEADER, AuthError, SessionRecord
+from ops.acceptance_board import board as acceptance_board
 from ops_centre import OpsCentre
 from integrations.endpoint import DeviceRegistry
 from integrations.errors import AuthenticationError, InvalidRequest, RateLimited
@@ -649,6 +650,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/status":
             self.handle_status()
+            return
+        if path == "/api/acceptance":
+            self.send_json(200, acceptance_board())
             return
         if path == "/api/auth/status":
             self.handle_auth_status()

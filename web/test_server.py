@@ -463,6 +463,7 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("Chat", text)
         self.assertIn("Document Q&amp;A", text)
         self.assertIn("System Status", text)
+        self.assertIn('id="acceptance-board"', text)
         self.assertIn(">IT Helpdesk<", text)
         self.assertIn(">Operations<", text)
         self.assertIn('id="ops-view"', text)
@@ -507,6 +508,19 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(status, 204)
         status, _ = self.request(base, "GET", "/static/%2e%2e/server.py")
         self.assertEqual(status, 404)
+
+    def test_acceptance_board_stays_no_go(self) -> None:
+        gateway = FakeGateway()
+        base = self.web(gateway)
+        status, body = self.request(base, "GET", "/api/acceptance")
+        payload = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["decision"], "NO-GO")
+        self.assertEqual(payload["microsoft_status"], "NOT CONFIGURED")
+        self.assertIn("deployed commit equals intended Git tip", payload["failing_acceptance"])
+        names = [row["name"] for row in payload["workstreams"]]
+        self.assertEqual(len(names), 10)
+        self.assertNotIn("BEGIN OPENSSH PRIVATE KEY", body.decode("utf-8"))
 
     def test_status_reports_ready_without_leaking_health_extras(self) -> None:
         gateway = FakeGateway()

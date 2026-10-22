@@ -1,5 +1,20 @@
 # Asset inventory — 2026-10-22
 
+## Later the same day (read-only recheck)
+
+No Pod was started, stopped, resized, reloaded, or redeployed. No volume file was written. No Azure resource was created. No secret was opened or copied into this file.
+
+| Item | Evidence | Label |
+| --- | --- | --- |
+| Archive of `d8c32ffebad6295b5d891de09681e46bbe2f022c` | `%LOCALAPPDATA%\AI-PLAYBOOK\releases\d8c32ffebad6295b5d891de09681e46bbe2f022c\AI-PLAYBOOK-d8c32ffebad6295b5d891de09681e46bbe2f022c.tar.gz` | **VERIFIED** read-back. 685,460 bytes, 377 members, SHA-256 `de30f6a2877fee34036731ab58073da8e0433cd6a10742e4ecfb4b6f3437f0c6`. Manifest matched. Not on the volume. |
+| Isolated extract | `%TEMP%\ai-playbook-recover-d8c32ff` | **VERIFIED** as a temp extract only. Not a fresh machine. |
+| Pod health `2026-10-22T01:18:42Z` | `:8002/health` 200, `:8010/health` 200, `:8080/api/status` 200. HEAD `a0e9422145aae4e38025709d1ca88288e42f375b`. H100 NVL 85415/95830 MiB, driver 595.91.07, util 0%. | **VERIFIED**. Not parity with GitHub. |
+| Billing header | First loaded header $15.46. After reload, **$14.93**, spend **$3.197/hr**, estimated time left **5 hours**. | **VERIFIED** re-read. Not $0.00. Inbox $4.77 is an older notification. |
+| Weight backup | Not copied | **NO** independent weight backup. Shards stay only on the volume. |
+| Microsoft | Saved redirect and single tenant as in `docs/integrations/microsoft-365-signin.md` | **NOT CONFIGURED** until a mailbox read. |
+
+## First inventory the same day
+
 Read-only inspection from `C:\Users\henok\src\AI-PLAYBOOK.md`. No Pod was started, stopped, resized, or reloaded. No volume file was written. No Azure resource was created. No secret is recorded here.
 
 ## GitHub source

@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-22** (second pass: H100 rechecked and left running; local release of `281eb62` packaged; default Microsoft sign-in narrowed to `User.Read` and `Mail.Read`. Go-live **NO-GO**.)
+Last updated: **2026-10-22** (third pass: saved loopback redirect re-read on Authentication; billing re-read; release checksum sidecar, source-update preflight, and volume-transfer dry-run added. Go-live **NO-GO**.)
 
 ## Only this repository
 
@@ -108,7 +108,7 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 - Protocol fix: accept Qwen’s `{"action":"<tool_name>",...}` shortcut. IT token budget raised to 48k after a live run hit the old 16k ceiling post-approval.
 - In source, the Agent desk has `search_documents` (unit-tested with a fake model; live Document Q&A remains separate). File attachments on the Agent page are unsupported and are not indexed.
 - Helpdesk approval pause: **live VERIFIED** for `clear_temp_cache` only. No email was sent. No customer systems touched.
-- Microsoft 365 OAuth is implemented in source for read-only mail. **No Entra application was created. No application id is configured. No real account was authorised. No real Graph request or mailbox search succeeded.** The live console is still `98511df` and was not restarted. See `docs/integrations/microsoft-365-signin.md`.
+- Microsoft 365 OAuth is implemented in source for read-only mail. The existing Entra app is `llmfortestingclientid`, single-tenant directory `d595636e-9ef4-4890-b8a7-bde8dd5cab03`. The saved Authentication blade has the loopback redirect. No running console has loaded the application id. No mailbox was read. Status **NOT CONFIGURED**. See the 2026-10-22 session entry and `docs/integrations/microsoft-365-signin.md`.
 - Nginx on some Pods listens on `0.0.0.0:8081` → console without login. User **deferred** fixing auth/nginx until a later “login” phase. Treat Pod docs as non-sensitive until then (`docs/security/baseline-review.md`).
 
 ---
@@ -164,6 +164,23 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-22 — finish-order evidence, release checks, still NO-GO
+
+- Remote was `https://github.com/henokmeron/AI-PLAYBOOK.md.git`. Starting HEAD `d8c32ffebad6295b5d891de09681e46bbe2f022c` matched `origin/main` and both feature branches. Do not commit `__pycache__`.
+- Archive of that commit, re-read in Python: `%LOCALAPPDATA%\AI-PLAYBOOK\releases\d8c32ffebad6295b5d891de09681e46bbe2f022c\AI-PLAYBOOK-d8c32ffebad6295b5d891de09681e46bbe2f022c.tar.gz`, 685,460 bytes, 377 tar members, SHA-256 `de30f6a2877fee34036731ab58073da8e0433cd6a10742e4ecfb4b6f3437f0c6`. The manifest `sha256` matched. It contains `ops/release/update-source-only.sh` and `docs/AGENT_HANDOFF.md`. This note is a later commit and is not inside that archive.
+- `python -m ops.release.recover` extracted that archive into `%TEMP%\ai-playbook-recover-d8c32ff` after the checksum check. Required files were present. This is an isolated local extract, not a fresh-machine recovery and not a deployment.
+- `ops/release/make_release.py` now writes a `.sha256` sidecar beside the archive and reads it back. `ops/release/update-source-only.sh` refuses a checkout whose origin is not `https://github.com/henokmeron/AI-PLAYBOOK.md.git`, fast-forwards only, and does not signal Qwen, the gateway, or the console. It was not run on the H100. `ops/release/snapshot-published-tip.sh` stays a dry-run unless `VOLUME_COPY_APPROVED=yes`, and a failed checksum deletes only the new incomplete snapshot. It was not run. No file was written on the Global Volume. Weight shards were not copied. There is still no independent weight backup.
+- Repeatable git parity is `PLAYBOOK.md` section G. A push is not a deployment.
+- The existing System Status page shows the finish-order board from `GET /api/acceptance` (`ops/acceptance_board.py`). Percentages count completed criteria. Decision stays **NO-GO**.
+- SSH read-only at `2026-10-22T01:18:42Z`: `/tmp/AI-PLAYBOOK` `a0e9422145aae4e38025709d1ca88288e42f375b`; `:8002/health` 200; `:8010/health` 200; `:8080/api/status` 200; `nvidia-smi` NVIDIA H100 NVL, 85,415 MiB of 95,830 MiB, driver 595.91.07, GPU util 0%. `START.sh` was not run. Nothing was restarted.
+- RunPod pods: one pod, green, `reliable_moccasin_hummingbird` / `xx9cjogra5vcwl`, H100 NVL, $3.20/hr, utilization 0% and 0%, memory 23% and 89%, disk 20%. Storage: Global Volume “New model container” `cmv2p5m0d000007jk9o3931ea`, 126.0 GB, 1,794 objects. No volume was created.
+- Billing header, re-read after a reload: account balance **$14.93**, current spend rate **$3.197/hr**, estimated time left **5 hours**. The previous load of the same header showed **$15.46** with the same spend rate. Neither was $0.00. Inbox lines such as “$4.77” are older notifications, not the live balance. The pod was left running. Pay, a card, and credit codes were not used.
+- Azure, signed in as the work account under Default Directory (`hgerez91gmail.onmicrosoft.com`). Entra overview tenant ID `d595636e-9ef4-4890-b8a7-bde8dd5cab03`, primary domain `hgerez91gmail.onmicrosoft.com`. App `llmfortestingclientid`. Authentication (Preview) saved platform **Mobile and desktop applications**, redirect `http://127.0.0.1:18080/api/microsoft/callback`, supported accounts **Single tenant only - Default Directory**. API permissions: delegated `Mail.Read` and `User.Read`, admin consent required **No**, other permissions for the directory **No permissions added**. Subscription “Azure subscription 1” `13be8a43-cb6b-4aca-ad34-2e4a0b5a62cb`, Owner, Active, one status cell “Not available”. Credits heading £150.95. No admin consent, no extra scopes, no new resource, no secret opened.
+- Microsoft status: **NOT CONFIGURED**. Portal configuration is not a mailbox read. The running console has not loaded the application id. The one remaining consent click is only after an approved console deploy and an SSH tunnel to `127.0.0.1:18080`, with `MICROSOFT_TENANT` set to the directory above. `common` will not complete sign-in. No mail was sent.
+- Second endpoint: **NOT TESTED**. Needs another Windows computer. This PC is not that computer. Blackwell: **NOT TESTED**. Needs a CC 12.0 GPU and driver 575 or newer. The H100 is not that result. Live Qwen RAG was not re-run.
+- `python -m ops.run_tests` on Python 3.11.9 with PyYAML 6.0.3: 39 modules, 0 failed, 1 skipped (`integrations.tests.test_endpoint`), exit 0. `api.test_gateway_reliability` logged a Windows socket abort and still passed. `windows_repair.tests.test_live_diagnostics` hit a temp-file permission error once and passed on the runner's automatic retry. Live Qwen RAG was not re-run. The finish-order board overall is 49%. Decision **NO-GO**.
+- Production **NO-GO**. Failing acceptance: deployed commit equals intended Git tip, mail end-to-end, second endpoint, Blackwell, fresh-environment recovery.
 
 ### 2026-10-22 — release packaging and Microsoft read scope
 

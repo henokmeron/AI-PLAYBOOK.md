@@ -6,12 +6,12 @@
 
 | | |
 | --- | --- |
-| **Last updated** | 2026-10-21 |
-| **Git tip (code)** | see `git log -1` (Operations Centre added 2026-10-16) |
-| **Live Pod** | `4lvr54b0wmkz6c` — **Stopped** (Start when you need it) |
-| **Global Volume** | `5aac0c77-6fcc-4be9-a112-dfe3890e1373` mounted at `/workspace` |
+| **Last updated** | 2026-10-22 |
+| **Git tip (code)** | see `git log -1`. A push is not the pod checkout. |
+| **Live Pod** | `xx9cjogra5vcwl` (`reliable_moccasin_hummingbird`) — **Running** H100 NVL at $3.20/hr. Left running. Checkout on the pod was `a0e9422`. |
+| **Global Volume** | `cmv2p5m0d000007jk9o3931ea` (“New model container”), filesystem `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` |
 | **GitHub** | `https://github.com/henokmeron/AI-PLAYBOOK.md.git` |
-| **Your PC copy** | `C:\Users\kokob\src\AI-PLAYBOOK.md` |
+| **Your PC copy** | `C:\Users\henok\src\AI-PLAYBOOK.md` |
 
 Related deep docs (do not duplicate everything here):
 
@@ -371,6 +371,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 
 | Date | Change |
 | --- | --- |
+| 2026-10-22 | System Status shows the finish-order board from `GET /api/acceptance`. Decision **NO-GO**. Saved Entra redirect re-read. `update-source-only.sh` now checks the GitHub origin and was not run on the H100. Volume snapshot script stays dry-run without `VOLUME_COPY_APPROVED=yes`. Second endpoint and live Blackwell remain **NOT TESTED**. Not deployed. |
 | 2026-10-22 | Release helper finds a working git binary, and `update-source-only.sh` can fast-forward a checkout without signalling Qwen. That script was not run on the H100. Default Microsoft sign-in requests `User.Read` and `Mail.Read` only. Mail remains **NOT CONFIGURED**. Not deployed. |
 | 2026-10-22 | Read-only collectors for activation, USB, Wi-Fi, proxy, TLS, browser, permissions, and crash evidence. Ran on this development PC. Heartbeat list unchanged. H100 pod inspected and not restarted. See `docs/results/asset-inventory-2026-10-22.md`. Not deployed. |
 | 2026-10-21 | Release recovery rejects symlink/hardlink/device/FIFO archive members, cross-platform traversal paths, Windows alternate data streams, and symlink destinations. Focused release tests passed in Actions run 39690350318; commit b25294644ffd69415ecb4291723047ec647e8b41 archive SHA-256 `e92c9005052d63006a03004bfe212ace11969074a86be6c3c2b333624b33fdf1` (374 members). Artifact was not copied to the Global Volume; full suite and live deployment remain unverified. |

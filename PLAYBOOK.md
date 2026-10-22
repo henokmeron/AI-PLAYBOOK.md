@@ -41,6 +41,15 @@ Do not silently erase decisions or working configs. Mark superseded docs and lin
 ### F. Pre-push check
 Docs match code; verification claims are honest; recovery still valid; no secrets. Does not replace approval rules in `docs/AGENT_HANDOFF.md`.
 
+### G. Verify, commit, push, and remote parity
+Use `C:\Users\henok\AppData\Local\GitHubDesktop\app-3.5.4\resources\app\git\mingw64\bin\git.exe` with `-C` set to `C:\Users\henok\src\AI-PLAYBOOK.md`. Never run git in `C:\Users\henok`.
+
+1. `remote -v` must show exactly `https://github.com/henokmeron/AI-PLAYBOOK.md.git`. If it does not, stop.
+2. Run the focused tests for the change, then `python -m ops.run_tests`, then `git diff --check`. Read the diff for secrets, `__pycache__`, and `ops/_*.sh` / `ops/_*.py`.
+3. Commit on `main` with `git commit -m "message"`. Never force-push. Never update git config. Never skip hooks.
+4. Push `main`. Fast-forward `feature/qwen-a100-start-hardening` and `feature/qwen3.5-27b-integration` only when that push is a true fast-forward. Do not use `--force`.
+5. `git ls-remote origin` those three refs and require one SHA. A push is not a deployment. The pod checkout stays where it is until a separate approved source update.
+
 ## 1. Core business strategy
 Do not compete only by owning a model.
 
@@ -302,16 +311,23 @@ Phase 7 — Advanced model customisation
 - Treat the playbook as a reproducible blueprint for future AI-assisted automation.
 
 ## 13. Change log
+### 2026-10-22 — Saved redirect re-read, release checks, still NO-GO
+
+- **VERIFIED:** Entra Authentication (Preview), not the manifest editor, shows platform Mobile and desktop applications and redirect `http://127.0.0.1:18080/api/microsoft/callback`. Supported accounts: Single tenant only - Default Directory. Tenant ID from Entra overview: `d595636e-9ef4-4890-b8a7-bde8dd5cab03`. Delegated `Mail.Read` and `User.Read` only. No mailbox was read. Microsoft stays **NOT CONFIGURED**. `MICROSOFT_TENANT=common` will not complete sign-in.
+- **VERIFIED:** RunPod billing header re-read after reload: account balance $14.93, spend rate $3.197/hr, estimated time left 5 hours. An earlier load of the same page showed $15.46. Neither read was $0.00. Pod `xx9cjogra5vcwl` left running. Not deployed.
+- **VERIFIED:** isolated `python -m ops.release.recover` of archive `d8c32ff` into a temp directory. That is not a fresh machine. No volume copy.
+- **NOT TESTED:** second Windows computer. **NOT TESTED:** live Blackwell (needs a CC 12.0 GPU and driver 575 or newer). Go-live **NO-GO**.
+
 ### 2026-10-22 — Local release of 281eb62 and Microsoft read scope
 
 - **VERIFIED:** H100 pod `xx9cjogra5vcwl` still running. `:8002`, `:8010`, and `:8080/api/status` returned 200. Pod checkout remains `a0e9422`. Not restarted.
 - **VERIFIED:** local archive of `281eb628b51f100433e3f4ab0aad83b516050ae5`, SHA-256 `1a998f7103cc8ca4a9f3a14047eb37e14d95470bba87c232c085e09851b7dad7`, 375 members. Not on the volume. Weights were not copied off the volume.
-- **NOT CONFIGURED:** Microsoft mail. Delegated `Mail.Read` is on the existing app. The loopback redirect was not confirmed saved, and no mailbox was read.
+- **NOT CONFIGURED:** Microsoft mail. Delegated `Mail.Read` is on the existing app. The loopback redirect was not confirmed saved in that pass, and no mailbox was read. A later pass re-read Authentication and confirmed the saved redirect. Mail is still **NOT CONFIGURED**.
 
 ### 2026-10-22 — Read-only Windows collectors
 - **Implemented and tested on the development PC:** fixed collectors for `win.activation.inspect`, `hw.usb.inspect`, `net.wifi.inspect`, `net.proxy.inspect`, `net.tls.inspect`, `app.browser.inspect`, `app.permissions.inspect`, and `app.crash.evidence`. No product key, Wi-Fi password, proxy credential, private-key export, ACL change, firewall change, process kill, or browser-profile reset. `problem_resolved` stays false. Heartbeat checks were not expanded.
 - **VERIFIED:** `python -m ops.run_tests` on Python 3.11.9, 38 modules, 0 failed, 1 skipped, exit 0. H100 pod `xx9cjogra5vcwl` was read-only inspected and left running. Inventory: `docs/results/asset-inventory-2026-10-22.md`.
-- **NOT TESTED / NOT CONFIGURED:** live Blackwell, mail Graph (`User.Read` only), a second Windows computer. Go-live **NO-GO**.
+- **NOT TESTED / NOT CONFIGURED** in that collector pass: live Blackwell, mail Graph, a second Windows computer. A later entry the same day confirmed delegated `Mail.Read` and the saved redirect. Mail stayed **NOT CONFIGURED**. Go-live **NO-GO**.
 
 ### 2026-10-21 — Living playbook lean trim
 - Trimmed **Mandatory living playbook — continuously maintained** (A–F) to vital operational rules only. No feature claims.

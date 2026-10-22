@@ -11,6 +11,16 @@
 #   bash ops/release/snapshot-published-tip.sh
 set -Eeuo pipefail
 
+if [[ "${VOLUME_COPY_APPROVED:-}" != "yes" ]]; then
+  echo "dry-run: set VOLUME_COPY_APPROVED=yes on the Pod to copy one checksummed source snapshot onto the Global Volume."
+  echo "preflight: /workspace must be fuse.geesefs. Weights, the runtime archive, and older snapshots are not deleted."
+  echo "verify: sha256sum -c the new checksum file and require it to match the archive just written."
+  echo "rollback: if that check fails, delete only the new archive and its checksum file."
+  echo "acceptance: VERIFIED_SHA256 must match the read-back. Qwen, the gateway, and the console are not signalled."
+  echo "Nothing was written."
+  exit 0
+fi
+
 GLOBAL=/workspace
 SNAP_DIR="$GLOBAL/ai-platform-backups/source-snapshots"
 MANIFEST_DIR="$GLOBAL/ai-platform-backups/manifests"
@@ -68,7 +78,11 @@ git -C "$WORK/src" archive --format=tar.gz -o "$ARCHIVE" HEAD
 tar -tzf "$ARCHIVE" >/dev/null
 SUM="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
 printf '%s  %s\n' "$SUM" "$ARCHIVE" >"$SUM_FILE"
-sha256sum -c "$SUM_FILE"
+if ! sha256sum -c "$SUM_FILE"; then
+  rm -f "$ARCHIVE" "$SUM_FILE"
+  echo "rollback: removed only the new incomplete snapshot. Older snapshots were kept." >&2
+  exit 5
+fi
 
 # Canonical launcher. install-to-volume.sh keeps a timestamped copy of a
 # different START.sh and does not delete the previous file.

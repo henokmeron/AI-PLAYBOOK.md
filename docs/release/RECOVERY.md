@@ -10,9 +10,9 @@ From a clean `main` that matches GitHub:
 python -m ops.release.make_release
 ```
 
-The package is written to `%LOCALAPPDATA%\AI-PLAYBOOK\releases\<commit>\`. The command prints the release id and the SHA-256 of the archive. It does not contact the Pod. It uses a git binary that prints `git version`. If PATH `git` is only a launcher, set `AI_PLAYBOOK_GIT` or install Git; on this PC the helper also finds GitHub Desktop's `git.exe`. The manifest is read back and rejected if its checksum field does not match the archive.
+The package is written to `%LOCALAPPDATA%\AI-PLAYBOOK\releases\<commit>\`. The command prints the release id and the SHA-256 of the archive. It does not contact the Pod. It uses a git binary that prints `git version`. If PATH `git` is only a launcher, set `AI_PLAYBOOK_GIT` or install Git; on this PC the helper also finds GitHub Desktop's `git.exe`. The manifest is read back and rejected if its checksum field does not match the archive. The same digest is also written to `AI-PLAYBOOK-<commit>.tar.gz.sha256` beside the archive, not inside it, and that file is read back before the command succeeds.
 
-`ops/release/update-source-only.sh` prints a dry run unless `SOURCE_UPDATE_APPROVED=yes`. With that variable it fast-forwards one clean checkout and does not signal Qwen, the gateway, or the console. It was not run on the H100.
+`ops/release/update-source-only.sh` is the pod source update. It is dry-run unless `SOURCE_UPDATE_APPROVED=yes`. Preflight: the checkout must be git, origin must be `https://github.com/henokmeron/AI-PLAYBOOK.md.git`, and there must be no tracked edits. Action: `git fetch` and `git merge --ff-only`. Rollback: a refused fast-forward does not move HEAD; do not `git reset`. Acceptance: HEAD equals `origin/<branch>`. It does not call health URLs and it does not signal Qwen, the gateway, or the console. It was not run on the H100. Git parity for this PC is `PLAYBOOK.md` section G.
 
 The `.github/workflows/verify-and-package.yml` workflow is configured to run the release-recovery tests and build a commit-versioned archive plus manifest on pushes to `main`, then upload them as a GitHub Actions artifact for 90 days. Workflow run 39690350318 completed successfully for commit b25294644ffd69415ecb4291723047ec647e8b41. It passed ops.test_release_package and uploaded artifact ID 12387414455, named AI-PLAYBOOK-b25294644ffd69415ecb4291723047ec647e8b41. The 374-member source archive SHA-256 is e92c9005052d63006a03004bfe212ace11969074a86be6c3c2b333624b33fdf1; the downloaded artifact ZIP SHA-256 is 097ec6835443b489a0e186a82781043e5cf5f09fd5c6aef2b847d998bf6da4a1. The artifact is retained for 90 days. This is a focused release-test pass, not a full-suite pass. It does not create a GitHub Release or copy files to the RunPod Global Volume.
 
@@ -59,7 +59,27 @@ Qwen and the gateway are left running if operator recovery fails. Provision an a
 
 ## Persistent copy
 
-`ops/release/snapshot-published-tip.sh` can write a checksummed archive to the Global Volume, and only when `/workspace` is that volume. It is not run from this PC when the SSH key is missing.
+`ops/release/snapshot-published-tip.sh` can write a checksummed archive to the Global Volume, and only when `/workspace` is that volume. Without `VOLUME_COPY_APPROVED=yes` it prints the plan and writes nothing.
+
+Preflight: `/workspace` must be `fuse.geesefs`, the Qwen weights and runtime archive must already be there, and the destination archive must not already exist. Verify: `sha256sum -c` the new checksum file. Rollback: if that check fails, delete only the new archive and its checksum file. Older snapshots, weights, and the runtime archive stay. Acceptance: the printed digest matches the read-back, and Qwen, the gateway, and the console were not signalled.
+
+Do not run that script until the owner approves a volume copy. It was not run on 2026-10-22. `ops/release/volume_transfer.py` only returns this plan. `copied` stays false even when the plan is approved, so importing it cannot write the volume.
+
+An isolated local recovery is:
+
+```powershell
+python -m ops.release.recover --archive <archive.tar.gz> --sha256 <checksum> --destination <empty-temp-directory>
+```
+
+On 2026-10-22 that command extracted the `d8c32ff` archive into `%TEMP%\ai-playbook-recover-d8c32ff`. That is not a fresh machine, not a second computer, and not a pod deployment.
+
+## Second endpoint and Blackwell
+
+Both are **NOT TESTED**.
+
+A second endpoint needs another Windows computer with the endpoint worker. This development PC is not that computer. Do not record its collectors as a second endpoint.
+
+Blackwell needs a GPU of compute capability 12.0 and a driver of 575 or newer, then the pinned install, check, serve, and one inference in `ops/blackwell`. The running H100 NVL is not that hardware. Do not record an H100 result as a Blackwell result.
 
 ## Pre-shutdown
 

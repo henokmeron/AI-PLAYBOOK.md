@@ -18,8 +18,10 @@ from ops.release.package import (
     dirty_entries,
     git_executable,
     git_output,
+    read_checksum_sidecar,
     sha256_file,
     verify_archive,
+    write_checksum_sidecar,
     write_manifest,
 )
 
@@ -54,6 +56,9 @@ def create_package(repo: Path, destination: Path | None = None, *, run_tests: bo
         )
     checksum = sha256_file(archive)
     verify_archive(archive, checksum)
+    sidecar = write_checksum_sidecar(output, archive.name, checksum)
+    if read_checksum_sidecar(sidecar) != checksum:
+        raise ReleaseError("checksum file does not match the archive")
     manifest = build_manifest(head, archive.name, checksum, tests)
     manifest_path = output / f"AI-PLAYBOOK-{head}.manifest.json"
     write_manifest(manifest_path, manifest)
