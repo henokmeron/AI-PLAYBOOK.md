@@ -21,7 +21,15 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from document_loaders import DocumentLoadError, strip_calculation_marker
-from rag_engine import Bm25Index, Chunk, dedupe_ranked_chunks, load_document_chunks, supported_paths
+from rag_engine import (
+    STOPWORDS,
+    Bm25Index,
+    Chunk,
+    dedupe_ranked_chunks,
+    index_terms,
+    load_document_chunks,
+    supported_paths,
+)
 
 TOP_K_DEFAULT = 8
 TOP_K_MAX = 20
@@ -77,6 +85,9 @@ class FileBackedBm25Store:
         self._collections: dict[str, CollectionIndex] = {}
         # Per-file chunk cache so one changed file does not re-parse the folder.
         self._files: dict[str, tuple[tuple, list[Chunk] | None]] = {}
+        # (device, inode) -> collection key. A shared inode stays with the
+        # collection that first indexed the regular file.
+        self._inodes: dict[tuple[int, int], str] = {}
         self._max = max_collections
 
     def invalidate(self, folder: Path) -> None:
@@ -88,6 +99,8 @@ class FileBackedBm25Store:
             self._collections.pop(key, None)
             for file_key in [k for k in self._files if k.startswith(prefix)]:
                 self._files.pop(file_key, None)
+            for ident, owner in [item for item in self._inodes.items() if item[1] == key]:
+                self._inodes.pop(ident, None)
 
     def load(self, folder: Path) -> CollectionIndex:
         if not folder.is_dir():
@@ -101,8 +114,17 @@ class FileBackedBm25Store:
                 return cached
         chunks: list[Chunk] = []
         skipped: list[str] = []
+        admitted: set[tuple[int, int]] = set()
         for path, (relative, size, mtime) in zip(paths, fingerprint):
             file_key = f"{key}/{relative}"
+            ident = self._claim_file(key, path)
+            if ident is None:
+                # Hard link of another collection's file, or a path outside this folder.
+                skipped.append(relative)
+                with self._lock:
+                    self._files.pop(file_key, None)
+                continue
+            admitted.add(ident)
             with self._lock:
                 entry = self._files.get(file_key)
             if entry is not None and entry[0] == (size, mtime):
@@ -126,8 +148,38 @@ class FileBackedBm25Store:
             live = {f"{key}/{relative}" for relative, _, _ in fingerprint}
             for file_key in [k for k in self._files if k.startswith(key + "/") and k not in live]:
                 self._files.pop(file_key, None)
+            for ident, owner in [item for item in self._inodes.items() if item[1] == key and item[0] not in admitted]:
+                self._inodes.pop(ident, None)
             self._collections[key] = result
         return result
+
+    def _claim_file(self, key: str, path: Path) -> tuple[int, int] | None:
+        """Admit a regular file, or refuse one that belongs to another collection.
+
+        The first collection to index a normal file owns its inode. A later
+        collection with a hard link to that inode does not receive the chunks.
+        An unowned inode with extra links is refused as well, so load order
+        cannot attach the first collection's bytes to the second.
+        """
+        if path.is_symlink():
+            return None
+        try:
+            root = Path(key)
+            resolved = path.resolve()
+            if resolved != root and root not in resolved.parents:
+                return None
+            stat = path.stat()
+        except OSError:
+            return None
+        ident = (stat.st_dev, stat.st_ino)
+        with self._lock:
+            owner = self._inodes.get(ident)
+            if owner not in (None, key):
+                return None
+            if owner is None and stat.st_nlink > 1:
+                return None
+            self._inodes[ident] = key
+            return ident
 
 
 def load_collection(folder: Path, store: CollectionStore | None = None) -> CollectionIndex:
@@ -199,8 +251,16 @@ def search(
     top_coverage = max(g.coverage for g in groups)
     if top_score < min_score:
         return SearchOutcome([], True, "below_min_score", top_score, top_coverage, used, len(ranked), status)
-    if top_coverage < min_coverage:
-        return SearchOutcome([], True, "low_query_coverage", top_score, top_coverage, used, len(ranked), status)
+    # Instruction text is not evidence. A hidden "do not abstain" cannot keep
+    # a question above the coverage gate when the factual span does not cover it.
+    factual_top = max(
+        (factual_coverage(question, group.chunk, index) for group in groups),
+        default=0.0,
+    )
+    if factual_top < min_coverage:
+        reason = "instruction_not_evidence" if top_coverage >= min_coverage else "low_query_coverage"
+        reported = factual_top if reason == "instruction_not_evidence" else top_coverage
+        return SearchOutcome([], True, reason, top_score, reported, used, len(ranked), status)
     return SearchOutcome(groups, False, None, top_score, top_coverage, used, len(ranked), status)
 
 
@@ -219,6 +279,66 @@ _LABEL_SPOOF_RE = re.compile(r"\[\s*(source\s*\d+[^\]\n]{0,200}|/?evidence[^\]\n
 
 def contains_instruction_like_text(text: str) -> bool:
     return bool(INJECTION_PATTERNS.search(text))
+
+
+def _instruction_spans(text: str) -> list[tuple[int, int]]:
+    """Character spans of an instruction and the rest of its paragraph.
+
+    The payload that follows "ignore previous instructions" in the same
+    paragraph is not evidence and must not satisfy the abstain rule.
+    """
+    spans: list[tuple[int, int]] = []
+    cursor = 0
+    for paragraph in re.split(r"\n\s*\n", text):
+        start = text.find(paragraph, cursor)
+        if start < 0:
+            continue
+        cursor = start + len(paragraph)
+        match = INJECTION_PATTERNS.search(paragraph)
+        if match is None:
+            continue
+        spans.append((start + match.start(), start + len(paragraph)))
+    return spans
+
+
+def factual_text(text: str) -> str:
+    """Chunk text with instruction spans blanked out."""
+    if not text:
+        return ""
+    chars = list(text)
+    for start, end in _instruction_spans(text):
+        for index in range(start, min(end, len(chars))):
+            chars[index] = " "
+    return "".join(chars)
+
+
+def factual_coverage(question: str, chunk: Chunk, index: Bm25Index) -> float:
+    """Coverage using filename and non-instruction text only."""
+    allowed = set(index_terms(Path(chunk.source).stem))
+    allowed.update(index_terms(factual_text(chunk.header)))
+    allowed.update(index_terms(factual_text(chunk.text)))
+    q_terms = [term for term in dict.fromkeys(index_terms(question)) if term not in STOPWORDS]
+    if not q_terms:
+        return 0.0
+    weights = {term: index.idf(term) for term in q_terms}
+    total = sum(weights.values())
+    if not total:
+        return 0.0
+    return sum(weight for term, weight in weights.items() if term in allowed) / total
+
+
+def quote_from_chunk(claim: str, chunk_text: str) -> str | None:
+    """Return the claim only when it is a slice of the chunk's factual text."""
+    cleaned = " ".join(_CITATION_SPAN_RE.sub(" ", claim).split())
+    if not cleaned:
+        return None
+    pattern = r"\s+".join(re.escape(part) for part in cleaned.split())
+    blocked = _instruction_spans(chunk_text)
+    for match in re.finditer(pattern, chunk_text, flags=re.IGNORECASE):
+        if any(match.start() < end and match.end() > start for start, end in blocked):
+            continue
+        return chunk_text[match.start():match.end()]
+    return None
 
 
 def neutralise_evidence_text(text: str) -> str:
@@ -318,6 +438,7 @@ def build_evidence(groups: list[RankedGroup], char_budget: int) -> EvidencePack:
 
 
 _CITATION_RE = re.compile(r"\[\s*Source\s+(\d+)", re.IGNORECASE)
+_CITATION_SPAN_RE = re.compile(r"\[\s*Source\s+(\d+)[^\]]*\]", re.IGNORECASE)
 
 
 def check_citations(answer: str, source_count: int) -> dict[str, Any]:
@@ -326,12 +447,51 @@ def check_citations(answer: str, source_count: int) -> dict[str, Any]:
     return {"cited": [f"Source {n}" for n in cited], "invalid": [f"Source {n}" for n in invalid]}
 
 
-def answer_delivery(answer: str, source_count: int) -> tuple[str, dict[str, Any]]:
-    """A citation that is missing or not in the evidence is not an answered result."""
+def _citation_claims(answer: str) -> list[tuple[int, str]]:
+    claims: list[tuple[int, str]] = []
+    cursor = 0
+    for match in _CITATION_SPAN_RE.finditer(answer):
+        window = answer[cursor:match.start()]
+        cut = max(window.rfind("."), window.rfind("!"), window.rfind("?"))
+        claim = window[cut + 1:] if cut >= 0 else window
+        claims.append((int(match.group(1)), claim.strip()))
+        cursor = match.end()
+    return claims
+
+
+def answer_delivery(
+    answer: str,
+    source_count: int,
+    evidence: list[str] | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """A citation that is missing, out of range, or not copied from its chunk is withheld.
+
+    ``evidence`` is the retrieved chunk text for Source 1..N, in order. When it
+    is omitted, only the label check runs, which is what existing callers use.
+    """
     citations = check_citations(answer, source_count)
     if citations["invalid"]:
         return "abstained", citations
     if source_count > 0 and not citations["cited"]:
         citations["missing"] = True
+        return "abstained", citations
+    if evidence is None:
+        return "answered", citations
+    ungrounded: list[str] = []
+    grounded: set[str] = set()
+    for number, claim in _citation_claims(answer):
+        if number < 1 or number > source_count:
+            continue
+        label = f"Source {number}"
+        chunk_text = evidence[number - 1] if number <= len(evidence) else ""
+        if quote_from_chunk(claim, chunk_text) is None:
+            ungrounded.append(label)
+        else:
+            grounded.add(label)
+    for label in citations["cited"]:
+        if label not in grounded and label not in ungrounded:
+            ungrounded.append(label)
+    citations["ungrounded"] = list(dict.fromkeys(ungrounded))
+    if citations["ungrounded"]:
         return "abstained", citations
     return "answered", citations

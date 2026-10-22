@@ -196,10 +196,27 @@ def load_document_chunks(path: Path, source: str) -> list[Chunk]:
 
 
 def supported_paths(folder: Path) -> list[Path]:
-    return sorted(
-        p for p in folder.rglob("*")
-        if p.is_file() and p.suffix.casefold() in SUPPORTED_EXTENSIONS
-    )
+    """Files this folder may index.
+
+    Symbolic links are omitted. A link planted in one collection must not
+    make another collection's file readable here. The resolved path also has
+    to stay inside the folder.
+    """
+    root = folder.resolve()
+    found: list[Path] = []
+    for path in folder.rglob("*"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        if path.suffix.casefold() not in SUPPORTED_EXTENSIONS:
+            continue
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+        if resolved != root and root not in resolved.parents:
+            continue
+        found.append(path)
+    return sorted(found)
 
 
 def load_chunks(folder: Path) -> list[Chunk]:
