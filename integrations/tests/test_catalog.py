@@ -60,6 +60,16 @@ class CatalogTests(unittest.TestCase):
         by_name = {item.name: item for item in MICROSOFT_365.operations}
         self.assertEqual(by_name["search_mail"].effect, Effect.READ)
         self.assertTrue(by_name["create_mail_draft"].requires_approval)
+        self.assertTrue(by_name["update_mail_draft"].requires_approval)
+        self.assertTrue(by_name["upload_file"].requires_approval)
+        self.assertTrue(by_name["update_file"].requires_approval)
+        self.assertTrue(by_name["delete_file"].requires_approval)
+        self.assertEqual(by_name["upload_file"].provider_permissions, ("Files.ReadWrite",))
+        self.assertEqual(by_name["delete_file"].provider_permissions, ("Files.ReadWrite",))
+        self.assertNotIn("Mail.Send", by_name["update_mail_draft"].provider_permissions)
+        for item in MICROSOFT_365.operations:
+            if item.name != "send_mail":
+                self.assertNotIn("Mail.Send", item.provider_permissions)
         self.assertTrue(by_name["send_mail"].requires_approval)
         self.assertTrue(by_name["send_teams_message"].requires_approval)
         described = platform_catalog()[0].describe("acme")[0]
@@ -114,3 +124,26 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(marked["status"], "configured")
         self.assertEqual(marked["client_id"], "present")
         self.assertNotIn(secret, json.dumps(marked))
+
+    def test_graph_writes_are_not_called_before_approval(self) -> None:
+        calls: list[str] = []
+        catalog, client = platform_catalog()
+        catalog._performer = lambda connector, operation, params: calls.append(operation)
+        record = catalog.connection("acme", "microsoft365")
+        record.connected = True
+        record.granted_scopes = frozenset({"mail:write", "files:write"})
+        writes = (
+            ("create_mail_draft", {"to": "a@example.com", "subject": "Invoice", "body": "Please review."}),
+            ("update_mail_draft", {"message_id": "AAMkAG12345678", "subject": "Updated"}),
+            ("upload_file", {"path": "Reports/q3.txt", "content": "quarter"}),
+            ("update_file", {"path": "Reports/q3.txt", "content": "quarter"}),
+            ("delete_file", {"path": "Reports/q3.txt", "confirm": "Reports/q3.txt"}),
+        )
+        for name, params in writes:
+            with self.assertRaises(ApprovalRequired):
+                catalog.execute(_ctx(), "microsoft365", name, params)
+        self.assertEqual(calls, [])
+        self.assertEqual(client.network_calls, 0)
+        with self.assertRaises(InvalidRequest):
+            catalog.execute(_ctx(), "microsoft365", "delete_file", {"path": "", "confirm": ""}, authorised=True)
+        self.assertEqual(calls, [])

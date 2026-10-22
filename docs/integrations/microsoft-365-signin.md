@@ -1,5 +1,7 @@
 # Microsoft 365 read-only sign-in
 
+Write note, 2026-10-22, mock transport only. Approved calls can create or update an unsent mail draft, and can upload, replace, or delete one named OneDrive file. Default sign-in still requests delegated `User.Read` and `Mail.Read` only. `Mail.ReadWrite` is requested only for draft create and update (`access=draft` or `access=mail-update`). `Files.ReadWrite` is requested only when the operator names a file (`access=files:Reports/q3.txt`). Empty paths and the drive root are refused. `Mail.Send` is not implemented. Live mail stays **NOT CONFIGURED**. This note is not a mailbox call.
+
 Checked 2026-10-22 on the signed-in Azure portal, Authentication (Preview), which loads saved configuration. App `llmfortestingclientid`. Platform **Mobile and desktop applications**. Redirect **`http://127.0.0.1:18080/api/microsoft/callback`**. Supported accounts **Single tenant only - Default Directory**. Tenant ID from the Entra overview: `d595636e-9ef4-4890-b8a7-bde8dd5cab03`. Delegated Graph permissions are `Mail.Read` and `User.Read`. Admin consent required is No. Other permissions granted for the directory: none. No secret was opened. No mailbox was read. The running H100 console was not restarted and has not loaded the application id.
 
 Status: **NOT CONFIGURED**. Portal rows are not a mailbox read. `MICROSOFT_TENANT=common` will not complete sign-in for this single-tenant app. Set `MICROSOFT_TENANT` to the directory id above. The one consent click can happen only after an approved console is serving this code on `127.0.0.1:18080`.
@@ -32,7 +34,7 @@ Publishing this file does not deploy it, and `MICROSOFT_CLIENT_ID` was unset.
 4. The redirect URI must be exactly `http://127.0.0.1:18080/api/microsoft/callback` (or `http://localhost` with a port and that same path). A public redirect is rejected.
 5. The callback checks `state` and exchanges the code only when both the code and the state are present. A missing or reused state, a cancelled consent (`access_denied`), or any other Microsoft error returns an HTML page. That page does not repeat Microsoft's error text. The browser is sent to the Agent page. An empty redirect is not used, because Chrome shows an empty `/api/` response as a blank JSON viewer. The authorization code is not written to the access log. After a valid code, the console calls `GET https://graph.microsoft.com/v1.0/me` and only then records the account.
 6. The access token and refresh token stay on the server. The default file is `/tmp/microsoft-365-token.json`, created with mode `0600`. On Linux a group- or world-readable file is not loaded. The path cannot be inside this repository or under `/workspace`, so a volume snapshot does not keep the mailbox token. The browser receives the account address and connection status only.
-7. The connection record grants `mail:read` when the token includes `Mail.Read`, and `mail:write` when it includes `Mail.ReadWrite`. Search and read go through `Catalog.execute` as `m365_search_mail` and `m365_read_mail`. An approved `m365_create_mail_draft` creates an unsent draft only. An empty search says that nothing matched. A Graph rejection is reported without the response body.
+7. The connection record grants `mail:read` when the token includes `Mail.Read`, `mail:write` when it includes `Mail.ReadWrite`, and `files:write` when it includes `Files.ReadWrite`. Search and read go through `Catalog.execute` as `m365_search_mail` and `m365_read_mail`. Approved `m365_create_mail_draft` and `m365_update_mail_draft` change an unsent draft only. Approved `m365_upload_file`, `m365_update_file`, and `m365_delete_file` change one named OneDrive path. Delete must restate that path and is refused for an empty path, the drive root, or a folder. The Graph write is not called before approval. An empty search says that nothing matched. A Graph rejection is reported without the response body.
 8. Message ids are URL-encoded, including `/`, which real Graph ids contain. `Mail.Send`, Teams send, and calendar changes stay disabled even when `authorised=True`. Teams, OneDrive, SharePoint, and Azure inventory reads are registered and mock-tested. Live Graph and ARM calls still need `MICROSOFT_CLIENT_ID` and consent.
 
 The redirect host is the laptop tunnel, not a public address. The mapped SSH
@@ -72,9 +74,12 @@ The default authorize URL does not request `Chat.Read`, `Files.Read`,
 unavailable until a later approval adds the matching delegated permission.
 
 Add `Mail.ReadWrite` only when unsent drafts are required. The console requests
-that scope through `/api/microsoft/start?access=draft`, not on the default
-read-only sign-in. Do not add `Mail.Send`, `Files.ReadWrite`, or Azure write
-roles. Do not paste the Application (client) ID into a file in this repository.
+that scope through `/api/microsoft/start?access=draft` or `access=mail-update`,
+not on the default read-only sign-in. Add `Files.ReadWrite` only for upload,
+update, or delete of one file the operator named, for example
+`/api/microsoft/start?access=files:Reports/q3.txt`. Do not add `Mail.Send` or
+Azure write roles. Do not paste the Application (client) ID into a file in
+this repository.
 If the registration is single-tenant, set `MICROSOFT_TENANT` to that directory.
 `common` is rejected by a single-tenant app.
 
@@ -98,7 +103,7 @@ python scripts/entra_app_manifest.py
 
 ## Agent documents
 
-The Agent page shows the runner's execution state (received, investigating, awaiting information, awaiting approval, executing, verifying, completed, failed, escalated, or cancelled), the tool it used, and the exact approval target (tool name, call id, and arguments). It does not invent steps. The catalog labels each operation `implemented`, `mock-tested`, `live-tested`, `unavailable`, or `disconnected`. Mail search and read are mock-tested. They are not live-tested. Send and the other writes are unavailable. The local document search and calculator rows are also mock-tested; an older live calculator check on commit `98511df` was not repeated.
+The Agent page shows the runner's execution state (received, investigating, awaiting information, awaiting approval, executing, verifying, completed, failed, escalated, or cancelled), the tool it used, and the exact approval target (tool name, call id, and arguments). It does not invent steps. The catalog labels each operation `implemented`, `mock-tested`, `live-tested`, `unavailable`, or `disconnected`. Mail search, read, unsent draft create and update, and named-file upload, update, and delete are mock-tested. They are not live-tested. Send stays unavailable. The local document search and calculator rows are also mock-tested; an older live calculator check on commit `98511df` was not repeated.
 
 A paused task can be cancelled or given more information from the Agent page. Cancelling does not call Microsoft. An interrupted tool call is not run a second time when the task is restored.
 
@@ -143,7 +148,7 @@ tunnel and consent. Only then is a mailbox search a real Graph request.
 These are separate permissions and products. None of them run here.
 
 - **Teams.** Delegated `Chat.Read` can read the signed-in user's chats. Channel messages use `ChannelMessage.Read.All`, which needs an administrator to consent. Sending is a different permission and stays disabled.
-- **OneDrive.** Delegated `Files.Read` can list and download files the user can already open. Not requested.
+- **OneDrive.** Delegated `Files.Read` can list files the user can already open and is still not on the default sign-in. Named-file upload, update, and delete use `Files.ReadWrite` only after the operator names a path, and only after approval. That path is mock-tested. It is not a live drive call.
 - **SharePoint.** Searching site collections is `Sites.Read.All`, a broader read than one user's drive. Not requested.
 - **Calendar.** Delegated `Calendars.Read` and `GET /me/calendarView`. Not requested.
 - **Excel.** Microsoft Graph's worksheet `usedRange` lists `Files.ReadWrite` as the least privileged permission even for a GET. Do not call that API for a read-only agent. A downloaded `.xlsx` can be read with `Files.Read` and the local parser already used by Document Q&A. That path is not wired.

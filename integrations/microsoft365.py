@@ -1,7 +1,10 @@
 """Microsoft 365 and Azure catalog entries.
 
-Read-only Graph and Azure inventory call Microsoft only after Entra sign-in.
-Sending mail and every Azure write stay disabled. Live connectivity requires
+Graph reads and approved writes call Microsoft only after Entra sign-in.
+Mail drafts can be created and updated. A named OneDrive file can be uploaded,
+updated, or deleted. Sending mail and every Azure write stay disabled.
+The console tool list offers read and draft effects, so these writes use the
+draft effect and the same approval gate. Live connectivity requires
 MICROSOFT_CLIENT_ID and account consent.
 """
 from __future__ import annotations
@@ -14,7 +17,7 @@ import urllib.parse
 from .catalog import Catalog, ConnectorSpec, Effect, OperationSpec
 from .endpoint import ENDPOINT, DeviceRegistry, EndpointService
 from .errors import AuthenticationError, InvalidRequest, NotFound, PermissionDenied
-from .microsoft_oauth import MicrosoftOAuth
+from .microsoft_oauth import MicrosoftOAuth, validate_drive_path
 
 _MESSAGE_ID = re.compile(r"[A-Za-z0-9_+=/\-]{8,512}\Z")
 _MAIL_RESULT = {
@@ -82,6 +85,35 @@ _MESSAGE = {
         "body": {"type": "string", "minLength": 1, "maxLength": 8000},
     },
 }
+_DRAFT_UPDATE = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["message_id"],
+    "properties": {
+        "message_id": {"type": "string", "minLength": 8, "maxLength": 512},
+        "to": {"type": "string", "minLength": 3, "maxLength": 200},
+        "subject": {"type": "string", "minLength": 1, "maxLength": 200},
+        "body": {"type": "string", "minLength": 1, "maxLength": 8000},
+    },
+}
+_FILE_CONTENT = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["path", "content"],
+    "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 400},
+        "content": {"type": "string", "minLength": 1, "maxLength": 200000},
+    },
+}
+_FILE_DELETE = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["path", "confirm"],
+    "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 400},
+        "confirm": {"type": "string", "minLength": 1, "maxLength": 400},
+    },
+}
 
 
 def _op(
@@ -111,7 +143,7 @@ def _op(
 
 MICROSOFT_365 = ConnectorSpec(
     connector_id="microsoft365",
-    version="0.2.0",
+    version="0.3.0",
     service="Microsoft 365",
     summary="Outlook, Teams, OneDrive and SharePoint through Microsoft Graph.",
     auth="oauth_delegated",
@@ -126,6 +158,16 @@ MICROSOFT_365 = ConnectorSpec(
         }, _MAIL_RESULT, evidence="mock-tested"),
         _op("create_mail_draft", "Create an unsent mail draft.", Effect.DRAFT, "mail:write",
             ("Mail.ReadWrite",), _MESSAGE, _OBJECT_RESULT, "mock-tested"),
+        _op(
+            "update_mail_draft",
+            "Update an unsent mail draft. Mail is not sent.",
+            Effect.DRAFT,
+            "mail:write",
+            ("Mail.ReadWrite",),
+            _DRAFT_UPDATE,
+            _OBJECT_RESULT,
+            "mock-tested",
+        ),
         _op("send_mail", "Send an email.", Effect.CONSEQUENTIAL, "mail:write", ("Mail.Send",), _MESSAGE),
         _op(
             "search_teams_messages",
@@ -154,6 +196,36 @@ MICROSOFT_365 = ConnectorSpec(
             "files:read",
             ("Files.Read",),
             _QUERY,
+            _OBJECT_RESULT,
+            "mock-tested",
+        ),
+        _op(
+            "upload_file",
+            "Upload one named OneDrive file. An existing file is not replaced.",
+            Effect.DRAFT,
+            "files:write",
+            ("Files.ReadWrite",),
+            _FILE_CONTENT,
+            _OBJECT_RESULT,
+            "mock-tested",
+        ),
+        _op(
+            "update_file",
+            "Replace the contents of one named OneDrive file.",
+            Effect.DRAFT,
+            "files:write",
+            ("Files.ReadWrite",),
+            _FILE_CONTENT,
+            _OBJECT_RESULT,
+            "mock-tested",
+        ),
+        _op(
+            "delete_file",
+            "Delete one named OneDrive file. Empty and root paths are refused.",
+            Effect.DRAFT,
+            "files:write",
+            ("Files.ReadWrite",),
+            _FILE_DELETE,
             _OBJECT_RESULT,
             "mock-tested",
         ),
@@ -263,7 +335,7 @@ def _item(row_id: str, name: str, detail: str = "", link: str = "") -> dict[str,
 
 
 class Microsoft365Client:
-    """Graph and Azure reads. Sending mail and Azure writes are refused."""
+    """Graph reads plus approved draft and named-file writes. Sending mail is refused."""
 
     def __init__(self, oauth: MicrosoftOAuth | None = None) -> None:
         self.oauth = oauth
@@ -295,12 +367,19 @@ class Microsoft365Client:
             granted.add("teams:read")
         if self.oauth.has_graph_scope("Files.Read"):
             granted.add("files:read")
+        if self.oauth.has_graph_scope("Files.ReadWrite"):
+            granted.add("files:write")
         if self.oauth.has_graph_scope("Sites.Read.All"):
             granted.add("sites:read")
         record.granted_scopes = frozenset(granted)
-        if granted:
+        if "mail:write" in granted or "files:write" in granted:
             record.detail = (
-                "Microsoft Graph is connected for reads and unsent drafts. "
+                "Microsoft Graph is connected. Unsent draft changes and named-file changes need approval. "
+                "Sending mail and Azure changes are not available."
+            )
+        elif granted:
+            record.detail = (
+                "Microsoft Graph is connected for reads. "
                 "Sending mail and Azure changes are not available."
             )
         else:
@@ -333,6 +412,14 @@ class Microsoft365Client:
                 str(params.get("subject", "")),
                 str(params.get("body", "")),
             )
+        if operation == "update_mail_draft":
+            return self._update_mail_draft(params)
+        if operation == "upload_file":
+            return self._upload_file(str(params.get("path", "")), str(params.get("content", "")))
+        if operation == "update_file":
+            return self._update_file(str(params.get("path", "")), str(params.get("content", "")))
+        if operation == "delete_file":
+            return self._delete_file(str(params.get("path", "")), str(params.get("confirm", "")))
         if operation in {"send_mail", "send_teams_message", "update_calendar_event"}:
             raise PermissionDenied(
                 f"Microsoft 365 {operation} is disabled. No request was sent."
@@ -373,6 +460,147 @@ class Microsoft365Client:
             "items": [_item(draft_id, cleaned_subject, recipient[:200], str(payload.get("webLink") or ""))],
         }
 
+    def _check_message_id(self, message_id: str) -> None:
+        lowered = message_id.casefold()
+        if (
+            not _MESSAGE_ID.fullmatch(message_id)
+            or ".." in message_id
+            or "//" in message_id
+            or message_id.startswith("/")
+            or lowered.endswith("/send")
+            or lowered.endswith("sendmail")
+        ):
+            raise InvalidRequest("message id is not usable")
+
+    def _update_mail_draft(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        message_id = str(params.get("message_id", ""))
+        self._check_message_id(message_id)
+        body: dict[str, Any] = {}
+        if "to" in params:
+            recipient = str(params.get("to", "")).strip()
+            if "@" not in recipient or len(recipient) < 3:
+                raise InvalidRequest("draft recipient is not usable")
+            body["toRecipients"] = [{"emailAddress": {"address": recipient[:200]}}]
+        if "subject" in params:
+            cleaned_subject = " ".join(str(params.get("subject", "")).split())
+            if not cleaned_subject:
+                raise InvalidRequest("draft subject is empty")
+            body["subject"] = cleaned_subject[:200]
+        if "body" in params:
+            cleaned_body = str(params.get("body", "")).strip()
+            if not cleaned_body:
+                raise InvalidRequest("draft body is empty")
+            body["body"] = {"contentType": "Text", "content": cleaned_body[:8000]}
+        if not body:
+            raise InvalidRequest("draft update needs a subject, body, or recipient")
+        if self.oauth is None or self.oauth.bundle is None:
+            raise AuthenticationError("Microsoft 365 is not connected. No request was sent.")
+        quoted = urllib.parse.quote(message_id, safe="")
+        before = self.oauth.graph_calls
+        try:
+            payload = self.oauth.graph_patch(
+                "/me/messages/" + quoted,
+                body,
+                required_scope="Mail.ReadWrite",
+            )
+        finally:
+            self.network_calls += self.oauth.graph_calls - before
+        draft_id = str(payload.get("id") or message_id)
+        label = str(body.get("subject") or payload.get("subject") or "draft")
+        return {
+            "status": "ok",
+            "detail": "Unsent draft updated. Mail was not sent.",
+            "items": [_item(draft_id, label, "", str(payload.get("webLink") or ""))],
+        }
+
+    def _existing_file(self, encoded: str) -> dict[str, Any] | None:
+        assert self.oauth is not None
+        try:
+            item = self.oauth.graph_get(
+                "/me/drive/root:/" + encoded,
+                {"$select": "id,name,webUrl,file,folder"},
+                required_scope="Files.ReadWrite",
+            )
+        except NotFound:
+            return None
+        if "folder" in item or "file" not in item:
+            raise InvalidRequest("That path is not a file. No change was sent.")
+        return item
+
+    def _upload_file(self, path: str, content: str) -> dict[str, Any]:
+        cleaned = validate_drive_path(path)
+        return self._put_named_file(cleaned, content, replace=False)
+
+    def _update_file(self, path: str, content: str) -> dict[str, Any]:
+        cleaned = validate_drive_path(path)
+        return self._put_named_file(cleaned, content, replace=True)
+
+    def _put_named_file(self, cleaned: str, content: str, *, replace: bool) -> dict[str, Any]:
+        if not content:
+            raise InvalidRequest("file content is empty")
+        if self.oauth is None or self.oauth.bundle is None:
+            raise AuthenticationError("Microsoft 365 is not connected. No request was sent.")
+        encoded = "/".join(urllib.parse.quote(part, safe="") for part in cleaned.split("/"))
+        behavior = "replace" if replace else "fail"
+        before = self.oauth.graph_calls
+        try:
+            if replace:
+                existing = self._existing_file(encoded)
+                if existing is None:
+                    return {
+                        "status": "not_found",
+                        "detail": "Microsoft Graph did not find that file. Nothing was changed.",
+                        "items": [],
+                    }
+            payload = self.oauth.graph_put(
+                "/me/drive/root:/" + encoded + ":/content?@microsoft.graph.conflictBehavior=" + behavior,
+                content.encode("utf-8"),
+                required_scope="Files.ReadWrite",
+            )
+        finally:
+            self.network_calls += self.oauth.graph_calls - before
+        name = str(payload.get("name") or cleaned.split("/")[-1])
+        detail = "Named file updated. Mail was not sent." if replace else "Named file uploaded. Mail was not sent."
+        return {
+            "status": "ok",
+            "detail": detail,
+            "items": [_item(str(payload.get("id") or cleaned), name, cleaned, str(payload.get("webUrl") or ""))],
+        }
+
+    def _delete_file(self, path: str, confirm: str) -> dict[str, Any]:
+        cleaned = validate_drive_path(path)
+        confirmed = validate_drive_path(confirm)
+        if confirmed != cleaned:
+            raise InvalidRequest("Delete must restate the same file path.")
+        if self.oauth is None or self.oauth.bundle is None:
+            raise AuthenticationError("Microsoft 365 is not connected. No request was sent.")
+        encoded = "/".join(urllib.parse.quote(part, safe="") for part in cleaned.split("/"))
+        before = self.oauth.graph_calls
+        try:
+            existing = self._existing_file(encoded)
+            if existing is None:
+                return {
+                    "status": "not_found",
+                    "detail": "Microsoft Graph did not find that file. Nothing was deleted.",
+                    "items": [],
+                }
+            self.oauth.graph_delete(
+                "/me/drive/root:/" + encoded,
+                required_scope="Files.ReadWrite",
+            )
+        finally:
+            self.network_calls += self.oauth.graph_calls - before
+        return {
+            "status": "ok",
+            "detail": "Named file deleted. Mail was not sent.",
+            "items": [_item(
+                str(existing.get("id") or cleaned),
+                str(existing.get("name") or cleaned.split("/")[-1]),
+                cleaned,
+                str(existing.get("webUrl") or ""),
+            )],
+        }
+
     def _search_mail(self, query: str) -> dict[str, Any]:
         cleaned = " ".join(query.replace("\\", " ").replace('"', " ").split())
         if not cleaned:
@@ -392,13 +620,7 @@ class Microsoft365Client:
         return result
 
     def _read_mail(self, message_id: str) -> dict[str, Any]:
-        if (
-            not _MESSAGE_ID.fullmatch(message_id)
-            or ".." in message_id
-            or "//" in message_id
-            or message_id.startswith("/")
-        ):
-            raise InvalidRequest("message id is not usable")
+        self._check_message_id(message_id)
         quoted = urllib.parse.quote(message_id, safe="")
         try:
             payload = self._graph("/me/messages/" + quoted, {

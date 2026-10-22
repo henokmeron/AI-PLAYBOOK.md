@@ -28,6 +28,7 @@ from typing import Any, Callable
 
 from .errors import (
     AuthenticationError,
+    Conflict,
     InvalidRequest,
     NotFound,
     PermissionDenied,
@@ -37,9 +38,11 @@ from .errors import (
 from .state_guard import StatePermissionError, assert_private, restrict_private
 
 AZURE_SCOPE = "https://management.azure.com/user_impersonation"
-# Initial sign-in is User.Read plus Mail.Read. Chat, files, SharePoint, and Azure
-# inventory stay in the catalog but are not requested until those permissions
-# are approved. Mail.ReadWrite is requested only for an unsent draft.
+# Initial sign-in is User.Read plus Mail.Read. Chat, file reads, SharePoint, and
+# Azure inventory stay in the catalog but are not requested until those
+# permissions are approved. Mail.ReadWrite is requested only for an unsent
+# draft or draft update. Files.ReadWrite is requested only for upload, update,
+# or delete of one file the operator named. Mail.Send is never requested.
 READ_SCOPES = (
     "openid",
     "profile",
@@ -49,16 +52,37 @@ READ_SCOPES = (
     "Mail.Read",
 )
 DRAFT_SCOPES = READ_SCOPES + ("Mail.ReadWrite",)
+FILE_SCOPES = READ_SCOPES + ("Files.ReadWrite",)
 # Kept for older imports and status rows. Prefer READ_SCOPES / DRAFT_SCOPES.
 SCOPES = READ_SCOPES
 GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
 ARM_ROOT = "https://management.azure.com"
 PERMISSIONS_NOTE = (
     "Sign-in identifies the account and requests delegated User.Read and Mail.Read. "
-    "Teams, OneDrive, SharePoint, and Azure inventory are not requested. "
-    "Creating an unsent mail draft needs a second consent for Mail.ReadWrite. "
-    "Mail.Send and mailbox writes stay off."
+    "Teams, OneDrive reads, SharePoint, and Azure inventory are not requested. "
+    "Creating or updating an unsent mail draft needs a second consent for Mail.ReadWrite. "
+    "Uploading, updating, or deleting one named file needs Files.ReadWrite and that path. "
+    "Mail.Send is not requested. Sending mail stays off."
 )
+_READ_ACCESS = {"", "read", "readonly", "read-only"}
+_DRAFT_ACCESS = {"draft", "mail_draft", "mail-draft", "mail_update", "mail-update"}
+_FILE_ACCESS = {"file", "files", "file_write", "files-write", "file-write"}
+_DRIVE_ROOTS = {
+    "",
+    "/",
+    "\\",
+    ".",
+    "..",
+    "root",
+    "root:",
+    "/root",
+    "me/drive/root",
+    "/me/drive/root",
+    "me/drive/root:",
+    "/me/drive/root:",
+    "drive/root",
+    "/drive/root",
+}
 # The browser may choose one of these. It cannot supply an arbitrary directory.
 SIGN_IN_ACCOUNTS = (
     (
@@ -135,6 +159,37 @@ def validate_redirect(value: str) -> str:
     return value.strip()
 
 
+def validate_drive_path(value: str) -> str:
+    """One named file. Empty paths and the drive root are refused."""
+    if not isinstance(value, str):
+        raise InvalidRequest("file path is empty or names the drive root")
+    raw = value.strip()
+    if raw.casefold() in {item.casefold() for item in _DRIVE_ROOTS}:
+        raise InvalidRequest("file path is empty or names the drive root")
+    normalized = raw.replace("\\", "/").strip("/")
+    if not normalized or normalized.casefold() in {
+        "root", ".", "..", "me/drive/root", "drive/root",
+    }:
+        raise InvalidRequest("file path is empty or names the drive root")
+    parts = normalized.split("/")
+    if any(part in {"", ".", ".."} for part in parts):
+        raise InvalidRequest("file path is not usable")
+    if any(any(ord(ch) < 32 or ch in ':*?"<>|' for ch in part) for part in parts):
+        raise InvalidRequest("file path is not usable")
+    if len(normalized) > 400 or len(parts) > 20:
+        raise InvalidRequest("file path is not usable")
+    return normalized
+
+
+def _named_file_access(access: str) -> tuple[str, str | None]:
+    text = (access or "read").strip()
+    lowered = text.casefold()
+    for prefix in ("files:", "file:"):
+        if lowered.startswith(prefix):
+            return "files", text[len(prefix):]
+    return lowered, None
+
+
 def scope_names(scope: str) -> set[str]:
     names: set[str] = set()
     for part in scope.split():
@@ -193,13 +248,23 @@ def load_client_id(environ: dict[str, str] | None = None) -> str:
     return validate_client_id(text.splitlines()[0].strip())
 
 
-def scopes_for(access: str = "read") -> tuple[str, ...]:
-    choice = (access or "read").strip().casefold()
-    if choice in {"", "read", "readonly", "read-only"}:
+def scopes_for(access: str = "read", *, target: str | None = None) -> tuple[str, ...]:
+    """Delegated scopes only. Writes are requested for one named flow."""
+    choice, embedded = _named_file_access(access)
+    if choice in _READ_ACCESS:
         return READ_SCOPES
-    if choice in {"draft", "mail_draft", "mail-draft"}:
+    if choice in _DRAFT_ACCESS:
         return DRAFT_SCOPES
-    raise InvalidRequest("Microsoft sign-in access must be read or draft")
+    if choice in _FILE_ACCESS:
+        named = target if target is not None else embedded
+        if embedded is not None and target is not None:
+            if validate_drive_path(embedded) != validate_drive_path(target):
+                raise InvalidRequest("Name one file before requesting Files.ReadWrite.")
+        if named is None or not str(named).strip():
+            raise InvalidRequest("Name the file before requesting Files.ReadWrite.")
+        validate_drive_path(str(named))
+        return FILE_SCOPES
+    raise InvalidRequest("Microsoft sign-in access must be read, draft, or a named file")
 
 
 @dataclass
@@ -301,8 +366,10 @@ class MicrosoftOAuth:
             "status": status,
             "account": account,
             "mail_read": self.has_mail_read(),
+            "mail_write": self.has_graph_scope("Mail.ReadWrite"),
             "chat_read": self.has_graph_scope("Chat.Read"),
             "files_read": self.has_graph_scope("Files.Read"),
+            "files_write": self.has_graph_scope("Files.ReadWrite"),
             "sites_read": self.has_graph_scope("Sites.Read.All"),
             "azure_read": self.has_azure_read(),
             "accounts": self.account_choices(),
@@ -310,6 +377,7 @@ class MicrosoftOAuth:
             "redirect_uri": self.redirect_uri if self.configured() else None,
             "provider_scopes": list(READ_SCOPES) if self.configured() else [],
             "draft_scopes": list(DRAFT_SCOPES) if self.configured() else [],
+            "file_scopes": list(FILE_SCOPES) if self.configured() else [],
             "setup": "" if self.configured() else (
                 "Sign-in needs the Entra application id in MICROSOFT_CLIENT_ID "
                 "or MICROSOFT_CLIENT_ID_FILE. The buttons stay unavailable until that "
@@ -317,13 +385,19 @@ class MicrosoftOAuth:
             ),
         }
 
-    def authorization_url(self, account: str | None = None, *, access: str = "read") -> str:
+    def authorization_url(
+        self,
+        account: str | None = None,
+        *,
+        access: str = "read",
+        target: str | None = None,
+    ) -> str:
         if not self.configured():
             raise AuthenticationError(self.public_status()["setup"])
         client_id = validate_client_id(self.client_id)
         redirect = validate_redirect(self.redirect_uri)
         tenant = validate_tenant(self.tenant_for_account(account))
-        scopes = scopes_for(access)
+        scopes = scopes_for(access, target=target)
         verifier = secrets.token_urlsafe(64)
         state = secrets.token_urlsafe(32)
         now = self._clock()
@@ -455,6 +529,53 @@ class MicrosoftOAuth:
             raise TransientError("Microsoft Graph did not return the data.")
         raise AuthenticationError("Microsoft Graph did not return the data.")
 
+    def _refuse_mail_send(self, path: str, required_scope: str) -> None:
+        if required_scope.casefold() == "mail.send":
+            raise PermissionDenied("Mail.Send is not available. No Microsoft Graph request was sent.")
+        lowered = path.split("?", 1)[0].casefold().rstrip("/")
+        if lowered.endswith("/send") or lowered.endswith("/sendmail") or "/me/sendmail" in lowered:
+            raise PermissionDenied("Mail.Send is not available. No Microsoft Graph request was sent.")
+
+    def _require_scope(self, required_scope: str) -> str:
+        if not self.has_graph_scope(required_scope):
+            raise PermissionDenied(
+                f"{required_scope} is not granted. No Microsoft Graph request was sent."
+            )
+        return self.access_token()
+
+    def _write_result(
+        self,
+        status: int,
+        payload: Any,
+        *,
+        required_scope: str,
+        action: str,
+        allow_empty: bool = False,
+    ) -> dict[str, Any]:
+        if status in {200, 201} and isinstance(payload, dict):
+            return payload
+        if allow_empty and status == 204:
+            return {"status": "deleted"}
+        if status == 401:
+            raise AuthenticationError(
+                "Microsoft rejected the saved sign-in. Connect the account again. No Graph data was returned."
+            )
+        if status == 403:
+            raise PermissionDenied(
+                f"Microsoft refused this {action}. {required_scope} is missing. No Graph data was returned."
+            )
+        if status == 404:
+            raise NotFound("Microsoft Graph did not find that item.")
+        if status == 409:
+            raise Conflict("Microsoft Graph found a conflict. The file was not replaced.")
+        if status == 429:
+            raise RateLimited("Microsoft Graph is throttling this request.")
+        if status == 400:
+            raise InvalidRequest(f"Microsoft Graph rejected the {action}.")
+        if status >= 500:
+            raise TransientError(f"Microsoft Graph did not complete the {action}.")
+        raise AuthenticationError(f"Microsoft Graph did not complete the {action}.")
+
     def graph_post(
         self,
         path: str,
@@ -462,14 +583,13 @@ class MicrosoftOAuth:
         *,
         required_scope: str,
     ) -> dict[str, Any]:
-        """Create a Graph object. Never used for Mail.Send or Azure writes."""
-        if required_scope == "Mail.Send":
-            raise PermissionDenied("Mail.Send is not available. No Microsoft Graph request was sent.")
-        token = self.access_token()
-        if not self.has_graph_scope(required_scope):
+        """Create an unsent mail draft. Never used for Mail.Send or Azure writes."""
+        self._refuse_mail_send(path, required_scope)
+        if path.split("?", 1)[0].rstrip("/") != "/me/messages":
             raise PermissionDenied(
-                f"{required_scope} is not granted. No Microsoft Graph request was sent."
+                "Only an unsent mail draft can be created. No Microsoft Graph request was sent."
             )
+        token = self._require_scope(required_scope)
         payload_bytes = json.dumps(body).encode("utf-8")
         self.graph_calls += 1
         status, payload = self._transport(
@@ -482,25 +602,109 @@ class MicrosoftOAuth:
             },
             payload_bytes,
         )
-        if status in {200, 201} and isinstance(payload, dict):
-            return payload
-        if status == 401:
-            raise AuthenticationError(
-                "Microsoft rejected the saved sign-in. Connect the account again. No Graph data was returned."
-            )
-        if status == 403:
+        return self._write_result(status, payload, required_scope=required_scope, action="draft")
+
+    def graph_patch(
+        self,
+        path: str,
+        body: dict[str, Any],
+        *,
+        required_scope: str,
+    ) -> dict[str, Any]:
+        """Update an unsent draft. The path cannot be a send action."""
+        self._refuse_mail_send(path, required_scope)
+        bare = path.split("?", 1)[0].rstrip("/")
+        if not bare.startswith("/me/messages/") or bare == "/me/messages":
             raise PermissionDenied(
-                f"Microsoft refused this write. {required_scope} is missing. No Graph data was returned."
+                "Only an unsent mail draft can be updated. No Microsoft Graph request was sent."
             )
-        if status == 404:
-            raise NotFound("Microsoft Graph did not find that item.")
-        if status == 429:
-            raise RateLimited("Microsoft Graph is throttling this request.")
-        if status == 400:
-            raise InvalidRequest("Microsoft Graph rejected the draft.")
-        if status >= 500:
-            raise TransientError("Microsoft Graph did not accept the draft.")
-        raise AuthenticationError("Microsoft Graph did not accept the draft.")
+        token = self._require_scope(required_scope)
+        payload_bytes = json.dumps(body).encode("utf-8")
+        self.graph_calls += 1
+        status, payload = self._transport(
+            "PATCH",
+            GRAPH_ROOT + path,
+            {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            payload_bytes,
+        )
+        return self._write_result(status, payload, required_scope=required_scope, action="draft update")
+
+    def graph_put(
+        self,
+        path: str,
+        content: bytes,
+        *,
+        required_scope: str,
+    ) -> dict[str, Any]:
+        """Upload or replace one named drive file. Never a mail send."""
+        self._refuse_mail_send(path, required_scope)
+        if required_scope != "Files.ReadWrite":
+            raise PermissionDenied(
+                "Files.ReadWrite is required to upload a file. No Microsoft Graph request was sent."
+            )
+        bare = path.split("?", 1)[0]
+        if not bare.startswith("/me/drive/root:/") or ":/content" not in bare:
+            raise PermissionDenied(
+                "Only a named drive file can be uploaded. No Microsoft Graph request was sent."
+            )
+        prefix = bare.split(":/content", 1)[0]
+        if (
+            bare.endswith("/me/drive/root:/content")
+            or prefix.endswith("/me/drive/root:")
+            or prefix.endswith("/me/drive/root:/")
+            or "/me/drive/root:/" not in prefix
+        ):
+            raise InvalidRequest("file path is empty or names the drive root")
+        if not isinstance(content, bytes) or not content:
+            raise InvalidRequest("file content is empty")
+        if len(content) > 4_000_000:
+            raise InvalidRequest("file content is too large for a simple upload")
+        token = self._require_scope(required_scope)
+        self.graph_calls += 1
+        status, payload = self._transport(
+            "PUT",
+            GRAPH_ROOT + path,
+            {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json",
+                "Content-Type": "application/octet-stream",
+            },
+            content,
+        )
+        return self._write_result(status, payload, required_scope=required_scope, action="file upload")
+
+    def graph_delete(self, path: str, *, required_scope: str) -> dict[str, Any]:
+        """Delete one named drive file. Empty and root paths are refused."""
+        self._refuse_mail_send(path, required_scope)
+        if required_scope != "Files.ReadWrite":
+            raise PermissionDenied(
+                "Files.ReadWrite is required to delete a file. No Microsoft Graph request was sent."
+            )
+        bare = path.split("?", 1)[0].rstrip("/")
+        if not bare.startswith("/me/drive/root:/"):
+            raise PermissionDenied(
+                "Only a named drive file can be deleted. No Microsoft Graph request was sent."
+            )
+        if bare in {"/me/drive/root:", "/me/drive/root"} or bare.endswith("/me/drive/root:"):
+            raise InvalidRequest("file path is empty or names the drive root")
+        token = self._require_scope(required_scope)
+        self.graph_calls += 1
+        status, payload = self._transport(
+            "DELETE",
+            GRAPH_ROOT + path,
+            {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json",
+            },
+            None,
+        )
+        return self._write_result(
+            status, payload, required_scope=required_scope, action="file delete", allow_empty=True,
+        )
 
     def arm_get(self, path: str, query: dict[str, str] | None = None) -> dict[str, Any]:
         """Read-only Azure Resource Manager call. Never mutates Azure resources."""

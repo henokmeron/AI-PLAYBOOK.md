@@ -28,10 +28,18 @@ TOKEN = "access-token-not-for-the-browser"
 REFRESH = "refresh-token-not-for-the-browser"
 
 
+_DEFAULT_SCOPE = (
+    "Mail.Read Mail.ReadWrite User.Read Chat.Read Files.Read Sites.Read.All "
+    "https://management.azure.com/user_impersonation"
+)
+
+
 class Transport:
-    def __init__(self) -> None:
+    def __init__(self, scope: str | None = None, drive: str = "file") -> None:
         self.calls: list[tuple[str, str, dict, bytes | None]] = []
         self.access = TOKEN
+        self.scope = scope or _DEFAULT_SCOPE
+        self.drive = drive
 
     def __call__(self, method: str, url: str, headers: dict, body: bytes | None):
         self.calls.append((method, url, dict(headers), body))
@@ -40,13 +48,38 @@ class Transport:
                 "access_token": self.access,
                 "refresh_token": REFRESH,
                 "expires_in": 3600,
-                "scope": (
-                    "Mail.Read Mail.ReadWrite User.Read Chat.Read Files.Read Sites.Read.All "
-                    "https://management.azure.com/user_impersonation"
-                ),
+                "scope": self.scope,
             }
         if url.startswith("https://graph.microsoft.com/v1.0/me?"):
             return 200, {"mail": "owner@example.com", "displayName": "Owner"}
+        if method == "PATCH" and "/me/messages/" in url:
+            return 200, {
+                "id": "AAMkAG12345678",
+                "subject": "Updated",
+                "webLink": "https://outlook.office.com/mail/draft",
+            }
+        if method == "PUT" and "/me/drive/root:/" in url and ":/content" in url:
+            if self.drive == "conflict":
+                return 409, {"error": {"code": "nameAlreadyExists"}}
+            return 201, {
+                "id": "item-1",
+                "name": "q3.txt",
+                "webUrl": "https://contoso-my.sharepoint.com/q3.txt",
+                "size": len(body or b""),
+            }
+        if method == "DELETE" and "/me/drive/root:/" in url:
+            return 204, {}
+        if method == "GET" and "/me/drive/root:/" in url:
+            if self.drive == "missing":
+                return 404, {}
+            if self.drive == "folder":
+                return 200, {"id": "folder-1", "name": "Reports", "folder": {"childCount": 1}}
+            return 200, {
+                "id": "item-1",
+                "name": "q3.txt",
+                "file": {"mimeType": "text/plain"},
+                "webUrl": "https://contoso-my.sharepoint.com/q3.txt",
+            }
         if "/me/messages/" in url:
             return 200, {
                 "id": "AAMkAG12345678",
@@ -130,6 +163,7 @@ class OAuthTests(unittest.TestCase):
         self.assertIn("code_challenge_method=S256", url)
         self.assertIn("Mail.Read", url)
         self.assertNotIn("Mail.ReadWrite", url)
+        self.assertNotIn("Files.ReadWrite", url)
         self.assertNotIn("client_secret", url)
         self.assertNotIn("Mail.Send", url)
         draft_url = oauth.authorization_url(access="draft")
@@ -468,6 +502,7 @@ class OAuthTests(unittest.TestCase):
         self.assertNotIn("management.azure.com", url)
         self.assertNotIn("Mail.Send", url)
         self.assertNotIn("Mail.ReadWrite", url)
+        self.assertNotIn("Files.ReadWrite", url)
         state = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["state"][0]
         oauth.complete("code-1", state)
         catalog, client = platform_catalog(oauth)
@@ -523,6 +558,159 @@ class OAuthTests(unittest.TestCase):
                 authorised=True,
             )
         self.assertEqual(len(transport.calls), before)
+
+    def test_graph_write_is_not_called_before_approval(self) -> None:
+        transport = Transport(scope="User.Read Mail.Read Mail.ReadWrite Files.ReadWrite")
+        oauth = MicrosoftOAuth(client_id=CLIENT, transport=transport, clock=lambda: 1_000.0)
+        with self.assertRaises(InvalidRequest):
+            oauth.authorization_url(access="files")
+        with self.assertRaises(InvalidRequest):
+            oauth.authorization_url(access="files:/")
+        with self.assertRaises(InvalidRequest):
+            oauth.authorization_url(access="files:root")
+        file_url = oauth.authorization_url(access="files:Reports/q3.txt")
+        self.assertIn("Files.ReadWrite", file_url)
+        self.assertNotIn("Mail.ReadWrite", file_url)
+        self.assertNotIn("Mail.Send", file_url)
+        self.assertNotIn(".default", file_url)
+        self.assertNotIn("Reports/q3.txt", file_url)
+        draft_url = oauth.authorization_url(access="draft")
+        self.assertIn("Mail.ReadWrite", draft_url)
+        self.assertNotIn("Files.ReadWrite", draft_url)
+        self.assertNotIn("Mail.Send", draft_url)
+        state = urllib.parse.parse_qs(urllib.parse.urlsplit(file_url).query)["state"][0]
+        oauth.complete("code-1", state)
+        catalog, ctx = _desk_parts(oauth)
+        upload = {"path": "Reports/q3.txt", "content": "quarter"}
+        before = len(transport.calls)
+        with self.assertRaises(ApprovalRequired):
+            catalog.execute(ctx, "microsoft365", "upload_file", upload)
+        with self.assertRaises(ApprovalRequired):
+            catalog.execute(ctx, "microsoft365", "update_file", upload)
+        with self.assertRaises(ApprovalRequired):
+            catalog.execute(
+                ctx, "microsoft365", "delete_file",
+                {"path": "Reports/q3.txt", "confirm": "Reports/q3.txt"},
+            )
+        with self.assertRaises(ApprovalRequired):
+            catalog.execute(
+                ctx, "microsoft365", "update_mail_draft",
+                {"message_id": "AAMkAG12345678", "subject": "Updated"},
+            )
+        self.assertEqual(len(transport.calls), before)
+        self.assertFalse(any(call[0] in {"PUT", "PATCH", "DELETE"} for call in transport.calls))
+
+        for bad in ("/", "root", "/me/drive/root", "root:", ".", ".."):
+            with self.assertRaises(InvalidRequest):
+                catalog.execute(
+                    ctx, "microsoft365", "delete_file",
+                    {"path": bad, "confirm": bad},
+                    authorised=True,
+                )
+            with self.assertRaises(InvalidRequest):
+                catalog.execute(
+                    ctx, "microsoft365", "upload_file",
+                    {"path": bad, "content": "nope"},
+                    authorised=True,
+                )
+        self.assertEqual(len(transport.calls), before)
+        with self.assertRaises(InvalidRequest):
+            catalog.execute(
+                ctx, "microsoft365", "delete_file",
+                {"path": "Reports/q3.txt", "confirm": "Reports/other.txt"},
+                authorised=True,
+            )
+        self.assertEqual(len(transport.calls), before)
+        with self.assertRaises(PermissionDenied):
+            oauth.graph_post("/me/sendMail", {"message": {}}, required_scope="Mail.ReadWrite")
+        with self.assertRaises(PermissionDenied):
+            oauth.graph_delete("/me/messages/AAMkAG12345678", required_scope="Files.ReadWrite")
+        with self.assertRaises(PermissionDenied):
+            oauth.graph_patch(
+                "/me/messages/AAMkAG12345678/send",
+                {"subject": "Sent"},
+                required_scope="Mail.ReadWrite",
+            )
+        self.assertEqual(len(transport.calls), before)
+
+        uploaded = catalog.execute(ctx, "microsoft365", "upload_file", upload, authorised=True)
+        self.assertEqual(uploaded["status"], "ok")
+        self.assertIn("not sent", uploaded["detail"].casefold())
+        put = next(call for call in transport.calls if call[0] == "PUT")
+        self.assertIn("/me/drive/root:/Reports/q3.txt:/content", put[1])
+        self.assertIn("conflictBehavior=fail", put[1])
+        self.assertEqual(put[3], b"quarter")
+        self.assertNotIn("sendMail", put[1].casefold())
+
+        updated = catalog.execute(
+            ctx, "microsoft365", "update_mail_draft",
+            {"message_id": "AAMkAG12/345678", "subject": "Updated invoice"},
+            authorised=True,
+        )
+        self.assertEqual(updated["status"], "ok")
+        self.assertIn("not sent", updated["detail"].casefold())
+        patch = next(call for call in transport.calls if call[0] == "PATCH")
+        self.assertIn("/me/messages/AAMkAG12%2F345678", patch[1])
+        self.assertFalse(patch[1].casefold().rstrip("/").endswith("/send"))
+        self.assertEqual(json.loads(patch[3].decode("utf-8"))["subject"], "Updated invoice")
+
+        replaced = catalog.execute(ctx, "microsoft365", "update_file", upload, authorised=True)
+        self.assertEqual(replaced["items"][0]["id"], "item-1")
+        replace_put = [call for call in transport.calls if call[0] == "PUT"][-1]
+        self.assertIn("conflictBehavior=replace", replace_put[1])
+
+        deleted = catalog.execute(
+            ctx, "microsoft365", "delete_file",
+            {"path": "Reports\\q3.txt", "confirm": "Reports/q3.txt"},
+            authorised=True,
+        )
+        self.assertEqual(deleted["status"], "ok")
+        self.assertTrue(any(call[0] == "DELETE" and call[1].endswith("/Reports/q3.txt") for call in transport.calls))
+        self.assertNotIn(TOKEN, json.dumps(deleted))
+
+    def test_file_delete_refuses_a_folder_and_a_missing_file(self) -> None:
+        folder = Transport(scope="User.Read Mail.Read Files.ReadWrite", drive="folder")
+        oauth = MicrosoftOAuth(client_id=CLIENT, transport=folder, clock=lambda: 1_000.0)
+        url = oauth.authorization_url(access="files", target="Reports/q3.txt")
+        self.assertIn("Files.ReadWrite", url)
+        self.assertNotIn("Mail.Send", url)
+        state = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["state"][0]
+        oauth.complete("code-1", state)
+        catalog, ctx = _desk_parts(oauth)
+        before = len(folder.calls)
+        with self.assertRaises(InvalidRequest):
+            catalog.execute(
+                ctx, "microsoft365", "delete_file",
+                {"path": "Reports", "confirm": "Reports"},
+                authorised=True,
+            )
+        self.assertFalse(any(call[0] in {"DELETE", "PUT"} for call in folder.calls))
+        self.assertGreater(len(folder.calls), before)
+
+        missing = Transport(scope="User.Read Mail.Read Files.ReadWrite", drive="missing")
+        oauth = MicrosoftOAuth(client_id=CLIENT, transport=missing, clock=lambda: 1_000.0)
+        url = oauth.authorization_url(access="mail-update")
+        self.assertIn("Mail.ReadWrite", url)
+        self.assertNotIn("Files.ReadWrite", url)
+        state = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["state"][0]
+        oauth.complete("code-2", state)
+        catalog, ctx = _desk_parts(oauth)
+        record = catalog.connection("local-console", "microsoft365")
+        record.granted_scopes = frozenset({"files:write", "mail:write", "mail:read"})
+        found = catalog.execute(
+            ctx, "microsoft365", "update_file",
+            {"path": "Reports/q3.txt", "content": "quarter"},
+            authorised=True,
+        )
+        self.assertEqual(found["status"], "not_found")
+        self.assertFalse(any(call[0] in {"PUT", "DELETE"} for call in missing.calls))
+        gone = catalog.execute(
+            ctx, "microsoft365", "delete_file",
+            {"path": "Reports/q3.txt", "confirm": "Reports/q3.txt"},
+            authorised=True,
+        )
+        self.assertEqual(gone["status"], "not_found")
+        self.assertFalse(any(call[0] == "DELETE" for call in missing.calls))
 
 
 def limited_calls(transport: Transport) -> list:
