@@ -250,3 +250,49 @@ With the evidence file from `d6d3beb`, both tests pass. Any accurate new live re
 - `/tmp/microsoft-365-token.json` exists, mode `0600`. The file was not read.
 - `/tmp/platform-diagnostics/console.log` does not contain a Graph HTTP status. It records `POST /api/agent` as HTTP 200. The Graph status is HTTP 200 because this console sets `mailbox` to read only on that response.
 - Second endpoint, Blackwell, fresh recovery, and weight backup were not exercised. Production stays **NO-GO**.
+
+## Deploy of 7d2c036 (22:00Z)
+
+GitHub `main` had moved to `ce8ad21` (numbered questions scored separately; `api/local_gateway.py` and `rag/retrieval_pipeline.py` changed) before this session's commit. Pod HEAD was already `ce8ad21` at 21:58:54Z, with gateway pid 84843 and console pid 84701. vLLM was still pid **1826**.
+
+`SOURCE_UPDATE_APPROVED=yes bash ops/release/update-source-only.sh` fast-forwarded `ce8ad21` to `7d2c036cd7986504eb1bdc205046c705767ef8f0`. Tracked edits after the checkout: 0.
+
+The gateway and the console were restarted from their own `/proc` environment and command line. vLLM was not signalled.
+
+| Process | Before | After | Start |
+| --- | --- | --- | --- |
+| vLLM | 1826 | **1826** | 15:23:09Z |
+| Gateway | 84843 | **84940** | 21:58:54Z |
+| Console | 84701 | **84943** | 21:58:54Z |
+
+Gateway start epoch 1792706334.646 is after `api/local_gateway.py` mtime 1792706255.052. Console start epoch 1792706334.746 is after `integrations/endpoint.py` mtime 1792706334.476 and `web/static/app.js` mtime 1792706334.477. Health at the end of that restart: `:8002/v1/models` 200, `:8010/health` 200, `:8080/api/status` 200.
+
+| Start | Command | Exit | Counts |
+| --- | --- | --- | --- |
+| 21:59:18Z | `python3 -m agents.live_smoke --gateway http://127.0.0.1:8010/v1 --key-file /tmp/platform-gateway.key --model qwen3.5-27b` | **0** | state `final`, 2 iterations, 1 tool call |
+| 21:59:18Z | `env VLLM_BASE_URL=http://127.0.0.1:8002/v1 python3 -m evaluation.run_live_platform_smoke` | **0** | 6/6, including authenticated chat HTTP 200 |
+| 21:59:18Z | `python3 -m evaluation.run_live_rag_regression` | **0** | 6/6. P3 answered. N1 and N2 abstained with no sources. |
+
+`agents.live_async_smoke` was not run. A successful call writes a task under `/workspace/agent-task-history`, and this session does not write `/workspace`.
+
+## Operator password
+
+The platform-admin password was reset with `scripts/provision_console_operator.py reset-password` on the pod. `OPERATOR_AUTH_DIR=/tmp/console-operators`. The new password was passed only through `OPERATOR_PASSWORD` in the remote process environment. It was written to `%LOCALAPPDATA%\AI-PLAYBOOK\operator-password.txt` on this PC and the file ACL is private. The password is not in this file.
+
+The console caches operator records in memory, so only the console was restarted for the reset, from its own `/proc` environment and command line. That restart was pid 82297 to **83092**. Login then returned HTTP 200, `authenticated` true, role admin. Logout returned HTTP 200. The console log did not contain the password. The Microsoft token file and the gateway key file kept the same mode, mtime, and size. vLLM 1826 and the gateway process at that moment were not signalled. A later checkout restart, recorded above, replaced pid 83092. The owner should change this password again; the PC file is only a temporary handoff.
+
+## Mailbox positive match
+
+On console pid 83092, the registered tool `m365_search_mail` used the live Graph transport (`graph.microsoft.com`), not a fixture. `Mail.Send` was not in the token scope.
+
+A count-only `GET /me/messages` (`$select=id`, `$top=1`, `$count=true`) returned HTTP 200. One id was listed and `@odata.count` was **9**. No subject or body was stored.
+
+Searches through `m365_search_mail` for harmless tokens (`the`, `to`, `and`, `you`, `https`, `com`, `email`, `please`, `thanks`, `hello`, `account`, `notification`, `microsoft`, `outlook`, `meeting`, `update`, `2026`, `2025`) each returned HTTP 200 and count **0**. The expected content match was **not** present. No message was created. Positive content match is blocked because Graph phrase search did not return any of the nine messages, and subjects were not opened to invent a query.
+
+## Fresh recovery, second PC, Windows checks, Blackwell
+
+See `docs/results/fresh-recovery-2026-10-22.md` and `docs/runbooks/REMAINING_GATES.md`. The new container's `python -m ops.run_tests` exited **1** (40 of 41 modules). `fresh_recovery` stays unmet. The local enrolment fixture is named `not-the-second-endpoint` and does not count. All 17 read-only Windows collectors ran on this PC. No repair ran. No Blackwell pod was created and no weights were copied.
+
+`python -m ops.run_tests` on this PC, started 22:00:02Z, exited **0** at about 22:02:46Z: 46 of 46 modules. Two earlier runs in this session exited 1. The first failed `web.test_server` on a stale `NOT CONFIGURED` assertion, which now accepts `MAILBOX READ VERIFIED` and still requires NO-GO. The second failed `api.test_gateway_reliability` during a Windows socket abort; that module then exited 0 on its own (32 tests).
+
+Production stays **NO-GO**.

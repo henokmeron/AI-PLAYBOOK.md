@@ -63,6 +63,16 @@
           "evidence_kind": "live",
           "detail": "200/200/200 after console pid 76664. Gateway pid 72553 and vLLM pid 1826 were not restarted.",
           "citation": "docs/results/live-acceptance-2026-10-22.md, console redeploy of 0a94d36"
+        },
+        {
+          "source_sha": "7d2c036cd7986504eb1bdc205046c705767ef8f0",
+          "deployed_sha": "7d2c036cd7986504eb1bdc205046c705767ef8f0",
+          "command": "curl -s -o /dev/null -w %{http_code} http://127.0.0.1:8002/v1/models; :8010/health; :8080/api/status after restarting gateway and console onto 7d2c036 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T21:58:55Z",
+          "result": "http_200",
+          "evidence_kind": "live",
+          "detail": "200/200/200. Gateway pid 84940 and console pid 84943 started at 21:58:54Z after the checkout. vLLM pid 1826 was not signalled.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, deploy of 7d2c036"
         }
       ]
     },
@@ -127,6 +137,16 @@
           "evidence_kind": "live",
           "detail": "Pod HEAD 0a94d36. Console 76664 started after the checkout. Gateway 72553 was already running code that this commit does not change. vLLM 1826 unchanged.",
           "citation": "docs/results/live-acceptance-2026-10-22.md, console redeploy of 0a94d36"
+        },
+        {
+          "source_sha": "7d2c036cd7986504eb1bdc205046c705767ef8f0",
+          "deployed_sha": "7d2c036cd7986504eb1bdc205046c705767ef8f0",
+          "command": "SOURCE_UPDATE_APPROVED=yes bash ops/release/update-source-only.sh; restart api/local_gateway.py and web/server.py from their own /proc environ; compare /proc start with file mtime on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T21:58:55Z",
+          "result": "deployed_sha_read",
+          "evidence_kind": "live",
+          "detail": "Pod HEAD 7d2c036, 0 tracked edits. Gateway 84940 start epoch 1792706334.646 is after api/local_gateway.py mtime 1792706255.052. Console 84943 start epoch 1792706334.746 is after integrations/endpoint.py mtime 1792706334.476 and web/static/app.js mtime 1792706334.477. vLLM pid 1826 was not signalled. Ancestor ce8ad21 changed the gateway; this restart loaded it.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, deploy of 7d2c036"
         }
       ]
     },
@@ -171,6 +191,16 @@
           "evidence_kind": "live",
           "detail": "HTTP 200, content 'gateway works'.",
           "citation": "docs/results/live-acceptance-2026-10-22.md, redeploy of d6d3beb"
+        },
+        {
+          "source_sha": "7d2c036cd7986504eb1bdc205046c705767ef8f0",
+          "deployed_sha": "7d2c036cd7986504eb1bdc205046c705767ef8f0",
+          "command": "env VLLM_BASE_URL=http://127.0.0.1:8002/v1 python3 -m evaluation.run_live_platform_smoke on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T21:59:18Z",
+          "result": "completion_ok",
+          "evidence_kind": "live",
+          "detail": "Exit 0. Authenticated chat HTTP 200 with the expected phrase. Gateway health HTTP 200.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, deploy of 7d2c036"
         }
       ]
     },
@@ -275,6 +305,26 @@
           "evidence_kind": "live",
           "detail": "N1 yacht and N2 VAT both HTTP 200 abstained with no sources. P1, P2 and P4 also answered with the required phrase and source.",
           "citation": "docs/results/live-acceptance-2026-10-22.md, redeploy of 4eab966"
+        },
+        {
+          "source_sha": "7d2c036cd7986504eb1bdc205046c705767ef8f0",
+          "deployed_sha": "7d2c036cd7986504eb1bdc205046c705767ef8f0",
+          "command": "python3 -m evaluation.run_live_rag_regression on http://127.0.0.1:8010 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T21:59:18Z",
+          "result": "rag_cited_answer_ok",
+          "evidence_kind": "live",
+          "detail": "P1-P4 HTTP 200 answered with the required phrase and source, including P3 the train-ticket question. Suite 6/6, exit 0.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, deploy of 7d2c036"
+        },
+        {
+          "source_sha": "7d2c036cd7986504eb1bdc205046c705767ef8f0",
+          "deployed_sha": "7d2c036cd7986504eb1bdc205046c705767ef8f0",
+          "command": "python3 -m evaluation.run_live_rag_regression N1 and N2 on http://127.0.0.1:8010 on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T21:59:18Z",
+          "result": "rag_abstention_ok",
+          "evidence_kind": "live",
+          "detail": "N1 and N2 HTTP 200 abstained with no sources.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, deploy of 7d2c036"
         }
       ]
     },
@@ -289,6 +339,16 @@
           "evidence_kind": "live",
           "detail": "One mailbox search. Graph returned the message list with HTTP 200 and count 0. Before the call, mailbox status was NOT CONFIGURED. After the call it was read, which this process sets only when a live Graph GET of /me/messages returns HTTP 200. Token file exists, mode 0600, contents not read. The console log has no Graph status line and records POST /api/agent HTTP 200. vLLM pid 1826 and gateway pid 72553 were not restarted.",
           "citation": "docs/results/live-acceptance-2026-10-22.md, mailbox read on 326739eb"
+        },
+        {
+          "source_sha": "fa98c651795c50ccc82c5901dc42cf899d49295a",
+          "deployed_sha": "fa98c651795c50ccc82c5901dc42cf899d49295a",
+          "command": "agents.workspace tools_for m365_search_mail handler using console pid 83092 environ on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T21:41:46Z",
+          "result": "mailbox_read_ok",
+          "evidence_kind": "live",
+          "detail": "Tool name m365_search_mail. Live transport true. Host graph.microsoft.com. Mail.Send absent. A count-only GET /me/messages returned HTTP 200, one id listed, odata count 9. Searches for harmless tokens returned HTTP 200 and count 0. Expected content match was absent. No subject or body was stored. Positive content match was not claimed. The search finished before the recovery command logged at this timestamp.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, mailbox positive-match attempt"
         }
       ]
     },
@@ -309,17 +369,50 @@
     {
       "id": "local_suite",
       "description": "python -m ops.run_tests exits 0 on this Windows PC",
-      "evidence": null
+      "evidence": [
+        {
+          "source_sha": "7d2c036cd7986504eb1bdc205046c705767ef8f0",
+          "deployed_sha": "7d2c036cd7986504eb1bdc205046c705767ef8f0",
+          "command": "python -m ops.run_tests",
+          "timestamp_utc": "2026-10-22T22:02:46Z",
+          "result": "pass",
+          "evidence_kind": "local",
+          "detail": "Exit 0. SUMMARY modules=46 ok=46 failed=0 elapsed_s=161.1. Started 2026-10-22T22:00:02Z. Two earlier runs in this session exited 1: one on a stale NOT CONFIGURED assertion that was updated, and one on a Windows socket abort in api.test_gateway_reliability. That module then exited 0 alone, and this full run exited 0.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, deploy of 7d2c036"
+        }
+      ]
     },
     {
       "id": "acceptance_board_tests",
       "description": "ops.test_acceptance_board passes (push, HTTP 200, stale, mailbox and NO-GO rules)",
-      "evidence": null
+      "evidence": [
+        {
+          "source_sha": "7d2c036cd7986504eb1bdc205046c705767ef8f0",
+          "deployed_sha": "7d2c036cd7986504eb1bdc205046c705767ef8f0",
+          "command": "python -m ops.run_tests (includes ops.test_acceptance_board)",
+          "timestamp_utc": "2026-10-22T22:02:46Z",
+          "result": "pass",
+          "evidence_kind": "local",
+          "detail": "The module was among the 46 that passed in the exit 0 suite.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, deploy of 7d2c036"
+        }
+      ]
     },
     {
       "id": "web_server_tests",
       "description": "web.test_server passes",
-      "evidence": null
+      "evidence": [
+        {
+          "source_sha": "7d2c036cd7986504eb1bdc205046c705767ef8f0",
+          "deployed_sha": "7d2c036cd7986504eb1bdc205046c705767ef8f0",
+          "command": "python -m ops.run_tests (includes web.test_server)",
+          "timestamp_utc": "2026-10-22T22:02:46Z",
+          "result": "pass",
+          "evidence_kind": "local",
+          "detail": "The module was among the 46 that passed in the exit 0 suite. It still requires decision NO-GO.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, deploy of 7d2c036"
+        }
+      ]
     },
     {
       "id": "release_archive_current_tip",
