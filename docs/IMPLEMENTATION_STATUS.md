@@ -1,5 +1,7 @@
 # Implementation status
 
+Checked 2026-10-22, citation withholding. A generated answer with no `[Source N]` label is not returned when evidence exists. The reason is `missing_citations`. Document text that says not to cite a source is flagged. Mock upstream only. `python -m ops.run_tests` on Python 3.11 was 41 modules, 0 failed, exit 0. Live Qwen was not run. Production **NO-GO**.
+
 Checked 2026-10-22, document path and cache isolation. A colon in a managed filename is rejected, so `notes.txt:hidden.md` does not attach a stream to `notes.txt`. A symbolic link used as a collection name is rejected and does not list or receive the target collection. Invalidating one BM25 folder does not drop a sibling folder that only shares a path prefix. `python -m ops.run_tests` on Python 3.11 was 41 modules, 0 failed, exit 0. Live Qwen was not run. The pod was not started. The volume was not written. Production **NO-GO**.
 
 Checked 2026-10-22, archive recorded after the code commit. The local archive of `5cb961b29173dbceb8cfe661bb23a5f0cbeb39c5` is SHA-256 `3d77ab37436ed25caa8940a3da45a6768cd84943c768e9794c86c35647730984`, 709,868 bytes, 383 members, under `%LOCALAPPDATA%\AI-PLAYBOOK\releases\`. The sidecar matched. This sentence is not inside that archive. It was not copied to the volume. A temp extract is `%TEMP%\ai-playbook-recover-5cb961b-temp-extract` and is not a fresh machine. Offline implementation on System Status is separate from live acceptance. Production **NO-GO**.

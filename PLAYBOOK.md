@@ -311,6 +311,10 @@ Phase 7 — Advanced model customisation
 - Treat the playbook as a reproducible blueprint for future AI-assisted automation.
 
 ## 13. Change log
+### 2026-10-22 — Citations required when evidence exists
+
+- **VERIFIED locally:** If retrieved sources exist and the model answer has no `[Source N]` label, the gateway withholds that text and reports `missing_citations`. “Do not cite the source” inside a document is flagged as instruction-like text. Mock upstream only. Live Qwen was not run. `python -m ops.run_tests` was 41 modules, 0 failed, exit 0. Go-live **NO-GO**.
+
 ### 2026-10-22 — Document path and collection cache
 
 - **VERIFIED locally:** A document filename that contains `:` is rejected. On this Windows PC that name previously attached a stream to another file. A collection path that is a symbolic link to another collection is rejected for list and upload. Invalidating one BM25 folder no longer drops a sibling folder whose path only shares a prefix. `python -m ops.run_tests` was 41 modules, 0 failed, exit 0. Live Qwen was not run. Go-live **NO-GO**.

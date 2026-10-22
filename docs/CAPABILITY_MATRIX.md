@@ -18,7 +18,7 @@ The machine-readable registry is `windows_repair/capabilities.py`. Its statuses 
 | Model gateway | IMPLEMENTED BUT NOT LIVE-VERIFIED | `api/local_gateway.py` |
 | Qwen on RunPod | BLOCKED | Pod `xx9cjogra5vcwl` is Stopped. It was not started. Not a live claim. |
 | IT Helpdesk agent and approvals | IMPLEMENTED BUT NOT LIVE-VERIFIED | `agents/`; prior live note is in `docs/results/`, not re-run here |
-| RAG answers with citations / abstention | IMPLEMENTED AND TESTED in source | `rag/`. Unit tests cover empty, malformed, duplicate, and unavailable-embedding cases, a colon in a filename, a collection symlink, and sibling cache invalidation. Ranking stays BM25. Live Qwen generation was not re-run. |
+| RAG answers with citations / abstention | IMPLEMENTED AND TESTED in source | `rag/`. Unit tests cover empty, malformed, duplicate, and unavailable-embedding cases, a colon in a filename, a collection symlink, sibling cache invalidation, an uncited model answer, and “do not cite” text. Ranking stays BM25. Live Qwen generation was not re-run. |
 | Operations Centre probes, alerts, incidents | IMPLEMENTED AND TESTED in source | `ops_centre/`, `ops_centre/tests/test_ops_centre.py` |
 | Director on-demand report | IMPLEMENTED AND TESTED in source | `ops_centre/director.py`, `ops_centre/tests/test_director.py` — tests not executed on this PC |
 | Scheduled Director reports | PARTIAL | `ops_centre/director_schedule.py` can run on a file interval. No cron daemon ships with the Pod. |

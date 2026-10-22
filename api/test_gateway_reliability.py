@@ -425,6 +425,16 @@ class GatewayReliabilityTests(unittest.TestCase):
         self.assertNotIn("99999", prompt)
         self.assertIn("66.30", prompt)
 
+    def test_uncited_model_answer_is_withheld(self) -> None:
+        self.upload("cite", "policy.md", b"Receipts are due within 10 business days.")
+        FakeUpstream.answer = "The deadline is 10 business days."
+        status, body, _ = self.ask("When are receipts due in business days?", collection="cite")
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["status"], "abstained")
+        self.assertEqual(body["retrieval"]["reason"], "missing_citations")
+        self.assertNotIn("10 business days", body["answer"])
+        self.assertIn("did not cite", body["answer"])
+
     def test_prose_stored_value_is_not_a_weekly_calculation(self) -> None:
         self.upload("weekly-note", "notes.txt", (
             "UNIQUEWEEKLYTOKEN daily rate note. "

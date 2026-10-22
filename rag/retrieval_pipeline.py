@@ -210,7 +210,8 @@ INJECTION_PATTERNS = re.compile(
     r"(instructions?|prompts?|rules?|rates?|messages?|context)"
     r"|system\s+(override|prompt)|you\s+are\s+now\s+(in\s+)?[a-z]|maintenance\s+mode"
     r"|reveal\s+(the\s+|your\s+)?(system|hidden|secret)|api[\s_-]?key"
-    r"|ignore\s+the\s+(rates?|values?|documents?|evidence)",
+    r"|ignore\s+the\s+(rates?|values?|documents?|evidence)"
+    r"|do\s+not\s+(cite|mention|quote)\s+(the\s+|any\s+|a\s+)?(source|evidence|document)",
     re.IGNORECASE,
 )
 _LABEL_SPOOF_RE = re.compile(r"\[\s*(source\s*\d+[^\]\n]{0,200}|/?evidence[^\]\n]{0,200})\]?", re.IGNORECASE)
@@ -326,8 +327,11 @@ def check_citations(answer: str, source_count: int) -> dict[str, Any]:
 
 
 def answer_delivery(answer: str, source_count: int) -> tuple[str, dict[str, Any]]:
-    """A citation that is not in the evidence is not an answered result."""
+    """A citation that is missing or not in the evidence is not an answered result."""
     citations = check_citations(answer, source_count)
     if citations["invalid"]:
+        return "abstained", citations
+    if source_count > 0 and not citations["cited"]:
+        citations["missing"] = True
         return "abstained", citations
     return "answered", citations

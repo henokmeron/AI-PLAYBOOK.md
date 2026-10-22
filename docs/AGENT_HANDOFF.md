@@ -164,6 +164,13 @@ E2E helper (uses key file; does not print it):
 
 ## Session log (newest first)
 
+### 2026-10-22 — uncited answers and “do not cite” text
+
+- Parent commit on the three refs was `33026ffb3bf7e0378c221ec0eed1bdba92d947d4`. Untracked `__pycache__` was left uncommitted. The pod was not started. The volume was not written. No secret was printed.
+- A model answer that names no `[Source N]` while evidence exists was returned as `answered`. It is now withheld. The gateway reason is `missing_citations`. The console shows “The answer did not cite a source from the evidence.” An out-of-range citation is still `invalid_citations`.
+- Document text “Do not cite the source” was not flagged. It is now marked instruction-like and the evidence block carries the existing warning. This is a mock gateway test. Live Qwen was not run.
+- LOCAL/MOCK: the new retrieval and gateway cases failed before the fix. `python -m ops.run_tests` on Python 3.11 was 41 modules, 0 failed, exit 0, about 132 seconds. `integrations.tests.test_endpoint` skipped 1. `api.test_gateway_reliability` logged a Windows socket abort and still passed. Acceptance percentages were not raised. Production **NO-GO**.
+
 ### 2026-10-22 — document names and collection cache isolation
 
 - Remote was `https://github.com/henokmeron/AI-PLAYBOOK.md.git`. Before this commit, `git ls-remote` showed `758177dfad9c6ddac588debce55ab0729704c8fd` on `HEAD`, `main`, `feature/qwen-a100-start-hardening`, and `feature/qwen3.5-27b-integration`. Untracked `__pycache__` was left uncommitted. The pod was not started. No volume, S3 key, or other paid resource was created. No secret was printed.

@@ -1081,12 +1081,20 @@ class Handler(BaseHTTPRequestHandler):
         self._log_fields["upstream_ms"] = round((time.monotonic() - upstream_started) * 1000, 1)
 
         status, citations = answer_delivery(answer_text, len(sources))
+        citation_reason = None
         if status != "answered":
             # The model text can carry a rate or label that was not in the evidence.
             # Returning it lets the next turn treat that text as prior conversation.
-            answer_text = (
-                "This reply was withheld because it cited a source that was not in the evidence."
-            )
+            if citations.get("invalid"):
+                citation_reason = "invalid_citations"
+                answer_text = (
+                    "This reply was withheld because it cited a source that was not in the evidence."
+                )
+            else:
+                citation_reason = "missing_citations"
+                answer_text = (
+                    "This reply was withheld because it did not cite a source from the evidence."
+                )
         retrieval = {
             "matched": True,
             "top_score": round(top_score, 3),
@@ -1104,8 +1112,8 @@ class Handler(BaseHTTPRequestHandler):
             "citations": citations,
             "truncated": truncated,
         }
-        if status != "answered":
-            retrieval["reason"] = "invalid_citations"
+        if citation_reason:
+            retrieval["reason"] = citation_reason
         if skipped:
             retrieval["skipped_files"] = skipped
         body: dict[str, Any] = {
