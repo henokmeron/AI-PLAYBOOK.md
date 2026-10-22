@@ -24,7 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_PATH = REPO_ROOT / "docs" / "results" / "acceptance-evidence.json"
 INTENDED_TIP_ENV = "AI_PLAYBOOK_INTENDED_TIP"
 GIT_ENV = "AI_PLAYBOOK_GIT"
-DOC_ONLY_PATHSPECS = ("docs/**", "*.md")
+DOC_ONLY_PATHSPECS = ("docs/**", "*.md", "**/test_*.py", "**/tests/**")
 
 EVIDENCE_KINDS = ("live", "local", "mock", "none")
 OFFLINE_FRESHNESS_HOURS = 168
@@ -184,10 +184,10 @@ def _resolve_tip(intended_tip: str | None, repo_root: Path) -> tuple[str | None,
 
 
 def read_runtime_tip(root: Path, head: str) -> str | None:
-    """Latest commit at or before HEAD that changes anything outside the docs.
+    """Latest commit at or before HEAD that changes anything outside docs and tests.
 
     Recording evidence is itself a commit, so the deployed code can never equal
-    the HEAD that records it. Docs-only commits do not change what is served.
+    the HEAD that records it. Docs and test files are not served.
     None when git cannot be run; callers then keep the stricter HEAD.
     """
     git = os.environ.get(GIT_ENV, "").strip() or shutil.which("git")

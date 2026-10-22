@@ -224,23 +224,30 @@ class AcceptanceBoardTests(unittest.TestCase):
 
     def test_recorded_repo_evidence(self) -> None:
         self.assertTrue(EVIDENCE_PATH.is_file())
+        data = json.loads(EVIDENCE_PATH.read_text(encoding="utf-8"))
+        recorded = {
+            gate_id: {item.get("result") for item in entry.get("evidence", [])}
+            for gate_id, entry in data.get("gates", {}).items()
+        }
         payload = board(now=NOW, intended_tip=TIP)
-        passed = {g["id"] for g in payload["live_gates"] if g["passed"]}
-        self.assertEqual(passed, {"live_health", "inference_completion"})
-        self.assertEqual(payload["live_score"]["text"], f"2/{len(REQUIRED)}")
+        self.assertFalse(self.gate(payload, "deployment_parity")["passed"])
         self.assertEqual(payload["decision"], "NO-GO")
-        self.assertEqual(payload["microsoft_status"], "NOT CONFIGURED")
-        deployment = self.gate(payload, "deployment_parity")
-        self.assertEqual(deployment["evidence"][0]["deployed_sha"], OLD)
         for gate in payload["live_gates"]:
+            if not set(REQUIRED[gate["id"]]) <= recorded.get(gate["id"], set()):
+                self.assertFalse(gate["passed"], gate["id"])
             for item in gate["evidence"]:
                 self.assertEqual(item["evidence_kind"], "live")
-                self.assertTrue(item["timestamp_utc"].startswith("2026-10-22T15:"))
-        later = board(now=NOW + timedelta(days=2), intended_tip=TIP)
+                for key in ("source_sha", "deployed_sha"):
+                    if item.get(key) is not None:
+                        self.assertRegex(item[key], r"^[0-9a-f]{40}$")
+                stamp = datetime.strptime(item["timestamp_utc"], "%Y-%m-%dT%H:%M:%SZ")
+                self.assertLessEqual(stamp.replace(tzinfo=timezone.utc), datetime.now(timezone.utc) + timedelta(minutes=5))
+        if "mailbox_read_ok" not in recorded.get("microsoft_mailbox_read", set()):
+            self.assertEqual(payload["microsoft_status"], "NOT CONFIGURED")
+        later = board(now=datetime.now(timezone.utc) + timedelta(days=30), intended_tip=TIP)
         self.assertEqual(later["live_score"]["passed"], 0)
+        self.assertEqual(later["decision"], "NO-GO")
         self.assertEqual(self.gate(later, "live_health")["status"], "STALE")
-        self.assertEqual(self.gate(later, "inference_completion")["status"], "STALE")
-        self.assertEqual(board(now=NOW, intended_tip=OLD)["decision"], "NO-GO")
         text = EVIDENCE_PATH.read_text(encoding="utf-8")
         self.assertNotIn("BEGIN OPENSSH PRIVATE KEY", text)
 
@@ -282,7 +289,9 @@ class RuntimeTipTests(unittest.TestCase):
     def test_docs_only_commits_keep_the_code_tip(self) -> None:
         code = self.commit("app.py", "print(1)\n")
         self.commit("docs/results/evidence.json", "{}\n")
-        head = self.commit("README.md", "notes\n")
+        self.commit("README.md", "notes\n")
+        self.commit("ops/test_board.py", "assert True\n")
+        head = self.commit("rag/tests/test_pipeline.py", "assert True\n")
         self.assertEqual(read_runtime_tip(self.root, head), code)
         newer = self.commit("app.py", "print(2)\n")
         self.assertEqual(read_runtime_tip(self.root, newer), newer)

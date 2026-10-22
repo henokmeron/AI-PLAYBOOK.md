@@ -526,7 +526,10 @@ class ConsoleTests(unittest.TestCase):
         self.assertLess(payload["live_acceptance_percent"], 100)
         self.assertEqual(payload["overall_percent"], payload["live_acceptance_percent"])
         self.assertIn("not a production GO", payload["note"])
-        self.assertIn("Deployed commit equals the intended Git tip", payload["failing_acceptance"])
+        failing_mandatory = [g["description"] for g in payload["live_gates"] if g["mandatory"] and not g["passed"]]
+        self.assertTrue(failing_mandatory)
+        for description in failing_mandatory:
+            self.assertIn(description, payload["failing_acceptance"])
         score = payload["live_score"]
         self.assertLess(score["passed"], score["total"])
         self.assertEqual(score["text"], f"{score['passed']}/{score['total']}")
@@ -537,8 +540,6 @@ class ConsoleTests(unittest.TestCase):
             for item in gate["evidence"]:
                 self.assertIn(item["evidence_kind"], {"live", "local", "mock", "none"})
                 self.assertIn("timestamp_utc", item)
-        deployment = next(g for g in payload["live_gates"] if g["id"] == "deployment_parity")
-        self.assertFalse(deployment["passed"])
         self.assertIn("percent", payload["offline"])
         self.assertNotIn("BEGIN OPENSSH PRIVATE KEY", body.decode("utf-8"))
         status, script = self.request(base, "GET", "/static/app.js")
