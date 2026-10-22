@@ -302,6 +302,12 @@ Phase 7 — Advanced model customisation
 - Treat the playbook as a reproducible blueprint for future AI-assisted automation.
 
 ## 13. Change log
+### 2026-10-22 — Local release of 281eb62 and Microsoft read scope
+
+- **VERIFIED:** H100 pod `xx9cjogra5vcwl` still running. `:8002`, `:8010`, and `:8080/api/status` returned 200. Pod checkout remains `a0e9422`. Not restarted.
+- **VERIFIED:** local archive of `281eb628b51f100433e3f4ab0aad83b516050ae5`, SHA-256 `1a998f7103cc8ca4a9f3a14047eb37e14d95470bba87c232c085e09851b7dad7`, 375 members. Not on the volume. Weights were not copied off the volume.
+- **NOT CONFIGURED:** Microsoft mail. Delegated `Mail.Read` is on the existing app. The loopback redirect was not confirmed saved, and no mailbox was read.
+
 ### 2026-10-22 — Read-only Windows collectors
 - **Implemented and tested on the development PC:** fixed collectors for `win.activation.inspect`, `hw.usb.inspect`, `net.wifi.inspect`, `net.proxy.inspect`, `net.tls.inspect`, `app.browser.inspect`, `app.permissions.inspect`, and `app.crash.evidence`. No product key, Wi-Fi password, proxy credential, private-key export, ACL change, firewall change, process kill, or browser-profile reset. `problem_resolved` stays false. Heartbeat checks were not expanded.
 - **VERIFIED:** `python -m ops.run_tests` on Python 3.11.9, 38 modules, 0 failed, 1 skipped, exit 0. H100 pod `xx9cjogra5vcwl` was read-only inspected and left running. Inventory: `docs/results/asset-inventory-2026-10-22.md`.

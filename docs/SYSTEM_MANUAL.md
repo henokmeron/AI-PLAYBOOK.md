@@ -371,6 +371,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 
 | Date | Change |
 | --- | --- |
+| 2026-10-22 | Release helper finds a working git binary, and `update-source-only.sh` can fast-forward a checkout without signalling Qwen. That script was not run on the H100. Default Microsoft sign-in requests `User.Read` and `Mail.Read` only. Mail remains **NOT CONFIGURED**. Not deployed. |
 | 2026-10-22 | Read-only collectors for activation, USB, Wi-Fi, proxy, TLS, browser, permissions, and crash evidence. Ran on this development PC. Heartbeat list unchanged. H100 pod inspected and not restarted. See `docs/results/asset-inventory-2026-10-22.md`. Not deployed. |
 | 2026-10-21 | Release recovery rejects symlink/hardlink/device/FIFO archive members, cross-platform traversal paths, Windows alternate data streams, and symlink destinations. Focused release tests passed in Actions run 39690350318; commit b25294644ffd69415ecb4291723047ec647e8b41 archive SHA-256 `e92c9005052d63006a03004bfe212ace11969074a86be6c3c2b333624b33fdf1` (374 members). Artifact was not copied to the Global Volume; full suite and live deployment remain unverified. |
 | 2026-10-21 | Agent Windows diagnose tool runs registered read-only collectors, audits the call, and treats the text as untrusted. Elevated approval does not change this PC. Not deployed. |

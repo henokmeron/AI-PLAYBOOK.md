@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-22** (read-only Windows collectors for activation, USB, Wi-Fi, proxy, TLS, browser, permissions, and crash evidence ran on this development PC; full local suite **PASS**. H100 pod `xx9cjogra5vcwl` was inspected and left running. Go-live **NO-GO**.)
+Last updated: **2026-10-22** (second pass: H100 rechecked and left running; local release of `281eb62` packaged; default Microsoft sign-in narrowed to `User.Read` and `Mail.Read`. Go-live **NO-GO**.)
 
 ## Only this repository
 
@@ -164,6 +164,15 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-22 — release packaging and Microsoft read scope
+
+- `CURSOR_AI_PLATFORM_FINISH_INSTRUCTIONS.md` was searched again and is still absent. This pass followed the handoff and the owner's order.
+- Read-only recheck of pod `xx9cjogra5vcwl`: still running, H100 NVL, $3.20/hr, header balance $16.80. `nvidia-smi` still 85415/95830 MiB, driver 595.91.07. `/tmp/AI-PLAYBOOK` still `a0e9422145aae4e38025709d1ca88288e42f375b`. `:8002/health`, `:8010/health`, and `:8080/api/status` each returned 200. The pod was not started, stopped, resized, reloaded, or redeployed. Volume mount unchanged. No file was written on the volume.
+- Local package of `281eb628b51f100433e3f4ab0aad83b516050ae5`: SHA-256 `1a998f7103cc8ca4a9f3a14047eb37e14d95470bba87c232c085e09851b7dad7`, 682,017 bytes, 375 tar members, under `%LOCALAPPDATA%\AI-PLAYBOOK\releases\`. Python read the manifest back. Not copied to the volume. This note is a later commit and is not inside that archive. GitHub remains the source backup. The weight shards were not copied off the volume, so there is still no independent weight backup.
+- `ops.release.package.git_executable` finds a git binary that prints a version when PATH `git` is only a launcher. `ops/release/update-source-only.sh` fast-forwards a clean checkout only after `SOURCE_UPDATE_APPROVED=yes` and does not signal Qwen, the gateway, or the console. It was not run on the H100.
+- The existing Entra registration was reused. Delegated `Mail.Read` was added beside `User.Read`. Admin consent required is No. `Mail.Send`, `Mail.ReadWrite`, and application permissions were not added. No secret was created or displayed. The loopback redirect was typed into the open manifest editor and Save stayed disabled, so the saved redirect is **NOT VERIFIED**. No mailbox was read. The app is single-tenant, so `MICROSOFT_TENANT=common` will not complete sign-in. Microsoft mail stays **NOT CONFIGURED**. Default authorize scopes in code are now `User.Read` and `Mail.Read` only.
+- Production **NO-GO**.
 
 ### 2026-10-22 — read-only collectors and asset inventory
 

@@ -103,9 +103,51 @@ def extract_archive(archive: Path, destination: Path, expected_sha256: str) -> N
         tar.extractall(destination, members=members)
 
 
+def git_executable() -> str:
+    """Return a git binary that prints a version.
+
+    ``git`` on Windows PATH can be a launcher that does not run. ``AI_PLAYBOOK_GIT``
+    is checked first. Git config is not changed.
+    """
+    candidates: list[str] = []
+    override = os.environ.get("AI_PLAYBOOK_GIT", "").strip()
+    if override:
+        candidates.append(override)
+    candidates.append("git")
+    local = os.environ.get("LOCALAPPDATA", "")
+    if local:
+        root = Path(local) / "GitHubDesktop"
+        if root.is_dir():
+            candidates.extend(
+                str(path)
+                for path in sorted(
+                    root.glob("app-*/resources/app/git/mingw64/bin/git.exe"),
+                    reverse=True,
+                )
+            )
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            result = subprocess.run(
+                [candidate, "--version"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=8,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if result.returncode == 0 and "git version" in (result.stdout or "").lower():
+            return candidate
+    raise ReleaseError("a working git executable was not found")
+
+
 def git_output(repo: Path, *args: str) -> str:
     result = subprocess.run(
-        ["git", "-C", str(repo), *args],
+        [git_executable(), "-C", str(repo), *args],
         check=False,
         capture_output=True,
         text=True,
@@ -157,5 +199,9 @@ def build_manifest(commit: str, archive_name: str, checksum: str, tests: list[st
 
 
 def write_manifest(path: Path, manifest: dict) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    read_back = json.loads(path.read_text(encoding="utf-8"))
+    if read_back.get("sha256") != manifest.get("sha256"):
+        raise ReleaseError("manifest read-back did not match the archive checksum")
     return sha256_file(path)

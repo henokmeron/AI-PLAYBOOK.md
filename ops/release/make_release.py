@@ -16,6 +16,7 @@ from ops.release.package import (
     build_manifest,
     default_release_dir,
     dirty_entries,
+    git_executable,
     git_output,
     sha256_file,
     verify_archive,
@@ -48,7 +49,7 @@ def create_package(repo: Path, destination: Path | None = None, *, run_tests: bo
     archive = output / f"AI-PLAYBOOK-{head}.tar.gz"
     if not archive.is_file():
         subprocess.run(
-            ["git", "-C", str(repo), "archive", "--format=tar.gz", "-o", str(archive), head],
+            [git_executable(), "-C", str(repo), "archive", "--format=tar.gz", "-o", str(archive), head],
             check=True,
         )
     checksum = sha256_file(archive)

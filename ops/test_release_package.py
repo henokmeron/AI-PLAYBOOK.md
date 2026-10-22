@@ -3,13 +3,16 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
+import subprocess
 import tarfile
 import tempfile
 import unittest
 from pathlib import Path
 
-from ops.release.package import ReleaseError, path_is_safe, sha256_file, verify_archive
+from ops.release.package import ReleaseError, git_executable, path_is_safe, sha256_file, verify_archive
 from ops.release.pre_shutdown import checkpoint_status
+from ops.release.source_update import SourceUpdateRefusal, plan_fast_forward
 
 
 def _archive(path: Path, names: dict[str, bytes]) -> str:
@@ -78,6 +81,34 @@ class ReleasePackageTests(unittest.TestCase):
                 with self.subTest(member_type=kind):
                     with self.assertRaises(ReleaseError):
                         verify_archive(archive, digest, required=())
+
+    def test_git_executable_prints_a_version(self) -> None:
+        previous = os.environ.get("AI_PLAYBOOK_GIT")
+        os.environ["AI_PLAYBOOK_GIT"] = str(Path(tempfile.gettempdir()) / "missing-git.exe")
+        try:
+            exe = git_executable()
+        finally:
+            if previous is None:
+                os.environ.pop("AI_PLAYBOOK_GIT", None)
+            else:
+                os.environ["AI_PLAYBOOK_GIT"] = previous
+        result = subprocess.run([exe, "--version"], check=False, capture_output=True, text=True, timeout=8)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("git version", result.stdout.lower())
+
+    def test_source_update_never_restarts_a_process(self) -> None:
+        self.assertEqual(
+            plan_fast_forward(clean=True, is_ancestor=True, same_commit=False),
+            "fast-forward-source-only",
+        )
+        self.assertEqual(
+            plan_fast_forward(clean=True, is_ancestor=False, same_commit=True),
+            "already-current",
+        )
+        with self.assertRaises(SourceUpdateRefusal):
+            plan_fast_forward(clean=False, is_ancestor=True, same_commit=False)
+        with self.assertRaises(SourceUpdateRefusal):
+            plan_fast_forward(clean=True, is_ancestor=False, same_commit=False)
 
     def test_shutdown_status_requires_a_verified_volume_copy(self) -> None:
         self.assertEqual(checkpoint_status(True, True), "READY_TO_SHUTDOWN")

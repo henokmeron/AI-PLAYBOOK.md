@@ -61,16 +61,17 @@ Add delegated Microsoft Graph permissions for the initial read-only sign-in:
 
 - `User.Read`
 - `Mail.Read`
-- `Chat.Read`
-- `Files.Read`
-- `Sites.Read.All` (may require admin consent)
+
+The default authorize URL does not request `Chat.Read`, `Files.Read`,
+`Sites.Read.All`, or Azure `user_impersonation`. Those catalog readers stay
+unavailable until a later approval adds the matching delegated permission.
 
 Add `Mail.ReadWrite` only when unsent drafts are required. The console requests
 that scope through `/api/microsoft/start?access=draft`, not on the default
-read-only sign-in. For read-only Azure inventory, also add the Azure Service
-Management delegated permission `user_impersonation`. Do not add `Mail.Send`,
-`Files.ReadWrite`, or Azure write roles. Do not paste the Application (client)
-ID into chat or into a file in this repository.
+read-only sign-in. Do not add `Mail.Send`, `Files.ReadWrite`, or Azure write
+roles. Do not paste the Application (client) ID into a file in this repository.
+If the registration is single-tenant, set `MICROSOFT_TENANT` to that directory.
+`common` is rejected by a single-tenant app.
 
 Until `MICROSOFT_CLIENT_ID` or a private `MICROSOFT_CLIENT_ID_FILE` is set and
 an account consents, the connectors stay **NOT CONFIGURED**. Offline contract

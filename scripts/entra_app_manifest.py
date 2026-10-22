@@ -15,12 +15,16 @@ REDIRECT = "http://127.0.0.1:18080/api/microsoft/callback"
 GRAPH_DELEGATED = (
     "User.Read",
     "Mail.Read",
+)
+DRAFT_OPTIONAL = ("Mail.ReadWrite",)
+# Not requested on the initial sign-in. Do not add these until a later approval.
+NOT_REQUESTED = (
     "Chat.Read",
     "Files.Read",
     "Sites.Read.All",
+    "Mail.Send",
+    "user_impersonation",
 )
-DRAFT_OPTIONAL = ("Mail.ReadWrite",)
-ARM_DELEGATED = ("user_impersonation",)
 
 
 def manifest() -> dict:
@@ -41,25 +45,19 @@ def manifest() -> dict:
                 ),
                 "delegatedPermissions": list(GRAPH_DELEGATED),
                 "optionalDelegatedPermissions": list(DRAFT_OPTIONAL),
-            },
-            {
-                "resourceAppId": "797f4846-ba00-4fd7-ba43-dac1f8f63013",
-                "resourceAccess_note": (
-                    "Azure Service Management. Add delegated user_impersonation for inventory reads only."
-                ),
-                "delegatedPermissions": list(ARM_DELEGATED),
+                "notRequested": list(NOT_REQUESTED),
             },
         ],
         "operator_steps": [
-            "Open Entra ID → App registrations while signed in with an account that can create apps.",
-            f"Reuse an app named {APP_NAME!r} if it already exists. Create only one if it is absent.",
-            "Do not create a client secret.",
-            "Set allowPublicClient / Treat application as a public client to Yes.",
-            f"In the manifest, set replyUrlsWithType to InstalledClient {REDIRECT}.",
-            "Add the read-only Graph permissions listed above. Sites.Read.All may need admin consent.",
-            "Add Azure Service Management user_impersonation only for inventory.",
+            "Open Entra ID → App registrations while signed in with an account that can edit apps.",
+            "Reuse the existing registration when it can hold this redirect and Mail.Read. Do not create a second app.",
+            "Do not create or display a client secret.",
+            "Set isFallbackPublicClient / Treat application as a public client to Yes.",
+            f"In the public client redirect URIs, add {REDIRECT}.",
+            "Add delegated User.Read and Mail.Read only. Do not add Mail.Send, Mail.ReadWrite, or the notRequested scopes.",
+            "If the app is single-tenant, set MICROSOFT_TENANT to that directory. Do not leave it as common.",
             "Copy the Application (client) ID into MICROSOFT_CLIENT_ID or a private MICROSOFT_CLIENT_ID_FILE.",
-            "Do not paste the application id into Git or chat.",
+            "Do not paste the application id into Git.",
         ],
     }
 

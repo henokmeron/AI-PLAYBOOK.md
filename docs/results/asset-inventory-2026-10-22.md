@@ -40,7 +40,11 @@ Console Storage page: one Global volume, name “New model container”, id `cmv
 
 ## Microsoft and Azure
 
-Signed-in Azure portal, Default Directory. Credits shown: £150.95, expiring 2026-11-20. App registrations, All applications: one app, `llmfortestingclientid`, application id `07634d62-4b0e-4572-b586-c5922bb01570`, created 2026-10-21. API permissions listed only Microsoft Graph `User.Read` (delegated). `Mail.Read` was not listed. No application secret was opened. No Graph request was sent. The Pod environment was not changed. Mail integration remains **NOT CONFIGURED**.
+Signed-in Azure portal, Default Directory. Credits shown: £150.95, expiring 2026-11-20. App registrations, All applications: one app, `llmfortestingclientid`, application id `07634d62-4b0e-4572-b586-c5922bb01570`, created 2026-10-21. A later read of the same app showed delegated Microsoft Graph `User.Read` and `Mail.Read`. Admin consent required is No for both. `Mail.Send` and `Mail.ReadWrite` were not added. No application secret was opened or created. The overview lists one existing secret and no certificate. Supported account types: this organization only. The loopback redirect was entered in the manifest editor and Save stayed disabled, so that redirect is **NOT VERIFIED** as stored. No Graph request was sent. The Pod environment was not changed. Mail integration remains **NOT CONFIGURED**.
+
+## Local package of 281eb62
+
+`%LOCALAPPDATA%\AI-PLAYBOOK\releases\281eb628b51f100433e3f4ab0aad83b516050ae5\AI-PLAYBOOK-281eb628b51f100433e3f4ab0aad83b516050ae5.tar.gz`. SHA-256 `1a998f7103cc8ca4a9f3a14047eb37e14d95470bba87c232c085e09851b7dad7`, 682,017 bytes, 375 tar members. Manifest read back in Python. Not copied to the volume. This inventory update is a later commit and is not inside that archive. The weight files were not copied off the volume. GitHub is a source backup only.
 
 ## Recovery path
 

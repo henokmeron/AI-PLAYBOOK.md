@@ -10,7 +10,9 @@ From a clean `main` that matches GitHub:
 python -m ops.release.make_release
 ```
 
-The package is written to `%LOCALAPPDATA%\AI-PLAYBOOK\releases\<commit>\`. The command prints the release id and the SHA-256 of the archive. It does not contact the Pod.
+The package is written to `%LOCALAPPDATA%\AI-PLAYBOOK\releases\<commit>\`. The command prints the release id and the SHA-256 of the archive. It does not contact the Pod. It uses a git binary that prints `git version`. If PATH `git` is only a launcher, set `AI_PLAYBOOK_GIT` or install Git; on this PC the helper also finds GitHub Desktop's `git.exe`. The manifest is read back and rejected if its checksum field does not match the archive.
+
+`ops/release/update-source-only.sh` prints a dry run unless `SOURCE_UPDATE_APPROVED=yes`. With that variable it fast-forwards one clean checkout and does not signal Qwen, the gateway, or the console. It was not run on the H100.
 
 The `.github/workflows/verify-and-package.yml` workflow is configured to run the release-recovery tests and build a commit-versioned archive plus manifest on pushes to `main`, then upload them as a GitHub Actions artifact for 90 days. Workflow run 39690350318 completed successfully for commit b25294644ffd69415ecb4291723047ec647e8b41. It passed ops.test_release_package and uploaded artifact ID 12387414455, named AI-PLAYBOOK-b25294644ffd69415ecb4291723047ec647e8b41. The 374-member source archive SHA-256 is e92c9005052d63006a03004bfe212ace11969074a86be6c3c2b333624b33fdf1; the downloaded artifact ZIP SHA-256 is 097ec6835443b489a0e186a82781043e5cf5f09fd5c6aef2b847d998bf6da4a1. The artifact is retained for 90 days. This is a focused release-test pass, not a full-suite pass. It does not create a GitHub Release or copy files to the RunPod Global Volume.
 

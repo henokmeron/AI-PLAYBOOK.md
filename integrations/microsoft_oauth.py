@@ -37,7 +37,9 @@ from .errors import (
 from .state_guard import StatePermissionError, assert_private, restrict_private
 
 AZURE_SCOPE = "https://management.azure.com/user_impersonation"
-# Initial sign-in is read-only. Mail.ReadWrite is requested only for an unsent draft.
+# Initial sign-in is User.Read plus Mail.Read. Chat, files, SharePoint, and Azure
+# inventory stay in the catalog but are not requested until those permissions
+# are approved. Mail.ReadWrite is requested only for an unsent draft.
 READ_SCOPES = (
     "openid",
     "profile",
@@ -45,10 +47,6 @@ READ_SCOPES = (
     "offline_access",
     "User.Read",
     "Mail.Read",
-    "Chat.Read",
-    "Files.Read",
-    "Sites.Read.All",
-    AZURE_SCOPE,
 )
 DRAFT_SCOPES = READ_SCOPES + ("Mail.ReadWrite",)
 # Kept for older imports and status rows. Prefer READ_SCOPES / DRAFT_SCOPES.
@@ -56,9 +54,10 @@ SCOPES = READ_SCOPES
 GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
 ARM_ROOT = "https://management.azure.com"
 PERMISSIONS_NOTE = (
-    "Sign-in identifies the account and requests read-only Graph access for mail, "
-    "Teams chats, OneDrive, SharePoint, and Azure inventory. Creating an unsent mail "
-    "draft needs a second consent for Mail.ReadWrite. Mail.Send and Azure writes stay off."
+    "Sign-in identifies the account and requests delegated User.Read and Mail.Read. "
+    "Teams, OneDrive, SharePoint, and Azure inventory are not requested. "
+    "Creating an unsent mail draft needs a second consent for Mail.ReadWrite. "
+    "Mail.Send and mailbox writes stay off."
 )
 # The browser may choose one of these. It cannot supply an arbitrary directory.
 SIGN_IN_ACCOUNTS = (
