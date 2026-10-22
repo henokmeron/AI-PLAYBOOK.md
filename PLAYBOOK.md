@@ -311,6 +311,10 @@ Phase 7 — Advanced model customisation
 - Treat the playbook as a reproducible blueprint for future AI-assisted automation.
 
 ## 13. Change log
+### 2026-10-22 — Local archive of 5cb961b
+
+- **VERIFIED locally:** `%LOCALAPPDATA%\AI-PLAYBOOK\releases\5cb961b29173dbceb8cfe661bb23a5f0cbeb39c5\AI-PLAYBOOK-5cb961b29173dbceb8cfe661bb23a5f0cbeb39c5.tar.gz`, SHA-256 `3d77ab37436ed25caa8940a3da45a6768cd84943c768e9794c86c35647730984`, 709,868 bytes, 383 members. The sidecar matched. This note is not inside that archive. Not copied to the volume. Temp extract `%TEMP%\ai-playbook-recover-5cb961b-temp-extract` is not a fresh machine. Go-live **NO-GO**.
+
 ### 2026-10-22 — Offline implementation is not live acceptance
 
 - **VERIFIED locally:** System Status reads `GET /api/acceptance`. The page shows an offline implementation percent and a live acceptance percent. The production decision stays **NO-GO** while any live gate fails. `overall_percent` is the live percent.

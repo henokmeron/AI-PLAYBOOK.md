@@ -376,6 +376,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 
 | Date | Change |
 | --- | --- |
+| 2026-10-22 | Local archive of `5cb961b29173dbceb8cfe661bb23a5f0cbeb39c5` SHA-256 `3d77ab37436ed25caa8940a3da45a6768cd84943c768e9794c86c35647730984`, 383 members. This note is not inside that archive. Not copied to the volume. Production **NO-GO**. |
 | 2026-10-22 | System Status separates offline implementation from live acceptance. Production decision stays **NO-GO**. A temp extract is not a fresh machine. The pod was not started and the volume was not written. |
 | 2026-10-22 | Pod `xx9cjogra5vcwl` rechecked **Stopped** at $0.00/hr. | Storage page after reload: Global Volume `cmv2p5m0d000007jk9o3931ea`, 126.0GB, 1,804 objects, location Any. No S3 API and no file browser for that volume. Stopped-pod Volumes tab showed 0 Bytes and is not a listing. Nothing was started or written. `ops/test_lanes.py` separates the local suite from the four live H100 scripts. Production **NO-GO**. |
 | 2026-10-22 | Shutdown save. Source snapshot `6f07b58` and operator backup `20261022T015922Z` were written to the existing Global Volume and checksum-checked. Weights, runtime archive, RAG, `START.sh`, and older snapshots were not replaced. The gateway key was not copied. Next start, after a pod with this volume is Running: `bash /workspace/ai-platform-release/START.sh --preflight` then `bash /workspace/ai-platform-release/START.sh`. Not run during the save. Production **NO-GO**. |

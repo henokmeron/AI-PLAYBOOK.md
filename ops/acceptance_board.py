@@ -10,8 +10,8 @@ from __future__ import annotations
 # Local/mock checks run on this Windows PC. They do not start the pod.
 LOCAL_SUITE_PASSED = True
 ISOLATED_RECOVER_PASSED = True
-# The archive of the commit that contains this flag is recorded in a later commit.
-CODE_TIP_ARCHIVE_READ_BACK = False
+# True only after the archive bytes were read back. This recording commit is not inside that archive.
+CODE_TIP_ARCHIVE_READ_BACK = True
 
 ACCEPTANCE_GATES = (
     ("deployed commit equals intended Git tip", False),
@@ -105,7 +105,7 @@ def workstreams() -> list[dict]:
                 ("Checker refuses a force push", True),
                 ("This checkout origin was read without pushing", True),
             ],
-            "python -m ops.git_parity reads origin and does not commit. Before this commit, git ls-remote origin showed 4ee02bd843a8e40d59f8121e09c0b81bdabe7648 on HEAD, main, feature/qwen-a100-start-hardening, and feature/qwen3.5-27b-integration. A matching SHA is not a deployment.",
+            "python -m ops.git_parity --ls-remote after the push showed 5cb961b29173dbceb8cfe661bb23a5f0cbeb39c5 on HEAD, main, feature/qwen-a100-start-hardening, and feature/qwen3.5-27b-integration. That push was a fast-forward from 4ee02bd843a8e40d59f8121e09c0b81bdabe7648. A matching SHA is not a deployment.",
             "After each push, run python -m ops.git_parity --ls-remote and require one SHA on those three refs.",
             "code",
         ),
@@ -129,8 +129,8 @@ def workstreams() -> list[dict]:
                 ("Local archive of the latest packaged code tip was read back", CODE_TIP_ARCHIVE_READ_BACK),
                 ("No new archive was copied to the Global Volume", True),
             ],
-            "Origin is https://github.com/henokmeron/AI-PLAYBOOK.md.git. This commit has not been packaged yet. A later commit may record the archive hash and will not be inside that archive. The volume was not written.",
-            "After this commit is pushed, package it, read the SHA-256 back, and record that hash in a following commit.",
+            "Python read the archive of 5cb961b29173dbceb8cfe661bb23a5f0cbeb39c5 back from %LOCALAPPDATA%\\AI-PLAYBOOK\\releases\\5cb961b29173dbceb8cfe661bb23a5f0cbeb39c5\\AI-PLAYBOOK-5cb961b29173dbceb8cfe661bb23a5f0cbeb39c5.tar.gz. 709868 bytes, 383 members, SHA-256 3d77ab37436ed25caa8940a3da45a6768cd84943c768e9794c86c35647730984. The sidecar matched. It contains ops/git_parity.py. This recording commit is not inside that archive. It was not copied to the Global Volume. A temp extract of that archive is %TEMP%\\ai-playbook-recover-5cb961b-temp-extract, not a fresh machine.",
+            "Package again after the next code change. Do not copy the archive to the volume unless the owner approves.",
             "code",
         ),
     ]

@@ -164,6 +164,14 @@ E2E helper (uses key file; does not print it):
 
 ## Session log (newest first)
 
+### 2026-10-22 — archive of 5cb961b recorded after the fact
+
+- Code commit `5cb961b29173dbceb8cfe661bb23a5f0cbeb39c5` was pushed to `main` and fast-forwarded onto `feature/qwen-a100-start-hardening` and `feature/qwen3.5-27b-integration`. `git ls-remote` showed that SHA on `HEAD` and all three refs. The parent was `4ee02bd843a8e40d59f8121e09c0b81bdabe7648`. Nothing was force-pushed.
+- Local archive, read back in Python: `%LOCALAPPDATA%\AI-PLAYBOOK\releases\5cb961b29173dbceb8cfe661bb23a5f0cbeb39c5\AI-PLAYBOOK-5cb961b29173dbceb8cfe661bb23a5f0cbeb39c5.tar.gz`. 709,868 bytes, 383 tar members, SHA-256 `3d77ab37436ed25caa8940a3da45a6768cd84943c768e9794c86c35647730984`. The sidecar matched. It contains `ops/git_parity.py` and `ops/acceptance_board.py`. This recording commit is not inside that archive. The archive was not copied to the volume.
+- `python -m ops.release.recover` extracted that archive into `%TEMP%\ai-playbook-recover-5cb961b-temp-extract`. `ops/release/START.sh` was present. That is a temp extract, not a fresh machine, not a second computer, and not a deployment.
+- The first `git archive` attempt did not see the new directory. The directory was created and the same commit was archived, then the bytes were read back. Weights were not copied. The pod was not started.
+- Offline implementation on the board is 100% for the offline criteria. Live acceptance stays blocked. Production **NO-GO**.
+
 ### 2026-10-22 — offline completion split from live acceptance
 
 - `CURSOR_OFFLINE_COMPLETION_SPRINT.md` was not in this checkout, Downloads, Documents, the Cursor project folder, or GitHub (`main` raw URL returned 404). Work followed the owner's order and this handoff. Desktop is not present on this PC.
