@@ -241,6 +241,14 @@ def parse_object(raw: bytes) -> dict[str, Any] | None:
     return value
 
 
+# Reasons the gateway uses when a listed model must not be treated as alive.
+_PUBLIC_HEALTH_REASONS = frozenset({
+    "model_engine_dead",
+    "no_models_reported",
+    "model_server_absent",
+})
+
+
 def public_health(payload: dict[str, Any] | None) -> dict[str, Any] | None:
     if not isinstance(payload, dict):
         return None
@@ -252,7 +260,22 @@ def public_health(payload: dict[str, Any] | None) -> dict[str, Any] | None:
     count = payload.get("model_count")
     if isinstance(count, int) and not isinstance(count, bool) and 0 <= count <= 100:
         public["model_count"] = count
+    reason = payload.get("reason")
+    if isinstance(reason, str) and reason in _PUBLIC_HEALTH_REASONS:
+        public["reason"] = reason
     return public
+
+
+def model_is_alive(health: dict[str, Any] | None) -> bool:
+    """True only when a fresh health body reports a live model with a count."""
+    if not isinstance(health, dict):
+        return False
+    if health.get("reason") in _PUBLIC_HEALTH_REASONS:
+        return False
+    if health.get("status") != "ok" or health.get("upstream") != "ok":
+        return False
+    count = health.get("model_count")
+    return isinstance(count, int) and not isinstance(count, bool) and count >= 1
 
 
 def validate_rag_history(value: Any) -> list[dict[str, str]]:
@@ -423,6 +446,7 @@ def connection_state(
     key_ok: bool,
     model_ok: bool,
     models_reported: bool = True,
+    model_dead: bool = False,
 ) -> str:
     if not reachable:
         return "unreachable"
@@ -430,6 +454,8 @@ def connection_state(
         return "key_missing"
     if not model_ok:
         return "model_missing"
+    if model_dead:
+        return "model_dead"
     if not models_reported:
         return "unknown"
     if not upstream_ok:
@@ -2106,20 +2132,31 @@ class Handler(BaseHTTPRequestHandler):
         key = config.resolve_api_key()
         key_ok = len(key) >= 32
         result = call_gateway(config, "GET", "/health", None, config.health_timeout, include_key=False)
-        health = public_health(result.payload) if result.reachable and result.status == 200 else None
-        reported = models_reported(health)
-        upstream_ok = bool(
-            health and health.get("status") == "ok" and health.get("upstream") == "ok" and reported
-        )
-        if result.reachable and not upstream_ok and result.status == 503:
-            health = public_health(result.payload) or {"status": "degraded", "upstream": "unavailable"}
+        health = public_health(result.payload) if result.reachable and result.status in {200, 503} else None
+        reason = health.get("reason") if isinstance(health, dict) else None
+        model_dead = reason == "model_engine_dead"
+        alive = result.status == 200 and model_is_alive(health) and not model_dead
+        reported = models_reported(health) and not model_dead
+        # A 503 that only says the upstream is degraded has no model count. Keep
+        # that as degraded. A dead engine, an empty list, or a missing server
+        # must not be promoted to a reported live model.
+        if (
+            result.reachable
+            and result.status == 503
+            and reason not in _PUBLIC_HEALTH_REASONS
+            and not reported
+        ):
             reported = True
+            if not health:
+                health = {"status": "degraded", "upstream": "unavailable"}
+        upstream_ok = alive
         state = connection_state(
             reachable=result.reachable,
             upstream_ok=upstream_ok,
             key_ok=key_ok,
             model_ok=bool(config.model_id),
             models_reported=reported,
+            model_dead=model_dead,
         )
         key_file_found = False
         if config.api_key_file:
@@ -2142,6 +2179,12 @@ class Handler(BaseHTTPRequestHandler):
             detail = (
                 "The gateway answered. Set PLATFORM_MODEL_ID before using chat. "
                 "Document questions can still use the model selected by the gateway. "
+                "RunPod connectivity is not verified."
+            )
+        elif model_dead:
+            detail = (
+                "The gateway answered, but the model engine is dead. "
+                "A listed model is not treated as ready. "
                 "RunPod connectivity is not verified."
             )
         elif result.status == 200 and not reported:
@@ -2170,6 +2213,8 @@ class Handler(BaseHTTPRequestHandler):
             "key_file_found": key_file_found,
             "model_configured": bool(config.model_id),
             "model_id": config.model_id or None,
+            "model_alive": state == "ready" and alive,
+            "model_dead": model_dead,
             "connection": state,
             "runpod_verified": False,
             "detail": detail,

@@ -583,6 +583,106 @@ class ConsoleTests(unittest.TestCase):
         self.assertNotIn(KEY, body.decode("utf-8"))
         self.assertFalse(any(hit["path"] == "/v1/chat/completions" for hit in gateway.hits))
 
+    def test_status_and_chat_do_not_call_a_dead_model_healthy(self) -> None:
+        self.assertFalse(server.model_is_alive({
+            "status": "ok",
+            "upstream": "ok",
+            "model_count": 1,
+            "reason": "model_engine_dead",
+        }))
+        self.assertEqual(
+            server.connection_state(
+                reachable=True,
+                upstream_ok=True,
+                key_ok=True,
+                model_ok=True,
+                models_reported=True,
+                model_dead=True,
+            ),
+            "model_dead",
+        )
+
+        dead = FakeGateway()
+        dead.health_code = 503
+        dead.health_body = {
+            "status": "unknown",
+            "reason": "model_engine_dead",
+            "model_count": 1,
+            "upstream": "unavailable",
+        }
+        base = self.web(dead)
+        payload = json.loads(self.request(base, "GET", "/api/status")[1])
+        self.assertEqual(payload["connection"], "model_dead")
+        self.assertFalse(payload["model_alive"])
+        self.assertTrue(payload["model_dead"])
+        self.assertNotEqual(payload["connection"], "ready")
+        self.assertNotIn("healthy", payload["detail"].casefold())
+        self.assertIn("dead", payload["detail"].casefold())
+        self.assertEqual(payload["health"]["reason"], "model_engine_dead")
+        self.assertEqual(payload["health"]["model_count"], 1)
+
+        lying = FakeGateway()
+        lying.health_code = 200
+        lying.health_body = {
+            "status": "ok",
+            "upstream": "ok",
+            "model_count": 1,
+            "reason": "model_engine_dead",
+        }
+        base = self.web(lying)
+        payload = json.loads(self.request(base, "GET", "/api/status")[1])
+        self.assertEqual(payload["connection"], "model_dead")
+        self.assertFalse(payload["model_alive"])
+        self.assertNotIn("healthy", payload["detail"].casefold())
+
+        empty = FakeGateway()
+        empty.health_code = 503
+        empty.health_body = {
+            "status": "unknown",
+            "reason": "no_models_reported",
+            "model_count": 0,
+            "upstream": "unavailable",
+        }
+        base = self.web(empty)
+        payload = json.loads(self.request(base, "GET", "/api/status")[1])
+        self.assertEqual(payload["connection"], "unknown")
+        self.assertFalse(payload["model_alive"])
+        self.assertNotEqual(payload["connection"], "ready")
+        self.assertNotIn("healthy", payload["detail"].casefold())
+
+        down = self.web(None, gateway_url="http://127.0.0.1:9")
+        payload = json.loads(self.request(down, "GET", "/api/status")[1])
+        self.assertEqual(payload["connection"], "unreachable")
+        self.assertFalse(payload["model_alive"])
+        self.assertNotIn("healthy", payload["detail"].casefold())
+
+        ready = FakeGateway()
+        base = self.web(ready)
+        payload = json.loads(self.request(base, "GET", "/api/status")[1])
+        self.assertEqual(payload["connection"], "ready")
+        self.assertTrue(payload["model_alive"])
+        self.assertFalse(payload["model_dead"])
+        self.assertIn("healthy", payload["detail"].casefold())
+
+        static = Path(__file__).resolve().parent / "static"
+        page = (static / "index.html").read_text(encoding="utf-8")
+        script = (static / "app.js").read_text(encoding="utf-8")
+        css = (static / "styles.css").read_text(encoding="utf-8")
+        self.assertIn('id="status-loading"', page)
+        self.assertIn('id="status-error"', page)
+        self.assertIn('id="chat-gateway"', page)
+        self.assertIn('id="agent-gateway"', page)
+        self.assertIn("Checking the gateway", page)
+        self.assertIn("Checking the gateway", script)
+        self.assertIn("The gateway is down", script)
+        self.assertIn("Model engine is dead", script)
+        self.assertIn("modelIsAlive", script)
+        self.assertIn("chat-loading", page)
+        self.assertIn("agent-loading", page)
+        self.assertIn("is-model_dead", css)
+        self.assertNotIn(KEY, page)
+        self.assertNotIn(KEY, script)
+
     def test_key_file_is_read_and_missing_file_does_not_fall_back(self) -> None:
         gateway = FakeGateway()
         with tempfile.TemporaryDirectory() as tmp:

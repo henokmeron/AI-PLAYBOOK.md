@@ -40,6 +40,12 @@
   var uploadStatus = document.getElementById("upload-status");
   var documentList = document.getElementById("document-list");
   var statusPanel = document.getElementById("status-panel");
+  var statusLoading = document.getElementById("status-loading");
+  var statusError = document.getElementById("status-error");
+  var chatGateway = document.getElementById("chat-gateway");
+  var agentGateway = document.getElementById("agent-gateway");
+  var statusInFlight = false;
+  var statusPhase = "loading";
 
   function el(tag, className, text) {
     var node = document.createElement(tag);
@@ -201,8 +207,23 @@
     if (name === "status") renderStatus();
   }
 
-  function statusLabel(connection) {
-    if (connection === "ready") return "Gateway ready";
+  function modelIsAlive(body) {
+    if (!body || body.model_alive !== true || body.model_dead === true) return false;
+    if (body.connection !== "ready") return false;
+    var health = body.health || {};
+    if (health.reason === "model_engine_dead" || health.reason === "no_models_reported" || health.reason === "model_server_absent") {
+      return false;
+    }
+    if (health.status && health.status !== "ok") return false;
+    if (typeof health.model_count === "number" && health.model_count < 1) return false;
+    if (body.upstream && body.upstream !== "ok") return false;
+    return true;
+  }
+
+  function statusLabel(connection, body) {
+    if (connection === "ready" && modelIsAlive(body)) return "Gateway ready";
+    if (connection === "ready") return "Model is not ready";
+    if (connection === "model_dead") return "Model engine is dead";
     if (connection === "degraded") return "Model upstream unavailable";
     if (connection === "key_missing") return "API key not configured";
     if (connection === "model_missing") return "Model id not configured";
@@ -211,16 +232,89 @@
     return "Status unavailable";
   }
 
+  function gatewayNotice(body, failed) {
+    if (failed || !body) {
+      return "The gateway is down. The status check did not succeed, so chat and the helpdesk cannot treat a model as ready.";
+    }
+    if (!body.gateway_reachable || body.connection === "unreachable") {
+      return "The gateway is down. This console could not open the configured loopback gateway.";
+    }
+    if (body.connection === "model_dead" || body.model_dead === true || (body.health && body.health.reason === "model_engine_dead")) {
+      return "The model engine is dead. A listed model is not treated as ready.";
+    }
+    if (!modelIsAlive(body) && body.connection === "ready") {
+      return "The model is not ready. A dead or missing model is not treated as ready.";
+    }
+    if (body.connection === "unknown") {
+      return "No loaded model was reported. An empty model list is not ready.";
+    }
+    if (body.connection === "degraded") {
+      return "The model upstream is unavailable.";
+    }
+    if (body.connection === "key_missing") {
+      return "The gateway answered, but the API key is not configured.";
+    }
+    if (body.connection === "model_missing") {
+      return "The gateway answered, but no model id is configured for chat.";
+    }
+    return "";
+  }
+
+  function paintNotice(node, message, loading) {
+    if (!node) return;
+    if (loading) {
+      node.hidden = false;
+      node.className = "loading gateway-loading";
+      node.setAttribute("role", "status");
+      node.textContent = "Checking the gateway…";
+      return;
+    }
+    if (!message) {
+      node.hidden = true;
+      node.textContent = "";
+      return;
+    }
+    node.hidden = false;
+    node.className = "banner banner-error";
+    node.setAttribute("role", "alert");
+    node.textContent = message;
+  }
+
   function applyNavStatus(body, failed) {
     navStatus.className = "nav-status";
+    if (statusInFlight && !lastStatus && !failed) {
+      navStatus.textContent = "Checking gateway…";
+      return;
+    }
     if (failed) {
-      navStatus.textContent = "Status check failed";
+      navStatus.textContent = "The gateway is down";
       navStatus.classList.add("is-error");
       return;
     }
     var connection = body && body.connection ? body.connection : "unreachable";
-    navStatus.textContent = statusLabel(connection);
+    if (body && (body.model_dead === true || (body.health && body.health.reason === "model_engine_dead"))) {
+      connection = "model_dead";
+    } else if (connection === "ready" && !modelIsAlive(body)) {
+      connection = "model_dead";
+    }
+    navStatus.textContent = statusLabel(connection, body);
     navStatus.classList.add("is-" + connection);
+  }
+
+  function paintGatewayState() {
+    var failed = statusPhase === "failed" && !statusInFlight;
+    var showLoading = (statusInFlight || statusPhase === "loading") && !lastStatus;
+    var notice = showLoading ? "" : gatewayNotice(lastStatus, failed);
+    if (statusLoading) {
+      statusLoading.hidden = !showLoading && !statusInFlight;
+      statusLoading.textContent = "Checking the gateway…";
+    }
+    if (statusError) {
+      statusError.hidden = !notice;
+      statusError.textContent = notice;
+    }
+    paintNotice(chatGateway, notice, showLoading);
+    paintNotice(agentGateway, notice, showLoading);
   }
 
   function modelUsable(item) {
@@ -284,19 +378,23 @@
   }
 
   function refreshStatus() {
+    statusInFlight = true;
+    if (!lastStatus) statusPhase = "loading";
+    paintGatewayState();
+    if (!lastStatus) applyNavStatus(null, false);
     return request("/api/status").then(function (body) {
       lastStatus = body;
+      statusPhase = "ok";
       if (!selectedModelId && body && body.model_id) selectedModelId = body.model_id;
-      applyNavStatus(body, false);
-      if (!document.getElementById("status-view").hidden) renderStatus();
       return refreshModels();
     }).catch(function () {
       lastStatus = null;
-      applyNavStatus(null, true);
-      if (!document.getElementById("status-view").hidden) {
-        statusPanel.textContent = "The status check failed. Reload the page if this console just restarted.";
-        loadAcceptance();
-      }
+      statusPhase = "failed";
+    }).then(function () {
+      statusInFlight = false;
+      applyNavStatus(lastStatus, statusPhase === "failed");
+      paintGatewayState();
+      if (!document.getElementById("status-view").hidden) renderStatus();
     });
   }
 
@@ -312,15 +410,30 @@
 
   function renderStatus() {
     loadAcceptance();
-    statusPanel.textContent = "";
+    paintGatewayState();
     if (!lastStatus) {
-      statusPanel.textContent = "Checking the gateway…";
+      statusPanel.hidden = true;
+      statusPanel.textContent = "";
       return;
     }
     var body = lastStatus;
+    var alive = modelIsAlive(body);
+    var connection = body.connection;
+    if (body.model_dead === true || (body.health && body.health.reason === "model_engine_dead")) {
+      connection = "model_dead";
+    } else if (connection === "ready" && !alive) {
+      connection = "model_dead";
+    }
+    var detail = body.detail || "";
+    if (!alive && /healthy/i.test(detail)) {
+      detail = "The model is not ready. A dead or missing model is not treated as ready.";
+    }
+    statusPanel.hidden = false;
+    statusPanel.textContent = "";
     var list = el("dl", "status-list");
     var rows = []
-      .concat(addRow("Connection", statusLabel(body.connection)))
+      .concat(addRow("Connection", statusLabel(connection, body)))
+      .concat(addRow("Model alive", alive ? "Yes" : "No"))
       .concat(addRow("Gateway", body.gateway_url || "Not configured"))
       .concat(addRow("Gateway reachable", body.gateway_reachable ? "Yes" : "No"))
       .concat(addRow("Upstream", body.upstream || "Unknown"))
@@ -331,12 +444,17 @@
       .concat(addRow("Selected model", selectedModelId || "Not selected"))
       .concat(addRow("RunPod connection", "Not verified"))
       .concat(addRow("Checked", new Date().toLocaleString()));
+    if (body.health && typeof body.health.reason === "string") {
+      rows = rows.concat(addRow("Health reason", body.health.reason));
+    }
     if (body.health && typeof body.health.model_count === "number") {
-      rows = rows.concat(addRow("Models reported", String(body.health.model_count)));
+      var countLabel = String(body.health.model_count);
+      if (!alive) countLabel += " (not a live model)";
+      rows = rows.concat(addRow("Models reported", countLabel));
     }
     rows.forEach(function (node) { list.appendChild(node); });
     statusPanel.appendChild(list);
-    statusPanel.appendChild(el("p", "meta", body.detail || ""));
+    statusPanel.appendChild(el("p", "meta", detail));
   }
 
   function acceptanceBar(percent, live) {

@@ -59,6 +59,7 @@
           <p>Messages go to the local web server, which calls the authenticated gateway. This page does not receive the API key.</p>
         </header>
         <div id="chat-error" class="banner banner-error" role="alert" hidden></div>
+        <p id="chat-gateway" class="loading gateway-loading" role="status">Checking the gateway…</p>
         <div class="composer model-picker-bar">
           <label for="model-select">Model</label>
           <select id="model-select" aria-describedby="model-hint"></select>
@@ -143,6 +144,7 @@
           <p>Describe an IT problem. The agent classifies it, searches support docs, checks local platform health, and can propose a safe change that waits for your approval. You see real tool results, can cancel anytime, and receive an incident report with evidence and verification. External accounts below stay unused until you connect them.</p>
         </header>
         <div id="agent-error" class="banner banner-error" role="alert" hidden></div>
+        <p id="agent-gateway" class="loading gateway-loading" role="status">Checking the gateway…</p>
         <section class="composer" aria-labelledby="connector-title">
           <h2 id="connector-title">Connected accounts</h2>
           <ul id="connector-list" class="sources"></ul>
@@ -321,7 +323,9 @@
           <h1 id="status-title">System Status</h1>
           <p>A successful check means this web server reached the loopback gateway configured for it. It is not a verified RunPod connection.</p>
         </header>
-        <div id="status-panel" class="result">Checking the gateway…</div>
+        <p id="status-loading" class="loading gateway-loading" role="status">Checking the gateway…</p>
+        <div id="status-error" class="banner banner-error" role="alert" hidden></div>
+        <div id="status-panel" class="result" hidden></div>
         <section id="acceptance-board" class="result" aria-labelledby="acceptance-title">
           <h2 id="acceptance-title">Finish-order progress</h2>
           <p id="acceptance-decision" class="meta">Loading the recorded acceptance board…</p>
