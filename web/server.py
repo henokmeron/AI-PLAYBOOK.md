@@ -31,7 +31,7 @@ for _path in (_REPO_ROOT, _WEB_DIR):
         sys.path.insert(0, _text)
 
 from agents.adapters.rag_library import GroundedDocumentRetriever
-from agents.it_support import looks_like_it_support
+from agents.task_kinds import needs_long_run
 from agents.model import OpenAICompatibleClient
 from agents.workspace import CONSOLE_TENANT, AgentDesk
 from auth import AuthService, Permission
@@ -1452,19 +1452,29 @@ class Handler(BaseHTTPRequestHandler):
             return
         goal = payload.get("task")
         wait = payload.get("wait", True)
+        task_type = payload.get("task_type", "")
         if not isinstance(wait, bool):
             self.send_error_json(400, "wait must be a boolean")
             return
+        if task_type is None:
+            task_type = ""
+        if not isinstance(task_type, str):
+            self.send_error_json(400, "task_type must be a string")
+            return
         try:
-            # Helpdesk workflows need several tool rounds against Qwen; keep
-            # non-IT agent tasks on the shorter ceiling.
-            wall_cap = 180.0 if isinstance(goal, str) and looks_like_it_support(goal) else 60.0
+            # Helpdesk, repair, Mac, and document tasks need several tool rounds.
+            # General knowledge and other short tasks keep the lower ceiling.
+            wall_cap = 180.0 if needs_long_run(
+                goal if isinstance(goal, str) else "",
+                task_type,
+            ) else 60.0
             view = self.server.desk.start(  # type: ignore[attr-defined]
                 goal,
                 self._agent_model(),
                 wall_seconds=min(wall_cap, self.config.upstream_timeout),
                 wait=wait,
                 started_by=session.username,
+                task_type=task_type,
             )
         except ValueError as exc:
             self.send_error_json(400, str(exc))

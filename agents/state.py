@@ -223,6 +223,7 @@ class AgentTask:
     failure_reason: str | None = None
     refused: bool = False
     allowed_tools: list[str] | None = None
+    task_kind: str = ""
 
     @property
     def is_terminal(self) -> bool:
@@ -283,6 +284,7 @@ class AgentTask:
             failure_reason=data.get("failure_reason"),
             refused=bool(data.get("refused", False)),
             allowed_tools=data.get("allowed_tools"),
+            task_kind=str(data.get("task_kind") or ""),
         )
 
     @classmethod

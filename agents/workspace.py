@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from integrations.approvals import payload_hash
+from integrations.audit import AuditLog
 from integrations.catalog import Catalog, Effect
 from integrations.errors import AuthenticationError, IntegrationError, InvalidRequest, PermissionDenied
 from integrations.microsoft365 import platform_catalog
@@ -21,6 +22,9 @@ from .builtin.helpdesk import helpdesk_tools
 from .builtin.search import search_documents_tool
 from .history import TaskHistoryStore
 from .it_support import approval_presentation, incident_from_output, looks_like_it_support
+from .mac_catalogue import LIVE_MAC, MAC_CHECKS, mac_tools
+from .microsoft_documents import microsoft_document_tools
+from .task_kinds import allowlist_for, resolve_task_kind
 from .model import ModelClient
 from .redaction import redact
 from .runtime import AgentRunner, CancellationToken
@@ -96,6 +100,7 @@ def tools_for(
     from windows_repair.agent_tools import windows_repair_tools
 
     tools.extend(windows_repair_tools(repair_session))
+    tools.extend(mac_tools())
     if documents is not None:
         tools.append(search_documents_tool(documents))
     if ops_centre is not None:
@@ -115,6 +120,10 @@ def tools_for(
             operation.requires_approval, timeout_seconds=15.0,
         ))
         registered.add(operation.tool_name)
+    for tool in microsoft_document_tools(catalog, ctx):
+        if tool.name not in registered:
+            tools.append(tool)
+            registered.add(tool.name)
     for spec, operation in catalog.visible_operations(ctx):
         if operation.tool_name in registered or operation.tool_name == "m365_send_mail":
             continue
@@ -169,6 +178,12 @@ def public_view(task: AgentTask, trace: ExecutionTrace, *, running: bool = False
         "activity": activity,
         "record": redact(task.record.to_dict()),
         "incident_report": redact(incident) if incident else None,
+        "task_kind": task.task_kind,
+        "tools_executed": [
+            str(item.get("tool"))
+            for item in task.record.results
+            if item.get("ok") and item.get("tool")
+        ],
         "running": bool(running),
         "cancellable": bool(
             running
@@ -201,7 +216,8 @@ class AgentDesk:
         self.history = TaskHistoryStore(history_dir) if history_dir else None
         from windows_repair.agent_tools import RepairToolSession
 
-        self.repair_tools = RepairToolSession()
+        self.audit = AuditLog()
+        self.repair_tools = RepairToolSession(audit=self.audit)
         self._queue: list[str] = []
         self._active_id: str | None = None
 
@@ -330,6 +346,59 @@ class AgentDesk:
                 )
             ],
         })
+        rows.append({
+            "connector_id": "mac_checks",
+            "version": "catalogue",
+            "service": "Mac troubleshooting",
+            "summary": "Documented read-only Mac checks. Live Mac is NOT TESTED.",
+            "auth": "none",
+            "connected": False,
+            "account": None,
+            "readiness": LIVE_MAC,
+            "detail": (
+                "Live Mac is NOT TESTED. Checks are interpreted from fixtures in tests. "
+                "This Windows host does not execute them. No remote Mac agent binary is in this repository."
+            ),
+            "operations": [
+                {
+                    "name": item.check_id,
+                    "tool_name": "mac_diagnose",
+                    "summary": item.summary,
+                    "effect": "read",
+                    "scope": "mac:read",
+                    "requires_approval": False,
+                    "available": False,
+                    "evidence": LIVE_MAC,
+                    "status": LIVE_MAC,
+                    "provider_permissions": [],
+                }
+                for item in MAC_CHECKS
+            ],
+        })
+        for row in rows:
+            if row.get("connector_id") != "microsoft365":
+                continue
+            operations = list(row.get("operations") or [])
+            present = {item.get("tool_name") for item in operations}
+            for name, summary in (
+                ("m365_create_document", "Create a document. Not approved until the catalog lists the write."),
+                ("m365_update_document", "Update a document. Not approved until the catalog lists the write."),
+            ):
+                if name in present:
+                    continue
+                operations.append({
+                    "name": name.removeprefix("m365_"),
+                    "tool_name": name,
+                    "summary": summary,
+                    "effect": "consequential",
+                    "scope": "files:write",
+                    "requires_approval": True,
+                    "available": False,
+                    "evidence": "unavailable",
+                    "status": "not-approved",
+                    "provider_permissions": [],
+                })
+            row["operations"] = operations
         return rows
 
     def _view(self, task: AgentTask, trace: ExecutionTrace, *, running: bool = False) -> dict[str, Any]:
@@ -423,9 +492,11 @@ class AgentDesk:
         wall_seconds: float = 60.0,
         wait: bool = True,
         started_by: str = "",
+        task_type: str | None = None,
     ) -> dict[str, Any]:
         if not isinstance(goal, str) or not goal.strip() or len(goal) > 2000:
             raise ValueError("task must be 1 to 2000 characters")
+        kind = resolve_task_kind(goal, task_type)
         cancel = CancellationToken()
         trace = ExecutionTrace()
 
@@ -443,8 +514,9 @@ class AgentDesk:
         )
         runner = AgentRunner(
             model, registry, trace=trace, model_timeout=wall_seconds, on_progress=on_progress,
+            audit=self.audit,
         )
-        if looks_like_it_support(goal):
+        if kind in {"it_support", "windows_repair", "mac_troubleshooting", "microsoft_documents"} or looks_like_it_support(goal):
             # Live Qwen helpdesk needs classify → diagnose → approve → verify →
             # report; 16k tokens ran out after a successful remediation.
             budget = Budget(
@@ -456,7 +528,8 @@ class AgentDesk:
                 max_iterations=6, max_tool_calls=4, max_total_tokens=12000,
                 max_wall_seconds=wall_seconds,
             )
-        task = runner.new_task(goal, budget=budget)
+        allowed = allowlist_for(kind, registry.names())
+        task = runner.new_task(goal, budget=budget, allowed_tools=allowed, task_kind=kind or None)
         session = {
             "runner": runner,
             "task": task,

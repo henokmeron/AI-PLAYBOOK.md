@@ -781,6 +781,7 @@
 
   var agentForm = document.getElementById("agent-form");
   var agentTask = document.getElementById("agent-task");
+  var agentTaskType = document.getElementById("agent-task-type");
   var agentError = document.getElementById("agent-error");
   var agentLog = document.getElementById("agent-log");
   var agentSend = document.getElementById("agent-send");
@@ -909,6 +910,11 @@
       ? "Status: " + label + ". Steps: " + states.join(" → ")
       : "Status: " + label;
     var record = view.record || {};
+    if (view.task_kind) agentRecord.appendChild(el("p", "meta", "Task type: " + view.task_kind));
+    if (view.task_kind) {
+      var ran = view.tools_executed || [];
+      agentRecord.appendChild(el("p", "meta", "Tools that ran: " + (ran.length ? ran.join(", ") : "none")));
+    }
     if (record.objective) agentRecord.appendChild(el("p", null, "Issue: " + record.objective));
     (record.plan || []).forEach(function (step) {
       agentRecord.appendChild(el("p", "meta", "Plan: " + step));
@@ -1152,7 +1158,9 @@
     agentSend.disabled = true;
     agentLoading.hidden = false;
     showError(agentError, "");
-    request("/api/agent", { method: "POST", body: { task: task, wait: false } }).then(function (result) {
+    var body = { task: task, wait: false };
+    if (agentTaskType && agentTaskType.value) body.task_type = agentTaskType.value;
+    request("/api/agent", { method: "POST", body: body }).then(function (result) {
       agentTaskId = result.task_id || "";
       renderAgent(result);
       if (result.running || !(terminalExecution[result.execution] || result.execution === "awaiting_approval" || result.execution === "awaiting_information")) {

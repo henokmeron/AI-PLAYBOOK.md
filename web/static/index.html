@@ -176,6 +176,15 @@
         </div>
         <div id="agent-log" class="log" aria-live="polite"></div>
         <form id="agent-form" class="composer">
+          <label for="agent-task-type">Task type</label>
+          <select id="agent-task-type">
+            <option value="">Match the issue text</option>
+            <option value="general_knowledge">General knowledge</option>
+            <option value="it_support">IT helpdesk</option>
+            <option value="windows_repair">Windows repair</option>
+            <option value="mac_troubleshooting">Mac troubleshooting (not executed here)</option>
+            <option value="microsoft_documents">Microsoft 365 documents</option>
+          </select>
           <label for="agent-task">IT issue or task</label>
           <textarea id="agent-task" rows="3" maxlength="2000" required placeholder="For example: Helpdesk ticket — the gateway looks down and users cannot chat."></textarea>
           <p class="meta">File attachments on this page are not supported. Upload on Document Q&amp;A if a procedure should be searchable. Progress updates while the task runs; recent tasks below are kept for audit.</p>

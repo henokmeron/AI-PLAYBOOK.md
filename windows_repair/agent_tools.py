@@ -19,6 +19,10 @@ from .engine import RepairDenied, execute
 from .providers import LiveWindowsProvider
 
 _IP = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+_CREDENTIAL_ID = re.compile(
+    r"(credential|password|secret|lsass|ntds|hashdump|sam\.dump)",
+    re.IGNORECASE,
+)
 _SOURCES = frozenset({
     "live_windows", "unavailable", "denied", "none", "fixture", "supplied", "local_api",
 })
@@ -104,8 +108,14 @@ class RepairToolSession:
         *,
         access: str = "read",
         approver: str = "",
+        tool: str = "",
+        approval: str = "",
     ) -> None:
         detail = {"procedure_id": _plain(procedure_id, 64), "outcome": _plain(outcome, 40)}
+        if tool:
+            detail["tool"] = _plain(tool, 64)
+        if approval:
+            detail["approval"] = _plain(approval, 32)
         if approver:
             detail["approver"] = _plain(approver, 128)
         assert self.audit is not None
@@ -127,7 +137,13 @@ def windows_repair_tools(session: RepairToolSession | None = None) -> list[Tool]
         from .engine import plan
 
         result = plan(str(arguments["symptom"]))
-        bound.record("plan", ",".join(str(item) for item in result["procedure_ids"])[:64], "planned")
+        bound.record(
+            "plan",
+            ",".join(str(item) for item in result["procedure_ids"])[:64],
+            "planned",
+            tool="windows_repair_plan",
+            approval="not-required",
+        )
         return {
             "procedure_ids": [str(item) for item in result["procedure_ids"]],
             "problem_resolved": False,
@@ -137,6 +153,14 @@ def windows_repair_tools(session: RepairToolSession | None = None) -> list[Tool]
 
     def diagnose_handler(arguments: dict[str, Any]) -> dict[str, Any]:
         procedure_id = str(arguments["procedure_id"])
+        if _CREDENTIAL_ID.search(procedure_id):
+            bound.record(
+                "diagnose", procedure_id, "rejected",
+                tool="windows_repair_diagnose", approval="not-approved",
+            )
+            raise ToolInputError(
+                "not-approved: credential collection is not a registered check. No command was run."
+            )
         try:
             result = execute(
                 procedure_id,
@@ -144,18 +168,48 @@ def windows_repair_tools(session: RepairToolSession | None = None) -> list[Tool]
                 script_timeout=bound.script_timeout,
             )
         except RepairDenied as exc:
-            bound.record("diagnose", procedure_id, "rejected")
+            bound.record(
+                "diagnose", procedure_id, "rejected",
+                tool="windows_repair_diagnose", approval="not-approved",
+            )
             raise ToolInputError(exc.message) from exc
         public = _public(result)
-        bound.record("diagnose", procedure_id, public["status"])
+        approval = "not-approved" if public["status"] == "denied" else "not-required"
+        bound.record(
+            "diagnose", procedure_id, public["status"],
+            tool="windows_repair_diagnose", approval=approval,
+        )
         return public
 
     def request_handler(arguments: dict[str, Any]) -> dict[str, Any]:
         procedure_id = str(arguments["procedure_id"])
         procedure = PROCEDURES.get(procedure_id)
+        if _CREDENTIAL_ID.search(procedure_id):
+            bound.record(
+                "request_change", procedure_id, "rejected", access="approval",
+                tool="windows_repair_request_change", approval="not-approved",
+            )
+            raise ToolInputError(
+                "not-approved: credential collection is not a registered change. No command was run."
+            )
         if procedure is None:
-            bound.record("request_change", procedure_id, "rejected", access="approval")
+            bound.record(
+                "request_change", procedure_id, "rejected", access="approval",
+                tool="windows_repair_request_change", approval="not-approved",
+            )
             raise ToolInputError("unknown procedure")
+        if procedure_id in {"net.firewall.disable", "hw.driver.install"}:
+            public = _public({
+                "procedure_id": procedure_id,
+                "status": "denied",
+                "evidence_source": "denied",
+                "detail": "Firewall changes, driver installs, and credential dumps are not run.",
+            })
+            bound.record(
+                "request_change", procedure_id, public["status"], access="approval",
+                tool="windows_repair_request_change", approval="not-approved",
+            )
+            return public
         if not procedure.requires_approval:
             public = _public({
                 "procedure_id": procedure_id,
@@ -163,12 +217,18 @@ def windows_repair_tools(session: RepairToolSession | None = None) -> list[Tool]
                 "evidence_source": "denied",
                 "detail": "Read-only checks do not use this approval. No collector ran.",
             })
-            bound.record("request_change", procedure_id, public["status"], access="approval")
+            bound.record(
+                "request_change", procedure_id, public["status"], access="approval",
+                tool="windows_repair_request_change", approval="not-required",
+            )
             return public
         # No provider: an approval must not start a live collector or a repair.
         result = execute(procedure_id, approval_id="agent-runtime-approval")
         public = _public(result)
-        bound.record("request_change", procedure_id, public["status"], access="approval")
+        bound.record(
+            "request_change", procedure_id, public["status"], access="approval",
+            tool="windows_repair_request_change", approval="granted",
+        )
         return public
 
     def audit_decision(*, approved: bool, arguments: dict[str, Any], approver: str) -> None:
@@ -179,6 +239,8 @@ def windows_repair_tools(session: RepairToolSession | None = None) -> list[Tool]
             "approval_granted" if approved else "approval_denied",
             access="approval",
             approver=approver,
+            tool="windows_repair_request_change",
+            approval="granted" if approved else "denied",
         )
 
     request = Tool(

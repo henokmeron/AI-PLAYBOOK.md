@@ -27,6 +27,18 @@ The existing Agent page is the IT Helpdesk. A user submits an issue; the agent c
 
 Microsoft 365 mail and enrolled-device diagnostics remain separate catalog tools. They stay hidden until connected. No Entra app is created by this work. No remote shell or password reset tool exists.
 
+## Operator task types
+
+The Agent page can name a task type. The runtime allowlist follows that type.
+
+| Task type | What it may do | What was run here |
+| --- | --- | --- |
+| General knowledge | Answer from the model, or call `calculator` and `search_documents` when those tools are registered | Mock-tested with a scripted model. A final answer cannot claim a tool that did not return a result. |
+| IT helpdesk | Existing helpdesk tools, including approval for local remediation | Mock-tested. The helpdesk audit records the tool name and the approval decision. It does not store file contents or tokens. |
+| Windows repair | Registered read-only collectors, plus an approval record for an elevated procedure | Read-only collectors stay as they were. Privileged repair still needs a second approver and does not run on this PC. Firewall disable, driver install, and credential collection are refused. |
+| Mac troubleshooting | Documented disk, network, and crash-report checks | **NOT TESTED** on a live Mac. Tests use fixtures. This host is Windows. There is no remote Mac agent binary. |
+| Microsoft 365 documents | Catalog reads, plus `m365_upload_file`, `m365_update_file`, and `m365_delete_file` when those catalog writes are present | Those writes pause for a second approver and call the catalog only. A write name that is not in the catalog returns `not-approved`. Nothing is shelled out. The audit record stores the tool name and the approval decision, not the file contents. |
+
 ## UI
 
 - Nav label: **IT Helpdesk**

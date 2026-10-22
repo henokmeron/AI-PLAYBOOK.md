@@ -113,6 +113,29 @@ def _windows_row(procedure_id: str) -> Capability:
     )
 
 
+def _mac_rows() -> tuple[Capability, ...]:
+    from agents.mac_catalogue import LIVE_MAC, MAC_CHECKS
+
+    return tuple(
+        Capability(
+            operation=item.check_id,
+            platform="darwin",
+            privilege="current-user",
+            risk="READ_ONLY",
+            approval="none",
+            timeout_seconds=None,
+            supported_versions="documented only",
+            test_coverage="Fixture tests in agents.tests.test_task_kinds. Live Mac NOT TESTED.",
+            status=LIVE_MAC,
+            notes=(
+                item.limitations
+                + " Live Mac is NOT TESTED. No remote Mac agent binary."
+            ),
+        )
+        for item in MAC_CHECKS
+    )
+
+
 def _platform_rows() -> tuple[Capability, ...]:
     return (
         Capability(
@@ -178,7 +201,7 @@ def _platform_rows() -> tuple[Capability, ...]:
 
 def registry() -> tuple[Capability, ...]:
     windows = tuple(_windows_row(procedure_id) for procedure_id in PROCEDURES)
-    return windows + _platform_rows()
+    return windows + _mac_rows() + _platform_rows()
 
 
 def by_platform(platform: str) -> tuple[Capability, ...]:
