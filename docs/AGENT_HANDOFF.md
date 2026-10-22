@@ -182,6 +182,11 @@ E2E helper (uses key file; does not print it):
 - `python -m ops.run_tests` on Python 3.11.9 with PyYAML 6.0.3: 39 modules, 0 failed, 1 skipped (`integrations.tests.test_endpoint`), exit 0. `api.test_gateway_reliability` logged a Windows socket abort and still passed. `windows_repair.tests.test_live_diagnostics` hit a temp-file permission error once and passed on the runner's automatic retry. Live Qwen RAG was not re-run. The finish-order board overall is 49%. Decision **NO-GO**.
 - Production **NO-GO**. Failing acceptance: deployed commit equals intended Git tip, mail end-to-end, second endpoint, Blackwell, fresh-environment recovery.
 
+### 2026-10-22 — archive of 9893cec recorded after the fact
+
+- Code and evidence commit `9893cec4f3eb8b03370a4cab5f9a2dee9ab860b8` was pushed to `main` and fast-forwarded onto both feature branches. `git ls-remote` showed that same SHA on all three refs.
+- Local archive, read back in Python after packaging: `%LOCALAPPDATA%\AI-PLAYBOOK\releases\9893cec4f3eb8b03370a4cab5f9a2dee9ab860b8\AI-PLAYBOOK-9893cec4f3eb8b03370a4cab5f9a2dee9ab860b8.tar.gz`. 696,043 bytes, 380 tar members, SHA-256 `65cbcb5f16a90a5c4008f1a9e7e78b61916564df723da3c4da3ae34deaf2e2d5`. The manifest and the `.sha256` sidecar matched. It contains `ops/acceptance_board.py` and `ops/release/update-source-only.sh`. This recording commit is not inside that archive. The archive was not copied to the volume. The first `git archive` attempt did not see the new directory; the directory was created and the same commit was archived, then the bytes were read back. Weights were not copied.
+
 ### 2026-10-22 — release packaging and Microsoft read scope
 
 - `CURSOR_AI_PLATFORM_FINISH_INSTRUCTIONS.md` was searched again and is still absent. This pass followed the handoff and the owner's order.

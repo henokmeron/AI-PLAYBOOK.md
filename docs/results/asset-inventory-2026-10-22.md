@@ -7,6 +7,7 @@ No Pod was started, stopped, resized, reloaded, or redeployed. No volume file wa
 | Item | Evidence | Label |
 | --- | --- | --- |
 | Archive of `d8c32ffebad6295b5d891de09681e46bbe2f022c` | `%LOCALAPPDATA%\AI-PLAYBOOK\releases\d8c32ffebad6295b5d891de09681e46bbe2f022c\AI-PLAYBOOK-d8c32ffebad6295b5d891de09681e46bbe2f022c.tar.gz` | **VERIFIED** read-back. 685,460 bytes, 377 members, SHA-256 `de30f6a2877fee34036731ab58073da8e0433cd6a10742e4ecfb4b6f3437f0c6`. Manifest matched. Not on the volume. |
+| Archive of `9893cec4f3eb8b03370a4cab5f9a2dee9ab860b8` | `%LOCALAPPDATA%\AI-PLAYBOOK\releases\9893cec4f3eb8b03370a4cab5f9a2dee9ab860b8\AI-PLAYBOOK-9893cec4f3eb8b03370a4cab5f9a2dee9ab860b8.tar.gz` | **VERIFIED** read-back. 696,043 bytes, 380 members, SHA-256 `65cbcb5f16a90a5c4008f1a9e7e78b61916564df723da3c4da3ae34deaf2e2d5`. Sidecar matched. Not on the volume. The commit that records this row is not inside the archive. |
 | Isolated extract | `%TEMP%\ai-playbook-recover-d8c32ff` | **VERIFIED** as a temp extract only. Not a fresh machine. |
 | Pod health `2026-10-22T01:18:42Z` | `:8002/health` 200, `:8010/health` 200, `:8080/api/status` 200. HEAD `a0e9422145aae4e38025709d1ca88288e42f375b`. H100 NVL 85415/95830 MiB, driver 595.91.07, util 0%. | **VERIFIED**. Not parity with GitHub. |
 | Billing header | First loaded header $15.46. After reload, **$14.93**, spend **$3.197/hr**, estimated time left **5 hours**. | **VERIFIED** re-read. Not $0.00. Inbox $4.77 is an older notification. |
