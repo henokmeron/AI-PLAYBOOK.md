@@ -8,9 +8,9 @@ Read-only inspection from `C:\Users\henok\src\AI-PLAYBOOK.md`. No Pod was starte
 | --- | --- | --- |
 | Remote | `https://github.com/henokmeron/AI-PLAYBOOK.md.git` | **VERIFIED** (`git remote -v` after init in this folder) |
 | `origin/main` before this inventory commit | `2a56578a74cac4fc0c3f2a0b439c525daba17a6a` | **VERIFIED** by `git fetch` |
-| Feature branches `feature/qwen-a100-start-hardening` and `feature/qwen3.5-27b-integration` | `ec61ac5a548165914dcbf57a32928d595a86399c`, ancestor of that `main` | **VERIFIED** |
+| Feature branches `feature/qwen-a100-start-hardening` and `feature/qwen3.5-27b-integration` | Fast-forwarded from `ec61ac5a548165914dcbf57a32928d595a86399c` to `0aa1caf21fea9570da8af21379f56e635aa2b3d7` with the collector commit. This note is a later commit on `main`. | **VERIFIED** push, not a force-push |
 | Local tree before the collector edit | 330 files, same set as the shallow clone, zero differences after ignoring CR | **VERIFIED** |
-| This PC release directory `%LOCALAPPDATA%\AI-PLAYBOOK\releases` | Path does not exist | **NOT PRESENT** |
+| This PC release of `0aa1caf21fea9570da8af21379f56e635aa2b3d7` | `%LOCALAPPDATA%\AI-PLAYBOOK\releases\0aa1caf21fea9570da8af21379f56e635aa2b3d7\AI-PLAYBOOK-0aa1caf21fea9570da8af21379f56e635aa2b3d7.tar.gz` | SHA-256 `b3cd3683fdceeb943e6a464ab9ef8f1cd5833799c3503af9b79f3823fe9be42f` (also checked with `Get-FileHash`), 681,498 bytes, 375 tar members. Manifest SHA-256 `2286752db07b66d17124870586b2a38bd032120fc95009513c428be603719a9a`. Not copied to the volume. A later doc commit that records this hash is not inside the archive. |
 
 ## Running Pod (left running)
 
@@ -44,7 +44,7 @@ Signed-in Azure portal, Default Directory. Credits shown: £150.95, expiring 202
 
 ## Recovery path
 
-1. GitHub `main` is the source of truth for code. Recover a commit with `python -m ops.release.recover` after `python -m ops.release.make_release`, as in `docs/release/RECOVERY.md`. A local release directory does not exist yet on this PC.
+1. GitHub `main` is the source of truth for code. The local package of `0aa1caf21fea9570da8af21379f56e635aa2b3d7` is SHA-256 `b3cd3683fdceeb943e6a464ab9ef8f1cd5833799c3503af9b79f3823fe9be42f`. Recover with `python -m ops.release.recover` as in `docs/release/RECOVERY.md`. That archive was not copied to the volume.
 2. Weights stay at the volume path above. This package does not download them. Shard hashes were not recomputed on 2026-10-22.
 3. Restore the runtime from `/workspace/runtime-setup/qwen-vllm/` into `/tmp`, not onto `/workspace`. The archive checksum above was checked.
 4. `START.sh` on the volume is the 2026-10-19 file hashed above. It was not executed.
