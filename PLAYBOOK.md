@@ -311,6 +311,14 @@ Phase 7 — Advanced model customisation
 - Treat the playbook as a reproducible blueprint for future AI-assisted automation.
 
 ## 13. Change log
+### 2026-10-22 — Single-tenant Microsoft URLs and specialist edits, still NO-GO
+
+- **VERIFIED locally:** An empty `MICROSOFT_TENANT` and `common` resolve to directory `d595636e-9ef4-4890-b8a7-bde8dd5cab03`. The authorize URL uses that directory. `common` and `/organizations/` are not used for the default sign-in. `?account=work` is HTTP 400 unless the tenant is explicitly `organizations`. PKCE and the CSRF same-site refusal stay in place. No client secret and no `Mail.Send`.
+- **NOT CONFIGURED:** Live mail. The running console on A100 `gom4ualdk47qrj` has no `MICROSOFT_CLIENT_ID` and no token file. Azure was not opened. The A100 was not restarted.
+- **LIVE VERIFIED, this sample only:** At about 15:50Z on 2026-10-22, `:8002`, `:8010`, and `:8080` were HTTP 200. Completions returned `PONG` and `PLATFORM_OK`. One RAG answer cited the demo expenses policy. The pod checkout is `be9cbd2`, not this commit. That does not close mail, a second computer, Blackwell, or fresh-machine recovery. Go-live **NO-GO**.
+- **Included from specialists:** RAG content-hash cache and coverage abstain; Operations overview/health/director cross-site 403; agent task-id and failure handling; connector retry only when the operation is idempotent; Google Workspace skeleton with no client id; Windows repair recorded-approver check.
+- **Tested locally:** `python -m ops.run_tests` on Python 3.11 was 44 modules, 0 failed, exit 0, about 114 seconds. `web.test_server` was 31 tests and passed. The pod was not used.
+
 ### 2026-10-22 — Approved A100 load exited 1 before health
 
 - **FAILED live:** `bash /workspace/ai-platform-release/START.sh` on `mlar88u3ku8utm` began at 2026-10-22T13:11:19Z and exited **1** at 14:22:07Z. Qwen was still loading (shard 6/11 at 15:00:36Z, GPU 51923 MiB). `:8002`, `:8010`, and `:8080` stayed HTTP 000. No completion and no RAG question. The H100 was not started. `START.sh`, the runtime archive, and the `6f07b58` snapshot were the same sizes at 14:22:23Z as before the load.

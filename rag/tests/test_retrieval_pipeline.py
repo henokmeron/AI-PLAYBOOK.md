@@ -129,6 +129,18 @@ class StoreTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
+    def _count_parses(self) -> list[str]:
+        calls: list[str] = []
+        original = rp.load_document_chunks
+
+        def wrapped(path: Path, source: str) -> list:
+            calls.append(source)
+            return original(path, source)
+
+        rp.load_document_chunks = wrapped
+        self.addCleanup(setattr, rp, "load_document_chunks", original)
+        return calls
+
     def test_unchanged_folder_reuses_cached_index(self) -> None:
         first = self.store.load(self.folder)
         self.assertIs(self.store.load(self.folder), first)
@@ -190,6 +202,54 @@ class StoreTests(unittest.TestCase):
         warm = time.perf_counter() - t0
         self.assertLess(warm, cold)
 
+    def test_unchanged_bytes_are_not_reparsed_when_mtime_changes(self) -> None:
+        calls = self._count_parses()
+        first = self.store.load(self.folder)
+        self.assertEqual(calls, ["a.txt"])
+        path = self.folder / "a.txt"
+        stamp = path.stat().st_mtime_ns
+        os.utime(path, ns=(stamp + 60_000_000_000, stamp + 60_000_000_000))
+        self.assertNotEqual(path.stat().st_mtime_ns, stamp)
+        calls.clear()
+        second = self.store.load(self.folder)
+        self.assertEqual(calls, [])
+        self.assertIs(second, first)
+        self.assertIn("ALPHA_TOKEN", second.chunks[0].text)
+
+    def test_rewritten_bytes_are_reparsed_even_if_mtime_is_restored(self) -> None:
+        calls = self._count_parses()
+        self.store.load(self.folder)
+        path = self.folder / "a.txt"
+        stamp = path.stat().st_mtime_ns
+        original = path.read_bytes()
+        updated = original.replace(b"ALPHA_TOKEN", b"BETA_TOKEN!")
+        self.assertEqual(len(updated), len(original))
+        self.assertNotEqual(updated, original)
+        path.write_bytes(updated)
+        os.utime(path, ns=(stamp, stamp))
+        self.assertEqual(path.stat().st_mtime_ns, stamp)
+        self.assertEqual(path.stat().st_size, len(original))
+        calls.clear()
+        loaded = self.store.load(self.folder)
+        self.assertEqual(calls, ["a.txt"])
+        text = " ".join(chunk.text for chunk in loaded.chunks)
+        self.assertIn("BETA_TOKEN!", text)
+        self.assertNotIn("ALPHA_TOKEN", text)
+
+    def test_unchanged_neighbour_is_not_reparsed(self) -> None:
+        (self.folder / "b.txt").write_text("GAMMA_TOKEN office hours are 9 to 5.", encoding="utf-8")
+        calls = self._count_parses()
+        self.store.load(self.folder)
+        self.assertCountEqual(calls, ["a.txt", "b.txt"])
+        (self.folder / "b.txt").write_text("DELTA_TOKEN office hours are 9 to 5.", encoding="utf-8")
+        calls.clear()
+        loaded = self.store.load(self.folder)
+        self.assertEqual(calls, ["b.txt"])
+        text = " ".join(chunk.text for chunk in loaded.chunks)
+        self.assertIn("ALPHA_TOKEN", text)
+        self.assertIn("DELTA_TOKEN", text)
+        self.assertNotIn("GAMMA_TOKEN", text)
+
 
 class SearchAndEvidenceTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -215,6 +275,41 @@ class SearchAndEvidenceTests(unittest.TestCase):
         outcome = rp.search("Which company provides dental insurance benefits?", self.index, 8, min_coverage=0.15)
         self.assertTrue(outcome.abstain)
         self.assertIn(outcome.reason, {"no_match", "low_query_coverage"})
+
+    def test_irrelevant_query_on_nonempty_collection_abstains_without_citing(self) -> None:
+        self.assertTrue(self.index.chunks)
+        irrelevant = rp.search("What is the orbital period of Halley's comet in days?", self.index, 8)
+        self.assertTrue(irrelevant.abstain)
+        self.assertEqual(irrelevant.groups, [])
+        self.assertEqual(irrelevant.reason, "low_query_coverage")
+        self.assertIsNotNone(irrelevant.top_score)
+        self.assertGreater(irrelevant.top_score, 0)
+        self.assertFalse(irrelevant.embedding["available"])
+        self.assertEqual(irrelevant.embedding["retrieval"], "bm25")
+        relevant = rp.search("How many business days to submit expense receipts?", self.index, 8)
+        self.assertFalse(relevant.abstain)
+        self.assertEqual(relevant.groups[0].chunk.source, "policy.txt")
+        self.assertIn("10 business days", relevant.groups[0].chunk.text)
+
+    def test_weak_chunk_is_not_cited_beside_a_real_match(self) -> None:
+        folder = Path(self.tmp.name) / "mixed"
+        folder.mkdir()
+        (folder / "policy.txt").write_text(
+            "Expense receipts must be submitted within 10 business days.",
+            encoding="utf-8",
+        )
+        (folder / "museum.txt").write_text(
+            "The museum opens on public days.",
+            encoding="utf-8",
+        )
+        outcome = rp.search(
+            "How many business days to submit expense receipts?",
+            rp.load_collection(folder),
+            8,
+        )
+        self.assertFalse(outcome.abstain)
+        self.assertEqual([group.chunk.source for group in outcome.groups], ["policy.txt"])
+        self.assertTrue(all("museum" not in group.chunk.text.casefold() for group in outcome.groups))
 
     def test_on_topic_question_passes_coverage_gate(self) -> None:
         outcome = rp.search("How many business days to submit expense receipts?", self.index, 8, min_coverage=0.15)
@@ -496,6 +591,72 @@ class GroundedRetrievalTests(unittest.TestCase):
         self.assertEqual(status, "abstained")
         self.assertEqual(citations["ungrounded"], ["Source 1"])
         self.assertNotIn("SecretCorp", str(citations))
+
+
+class LibraryQueryTests(unittest.TestCase):
+    """The agent library query path uses the content-hash cache and abstains."""
+
+    def test_query_does_not_reparse_unchanged_bytes_or_cite_a_weak_chunk(self) -> None:
+        repo = str(HERE.parent.parent)
+        if repo not in sys.path:
+            sys.path.append(repo)
+        from agents.adapters.rag_library import RagLibrarySearchBackend
+
+        tmp = tempfile.TemporaryDirectory(prefix="rag-adapter-query-")
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        policy = root / "policy"
+        other = root / "other"
+        policy.mkdir()
+        other.mkdir()
+        expenses = policy / "expenses.md"
+        expenses.write_text(
+            "Expense receipts must be submitted within 10 business days.",
+            encoding="utf-8",
+        )
+        (other / "secret.md").write_text("ALPHAONLY salary figure 99000.", encoding="utf-8")
+        calls: list[str] = []
+        original = rp.load_document_chunks
+
+        def wrapped(path: Path, source: str) -> list:
+            calls.append(source)
+            return original(path, source)
+
+        rp.load_document_chunks = wrapped
+        self.addCleanup(setattr, rp, "load_document_chunks", original)
+        backend = RagLibrarySearchBackend(root, ["policy", "other"], rag_dir=HERE.parent)
+        hits = backend.search("How many business days to submit expense receipts?", "policy", 4)
+        self.assertEqual(calls, ["expenses.md"])
+        self.assertEqual(hits[0]["file"], "expenses.md")
+        self.assertIn("10 business days", hits[0]["text"])
+        self.assertTrue(all("99000" not in hit["text"] for hit in hits))
+        calls.clear()
+        again = backend.search("expense receipts business days", "policy", 4)
+        self.assertEqual(calls, [])
+        self.assertIn("10 business days", again[0]["text"])
+        stamp = expenses.stat().st_mtime_ns
+        os.utime(expenses, ns=(stamp + 60_000_000_000, stamp + 60_000_000_000))
+        self.assertNotEqual(expenses.stat().st_mtime_ns, stamp)
+        touched = backend.search("expense receipts", "policy", 4)
+        self.assertEqual(calls, [])
+        self.assertIn("10 business days", touched[0]["text"])
+        weak = backend.search("What is the orbital period of Halley's comet in days?", "policy", 4)
+        self.assertEqual(weak, [])
+        self.assertEqual(calls, [])
+        original_bytes = expenses.read_bytes()
+        rewritten = original_bytes.replace(b"10 business", b"20 business")
+        self.assertEqual(len(rewritten), len(original_bytes))
+        restored = expenses.stat().st_mtime_ns
+        expenses.write_bytes(rewritten)
+        os.utime(expenses, ns=(restored, restored))
+        self.assertEqual(expenses.stat().st_mtime_ns, restored)
+        updated = backend.search("expense receipts business days", "policy", 4)
+        self.assertEqual(calls, ["expenses.md"])
+        self.assertIn("20 business days", updated[0]["text"])
+        self.assertNotIn("10 business days", updated[0]["text"])
+        leaked = backend.search("ALPHAONLY salary figure 99000", "policy", 4)
+        self.assertEqual(leaked, [])
+        self.assertTrue(all("99000" not in hit["text"] for hit in leaked))
 
 
 if __name__ == "__main__":

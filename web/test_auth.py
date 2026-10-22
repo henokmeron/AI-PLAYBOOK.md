@@ -314,6 +314,60 @@ class AuthTests(unittest.TestCase):
         self.assertNotEqual(allowed, 403, allowed_body)
         self.assertIn(allowed, {302, 400, 409})
 
+    def test_ops_overview_rejects_cross_site_fetch(self) -> None:
+        """Health, overview, and director GETs write audit state and must not run for a foreign fetch."""
+        previous = os.environ.get("OPS_CENTRE_DIR")
+        isolated = tempfile.TemporaryDirectory(prefix="ops-fetch-")
+        os.environ["OPS_CENTRE_DIR"] = isolated.name
+        try:
+            base, _service = self.start_console()
+            cookie, _csrf = self.login(base)
+            ops = self.servers[-1].ops  # type: ignore[attr-defined]
+            ops.health.snapshot = lambda: {
+                "overall": "unavailable",
+                "verification": "observed",
+                "verified_at": "2026-10-22T12:00:00Z",
+                "services": [{
+                    "name": "disk",
+                    "state": "unavailable",
+                    "detail": "unit",
+                    "check_kind": "local",
+                    "latency_ms": 1,
+                    "http_status": 0,
+                }],
+            }
+            before = [event.event_id for event in ops.events.list(limit=500)]
+            self.assertTrue(before)
+            for path in ("/api/ops/overview", "/api/ops/health", "/api/ops/director"):
+                for site in ("cross-site", "same-site"):
+                    status, body, _headers = self.call(
+                        base,
+                        "GET",
+                        path,
+                        cookie=cookie,
+                        headers={"Sec-Fetch-Site": site},
+                    )
+                    self.assertEqual(status, 403, (path, site, body))
+                    self.assertEqual(body.get("error"), "this action must start from this console")
+            self.assertEqual([event.event_id for event in ops.events.list(limit=500)], before)
+            allowed, allowed_body, _allowed_headers = self.call(
+                base,
+                "GET",
+                "/api/ops/overview",
+                cookie=cookie,
+                headers={"Sec-Fetch-Site": "same-origin"},
+            )
+            self.assertEqual(allowed, 200, allowed_body)
+            after = ops.events.list(limit=500)
+            self.assertGreater(len(after), len(before))
+            self.assertIn("health.probe", [event.event_type for event in after])
+        finally:
+            if previous is None:
+                os.environ.pop("OPS_CENTRE_DIR", None)
+            else:
+                os.environ["OPS_CENTRE_DIR"] = previous
+            isolated.cleanup()
+
     def test_csrf_required_on_mutating(self) -> None:
         base, _ = self.start_console()
         cookie, _csrf = self.login(base)

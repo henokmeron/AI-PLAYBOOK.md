@@ -3,10 +3,10 @@
 Layers:
 - ``CollectionStore``: the storage/index interface. ``FileBackedBm25Store`` is
   the only implementation: source files on disk are the system of record and an
-  in-process BM25 index is cached per folder, keyed by every file's
-  (name, size, mtime_ns). Any upload, overwrite or delete changes the
-  fingerprint, so stale chunks cannot be served; ``invalidate`` drops a folder
-  eagerly as well.
+  in-process BM25 index is cached per folder, keyed by the sha256 of each
+  file's bytes. A query does not re-parse a file whose bytes are unchanged,
+  even if its mtime changes; a rewrite is re-parsed even if size and mtime
+  are restored. ``invalidate`` drops a folder eagerly as well.
 - ``search``: query-time policy (broad-question widening, BM25, duplicate
   collapse, abstention gates).
 - ``build_evidence``: context-budgeted, injection-hardened evidence blocks and
@@ -14,6 +14,7 @@ Layers:
 """
 from __future__ import annotations
 
+import hashlib
 import re
 import threading
 from dataclasses import dataclass, field
@@ -38,6 +39,9 @@ BROAD_MARKERS = (
     "all age", "all placement", "list all", "list every",
 )
 MAX_CACHED_COLLECTIONS = 64
+# Share of informative query terms the best chunk must cover. Below this, a
+# non-empty collection abstains instead of citing a weak lexical overlap.
+DEFAULT_MIN_COVERAGE = 0.15
 
 
 def question_requests_broad_coverage(question: str) -> bool:
@@ -69,11 +73,20 @@ class CollectionStore(Protocol):
     def invalidate(self, folder: Path) -> None: ...
 
 
+def _content_hash(path: Path) -> str:
+    """sha256 of the file bytes. Parsing is skipped when this is unchanged."""
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def _fingerprint(paths: list[Path], folder: Path) -> tuple:
     items = []
     for path in paths:
-        stat = path.stat()
-        items.append((path.relative_to(folder).as_posix(), stat.st_size, stat.st_mtime_ns))
+        relative = path.relative_to(folder).as_posix()
+        items.append((relative, _content_hash(path)))
     return tuple(items)
 
 
@@ -83,8 +96,9 @@ class FileBackedBm25Store:
     def __init__(self, max_collections: int = MAX_CACHED_COLLECTIONS) -> None:
         self._lock = threading.Lock()
         self._collections: dict[str, CollectionIndex] = {}
-        # Per-file chunk cache so one changed file does not re-parse the folder.
-        self._files: dict[str, tuple[tuple, list[Chunk] | None]] = {}
+        # Per-file chunk cache keyed by content hash. One changed file does not
+        # re-parse its neighbours, and a touch of mtime does not re-parse at all.
+        self._files: dict[str, tuple[str, list[Chunk] | None]] = {}
         # (device, inode) -> collection key. A shared inode stays with the
         # collection that first indexed the regular file.
         self._inodes: dict[tuple[int, int], str] = {}
@@ -115,7 +129,7 @@ class FileBackedBm25Store:
         chunks: list[Chunk] = []
         skipped: list[str] = []
         admitted: set[tuple[int, int]] = set()
-        for path, (relative, size, mtime) in zip(paths, fingerprint):
+        for path, (relative, digest) in zip(paths, fingerprint):
             file_key = f"{key}/{relative}"
             ident = self._claim_file(key, path)
             if ident is None:
@@ -127,7 +141,7 @@ class FileBackedBm25Store:
             admitted.add(ident)
             with self._lock:
                 entry = self._files.get(file_key)
-            if entry is not None and entry[0] == (size, mtime):
+            if entry is not None and entry[0] == digest:
                 file_chunks = entry[1]
             else:
                 try:
@@ -136,7 +150,7 @@ class FileBackedBm25Store:
                     # One unreadable file must not take the whole collection down.
                     file_chunks = None
                 with self._lock:
-                    self._files[file_key] = ((size, mtime), file_chunks)
+                    self._files[file_key] = (digest, file_chunks)
             if file_chunks is None:
                 skipped.append(relative)
             else:
@@ -145,7 +159,7 @@ class FileBackedBm25Store:
         with self._lock:
             if len(self._collections) >= self._max and key not in self._collections:
                 self._collections.pop(next(iter(self._collections)))
-            live = {f"{key}/{relative}" for relative, _, _ in fingerprint}
+            live = {f"{key}/{relative}" for relative, _digest in fingerprint}
             for file_key in [k for k in self._files if k.startswith(key + "/") and k not in live]:
                 self._files.pop(file_key, None)
             for ident, owner in [item for item in self._inodes.items() if item[1] == key and item[0] not in admitted]:
@@ -227,7 +241,7 @@ def search(
     *,
     allowed_sources: set[str] | None = None,
     min_score: float = 0.0,
-    min_coverage: float = 0.0,
+    min_coverage: float = DEFAULT_MIN_COVERAGE,
     embedder: Any | None = None,
 ) -> SearchOutcome:
     status = embedding_status(embedder)
@@ -253,15 +267,24 @@ def search(
         return SearchOutcome([], True, "below_min_score", top_score, top_coverage, used, len(ranked), status)
     # Instruction text is not evidence. A hidden "do not abstain" cannot keep
     # a question above the coverage gate when the factual span does not cover it.
-    factual_top = max(
-        (factual_coverage(question, group.chunk, index) for group in groups),
-        default=0.0,
-    )
+    # A chunk below the coverage floor is not cited, even if another chunk passes.
+    factual_scores = [factual_coverage(question, group.chunk, index) for group in groups]
+    factual_top = max(factual_scores, default=0.0)
     if factual_top < min_coverage:
         reason = "instruction_not_evidence" if top_coverage >= min_coverage else "low_query_coverage"
         reported = factual_top if reason == "instruction_not_evidence" else top_coverage
         return SearchOutcome([], True, reason, top_score, reported, used, len(ranked), status)
-    return SearchOutcome(groups, False, None, top_score, top_coverage, used, len(ranked), status)
+    kept = [group for group, factual in zip(groups, factual_scores) if factual >= min_coverage]
+    return SearchOutcome(
+        kept,
+        False,
+        None,
+        kept[0].score,
+        max(group.coverage for group in kept),
+        used,
+        len(ranked),
+        status,
+    )
 
 
 # Instruction-like phrases commonly used in indirect prompt injection.

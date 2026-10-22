@@ -67,8 +67,25 @@ def _admin() -> bool:
         return False
 
 
-def default_restart(_: dict[str, Any]) -> dict[str, Any]:
+def _recorded_approver(value: object) -> str:
+    """A repair may run only when an approver identity was actually stored."""
+    if not isinstance(value, str):
+        return ""
+    text = " ".join(value.split())
+    if not text or len(text) > 128:
+        return ""
+    return text
+
+
+def default_restart(params: dict[str, Any]) -> dict[str, Any]:
     """Refuse unless a dedicated test machine opted in. Never deletes jobs."""
+    if not _recorded_approver(params.get("approver") if isinstance(params, dict) else None):
+        return {
+            "executed": False,
+            "changed_device": False,
+            "status": "approval_required",
+            "detail": "A recorded approver is required. The Print Spooler was not restarted.",
+        }
     allowed = os.environ.get("WINDOWS_REPAIR_ALLOW_SERVICE_RESTART") == "1"
     if not allowed or not _admin():
         return {
@@ -133,7 +150,14 @@ class PrinterWorkflow:
         return {"approval_id": item.approval_id, "params": params, "status": item.status}
 
     def approve(self, tenant_id: str, approval_id: str, approver: str, *, allow: bool = True) -> dict[str, Any]:
-        ctx = TenantContext.create(tenant_id, approver, ["devices:write"])
+        recorded = _recorded_approver(approver)
+        if not recorded:
+            self._audit("approval_rejected", approval_id, approver if isinstance(approver, str) else None)
+            return {
+                "status": "approval_rejected",
+                "detail": "A recorded approver is required. The repair was not approved.",
+            }
+        ctx = TenantContext.create(tenant_id, recorded, ["devices:write"])
         try:
             item = self.approvals.decide(approval_id, ctx, allow)
         except (ApprovalRequired, PermissionDenied) as exc:
@@ -160,7 +184,9 @@ class PrinterWorkflow:
         params = {"device_id": device_id, "service": _SERVICE, "procedure_id": "print.spooler.restart"}
         operator_ctx = TenantContext.create(tenant_id, operator, ["devices:write"])
         try:
-            self.approvals.consume(approval_id, operator_ctx, "windows_repair", "print.spooler.restart", params)
+            approved = self.approvals.consume(
+                approval_id, operator_ctx, "windows_repair", "print.spooler.restart", params,
+            )
         except (ApprovalRequired, PermissionDenied) as exc:
             self._audit("approval_rejected", approval_id, operator)
             return {
@@ -171,8 +197,19 @@ class PrinterWorkflow:
                 "status": "approval_rejected",
                 "detail": exc.message,
             }
+        recorded = _recorded_approver(approved.approver)
+        if not recorded:
+            self._audit("approval_rejected", approval_id, operator)
+            return {
+                "executed": False,
+                "changed_device": False,
+                "problem_resolved": False,
+                "verification": "not_run",
+                "status": "approval_rejected",
+                "detail": "A recorded approver is required. The repair was not run.",
+            }
         before = self._collect(fixture)
-        action = self.restarter(params)
+        action = self.restarter({**params, "approver": recorded})
         after = self._collect(fixture)
         before_running = str(before.get("spooler") or "").casefold() in {"running", "4"}
         after_running = str(after.get("spooler") or "").casefold() in {"running", "4"}
@@ -197,6 +234,7 @@ class PrinterWorkflow:
         result = {
             "procedure_id": "print.spooler.restart",
             "device_id": device_id,
+            "approver": recorded,
             "executed": bool(action.get("executed")),
             "changed_device": bool(action.get("changed_device")),
             "problem_resolved": resolved,

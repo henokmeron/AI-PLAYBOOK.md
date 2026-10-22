@@ -1,10 +1,16 @@
 # Microsoft 365 read-only sign-in
 
+Write note, 2026-10-22, later the same day. The library default tenant is directory `d595636e-9ef4-4890-b8a7-bde8dd5cab03`. `common` is not placed on an authorize or token URL. An empty `MICROSOFT_TENANT` and `MICROSOFT_TENANT=common` both resolve to that directory. Default sign-in is still delegated `User.Read` and `Mail.Read`. `Mail.ReadWrite` and `Files.ReadWrite` stay behind the existing approval gate. `Mail.Send` is not requested.
+
+Live mail on A100 `gom4ualdk47qrj` is **BLOCKED**. The console on port 8080 was already running. Its process had no `MICROSOFT_CLIENT_ID`. `MICROSOFT_TOKEN_FILE` was set under `/tmp` and that file was not present. `/tmp/microsoft-365-token.json` was not present. No access token was loaded, so no Graph mailbox read was attempted. The process was not restarted. Mailbox status stays **NOT CONFIGURED**. The running process still has `MICROSOFT_TENANT=common` in its environment; this checkout was not loaded into it.
+
+A read-only Google Workspace skeleton is in `integrations/google_workspace.py`. It is not on the console page. With no `GOOGLE_CLIENT_ID` the status is **NOT CONFIGURED** and `connected` is false. Mock reads do not change that.
+
 Write note, 2026-10-22, mock transport only. Approved calls can create or update an unsent mail draft, and can upload, replace, or delete one named OneDrive file. Default sign-in still requests delegated `User.Read` and `Mail.Read` only. `Mail.ReadWrite` is requested only for draft create and update (`access=draft` or `access=mail-update`). `Files.ReadWrite` is requested only when the operator names a file (`access=files:Reports/q3.txt`). Empty paths and the drive root are refused. `Mail.Send` is not implemented. Live mail stays **NOT CONFIGURED**. This note is not a mailbox call.
 
 Checked 2026-10-22 on the signed-in Azure portal, Authentication (Preview), which loads saved configuration. App `llmfortestingclientid`. Platform **Mobile and desktop applications**. Redirect **`http://127.0.0.1:18080/api/microsoft/callback`**. Supported accounts **Single tenant only - Default Directory**. Tenant ID from the Entra overview: `d595636e-9ef4-4890-b8a7-bde8dd5cab03`. Delegated Graph permissions are `Mail.Read` and `User.Read`. Admin consent required is No. Other permissions granted for the directory: none. No secret was opened. No mailbox was read. The running H100 console was not restarted and has not loaded the application id.
 
-Status: **NOT CONFIGURED**. Portal rows are not a mailbox read. `MICROSOFT_TENANT=common` will not complete sign-in for this single-tenant app. Set `MICROSOFT_TENANT` to the directory id above. The one consent click can happen only after an approved console is serving this code on `127.0.0.1:18080`.
+Status: **NOT CONFIGURED**. Portal rows are not a mailbox read. The Entra app rejects `common`. This library maps an empty tenant and `MICROSOFT_TENANT=common` to `d595636e-9ef4-4890-b8a7-bde8dd5cab03` and does not send `common`. The one consent click can happen only after an approved console is serving this code on `127.0.0.1:18080`.
 
 Checked again on 2026-10-21 from this workstation. Cursor browser Local
 Storage showed visits to `portal.azure.com` and `console.runpod.io`, but this
@@ -24,11 +30,7 @@ Publishing this file does not deploy it, and `MICROSOFT_CLIENT_ID` was unset.
 
 ## What the code does
 
-1. The Agent page offers three Microsoft sign-in choices. Each one is a real link:
-   - `?account=any` uses the `common` directory (work, school, or personal)
-   - `?account=work` uses `organizations`
-   - `?account=personal` uses `consumers`
-   The browser cannot choose an arbitrary directory. If `MICROSOFT_TENANT` is one organisation, that directory is the only choice. Without `MICROSOFT_CLIENT_ID`, sign-in returns HTTP 409 and does not redirect.
+1. Sign-in uses one directory. The default, including a missing account and `?account=any`, is `d595636e-9ef4-4890-b8a7-bde8dd5cab03`. `common` is rejected by `validate_tenant` and is never copied into the authorize URL. `?account=work` is `organizations` and `?account=personal` is `consumers`, and those two are offered only when `MICROSOFT_TENANT` is set to that value. The browser cannot choose an arbitrary directory. Without `MICROSOFT_CLIENT_ID`, sign-in returns HTTP 409 and does not redirect.
 2. The console redirects the browser to `https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize` with `prompt=select_account`.
 3. The request is an authorization-code flow with PKCE (`S256`). There is no client secret and no client assertion. The code verifier stays on the server for ten minutes and is single-use.
 4. The redirect URI must be exactly `http://127.0.0.1:18080/api/microsoft/callback` (or `http://localhost` with a port and that same path). A public redirect is rejected.
@@ -51,13 +53,11 @@ rejects a public web redirect.
 On 2026-10-15 the Entra app-registration blade was signed in with a personal
 Microsoft account. The portal returned AADSTS16000: that live.com account is
 not a member of the Microsoft Services tenant, so the application list did not
-load. No application named `Business AI local` could be confirmed, and none
-was created. Sign in with a work or school account that can open App
-registrations, then create **one** app only if that name is not already there:
+load. No application named `Business AI local` was created.
 
-- Name: `Business AI local`
-- Supported account types: accounts in any organizational directory and personal Microsoft accounts
-- Do not create a client secret
+The app that exists now is `llmfortestingclientid`. Supported accounts are
+single-tenant, directory `d595636e-9ef4-4890-b8a7-bde8dd5cab03`. Do not create
+another application. Do not create a client secret. Do not add `Mail.Send`.
 
 In the application manifest, set:
 
@@ -80,19 +80,23 @@ update, or delete of one file the operator named, for example
 `/api/microsoft/start?access=files:Reports/q3.txt`. Do not add `Mail.Send` or
 Azure write roles. Do not paste the Application (client) ID into a file in
 this repository.
-If the registration is single-tenant, set `MICROSOFT_TENANT` to that directory.
-`common` is rejected by a single-tenant app.
+Do not create another Entra application and do not add `Mail.Send`. This
+registration is already single-tenant. `common` will not complete sign-in, and
+the code does not send the browser there.
 
 Until `MICROSOFT_CLIENT_ID` or a private `MICROSOFT_CLIENT_ID_FILE` is set and
 an account consents, the connectors stay **NOT CONFIGURED**. Offline contract
 tests use an in-memory transport and are not a live Microsoft connection.
+A present application id sets `microsoft_configuration` `client_id` to
+`present` and `status` to `configured`. `mailbox` stays **NOT CONFIGURED**
+until a real Graph mail read returns.
 
 Copy the Application (client) ID into the console process as
 `MICROSOFT_CLIENT_ID`, or into a mode-0600 file pointed to by
 `MICROSOFT_CLIENT_ID_FILE` under `/tmp` (never under the repo or `/workspace`).
-This app is single-tenant, so leave `MICROSOFT_TENANT` unset only for a
-multi-tenant registration. For `llmfortestingclientid`, set `MICROSOFT_TENANT`
-to `d595636e-9ef4-4890-b8a7-bde8dd5cab03`. `common` will not complete sign-in.
+Leave `MICROSOFT_TENANT` unset, or set it to
+`d595636e-9ef4-4890-b8a7-bde8dd5cab03`. Both choices use that directory.
+`MICROSOFT_TENANT=common` is treated as that same directory and is not sent.
 Leave `MICROSOFT_TOKEN_FILE` at `/tmp/microsoft-365-token.json`.
 
 Print the portal checklist without secrets:
@@ -152,7 +156,7 @@ These are separate permissions and products. None of them run here.
 - **SharePoint.** Searching site collections is `Sites.Read.All`, a broader read than one user's drive. Not requested.
 - **Calendar.** Delegated `Calendars.Read` and `GET /me/calendarView`. Not requested.
 - **Excel.** Microsoft Graph's worksheet `usedRange` lists `Files.ReadWrite` as the least privileged permission even for a GET. Do not call that API for a read-only agent. A downloaded `.xlsx` can be read with `Files.Read` and the local parser already used by Document Q&A. That path is not wired.
-- **Gmail and Google Workspace.** Gmail read is the restricted scope `https://www.googleapis.com/auth/gmail.readonly` and needs Google's own verification. Drive is a separate scope. Not started.
+- **Gmail and Google Workspace.** The skeleton in `integrations/google_workspace.py` requests only `https://www.googleapis.com/auth/gmail.readonly`, `https://www.googleapis.com/auth/drive.readonly`, `https://www.googleapis.com/auth/calendar.readonly`, and `https://www.googleapis.com/auth/documents.readonly`. Docs listing uses the Drive files endpoint with the Docs mime type. There is no client secret and no write scope. No `GOOGLE_CLIENT_ID` means status **NOT CONFIGURED** and `connected` false. A mock read does not flip that. The console page does not offer Google sign-in. No Google host was called.
 - **Xero.** An app created after 2 March 2026 uses granular scopes such as `accounting.invoices.read`, not the older broad accounting scope. Not started.
 - **QuickBooks Online.** `com.intuit.quickbooks.accounting` is not a read-only scope. A connector would have to refuse writes in this platform even after consent. Not started.
 - **Sage.** Sage Business Cloud Accounting, Sage 50, and Sage Intacct do not share one API. Not started.

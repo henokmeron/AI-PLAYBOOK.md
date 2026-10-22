@@ -1026,7 +1026,13 @@ class ConsoleTests(unittest.TestCase):
             else:
                 os.environ["MICROSOFT_CLIENT_ID"] = previous
         self.assertEqual(status, 302)
-        self.assertTrue(location.startswith("https://login.microsoftonline.com/common/"))
+        self.assertTrue(
+            location.startswith(
+                "https://login.microsoftonline.com/d595636e-9ef4-4890-b8a7-bde8dd5cab03/"
+            )
+        )
+        self.assertNotIn("/common/", location)
+        self.assertNotIn("/organizations/", location)
         self.assertIn("code_challenge_method=S256", location)
         self.assertNotIn("client_secret", location)
         self.assertNotIn("Mail.Send", location)
@@ -1051,6 +1057,9 @@ class ConsoleTests(unittest.TestCase):
                     return exc.code, exc.headers.get("Location") or ""
                 return 200, ""
 
+            directory_status, directory_location = location_for(
+                "/api/microsoft/start?account=directory"
+            )
             work_status, work_location = location_for("/api/microsoft/start?account=work")
             bad_status, bad_body = self.request(base, "GET", "/api/microsoft/start?account=evil.example")
         finally:
@@ -1058,9 +1067,15 @@ class ConsoleTests(unittest.TestCase):
                 os.environ.pop("MICROSOFT_CLIENT_ID", None)
             else:
                 os.environ["MICROSOFT_CLIENT_ID"] = previous
-        self.assertEqual(work_status, 302)
-        self.assertIn("/organizations/", work_location)
-        self.assertNotIn("client_secret", work_location)
+        self.assertEqual(directory_status, 302)
+        self.assertIn("/d595636e-9ef4-4890-b8a7-bde8dd5cab03/", directory_location)
+        self.assertNotIn("/common/", directory_location)
+        self.assertNotIn("/organizations/", directory_location)
+        self.assertIn("code_challenge_method=S256", directory_location)
+        self.assertNotIn("client_secret", directory_location)
+        self.assertEqual(work_status, 400)
+        self.assertNotIn("/organizations/", work_location)
+        self.assertNotIn("/common/", work_location)
         self.assertEqual(bad_status, 400)
         self.assertNotIn(b"11111111", bad_body)
 

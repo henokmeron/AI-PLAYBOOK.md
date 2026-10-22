@@ -18,7 +18,7 @@ from unittest.mock import patch
 from web.auth.store import SessionRecord
 from windows_repair.device_store import DeviceStore, grant_from_session
 from windows_repair.engine import RepairDenied
-from windows_repair.printer_flow import PrinterWorkflow, classify_printer
+from windows_repair.printer_flow import PrinterWorkflow, classify_printer, default_restart
 from windows_repair.providers import FixtureProvider, normalise_live
 from windows_repair.remote_support import request_session, revoke_session, status_from_env
 from windows_repair.runner import powershell_exe, run_argv
@@ -254,6 +254,45 @@ class PrinterWorkflowTests(unittest.TestCase):
         self.assertFalse(result["changed_device"])
         self.assertEqual(result["verification"], "could_not_verify")
         self.assertFalse(result["problem_resolved"])
+
+    def test_repair_without_a_recorded_approver_does_not_execute(self) -> None:
+        """Fixture restarter. A blank or missing approver must not reach it."""
+        provider = _Script([
+            {"evidence_source": "fixture", "mocked": True, "spooler": "Stopped", "printers": [], "jobs": []},
+            {"evidence_source": "fixture", "mocked": True, "spooler": "Running", "printers": [], "jobs": []},
+        ])
+        calls: list[dict] = []
+
+        def _restarter(params: dict) -> dict:
+            calls.append(dict(params))
+            return {"executed": True, "changed_device": True, "status": "restarted"}
+
+        flow = PrinterWorkflow(provider=provider, restarter=_restarter)
+        requested = flow.request_restart("acme", "device-1", "requester@example.com")
+        blank = flow.approve("acme", requested["approval_id"], " ")
+        self.assertEqual(blank["status"], "approval_rejected")
+        blocked = flow.execute_restart("acme", "device-1", requested["approval_id"], "operator@example.com")
+        self.assertEqual(blocked["status"], "approval_rejected")
+        self.assertFalse(blocked["executed"])
+        self.assertFalse(blocked["changed_device"])
+        self.assertEqual(calls, [])
+
+        decided = flow.approve("acme", requested["approval_id"], "approver@example.com")
+        self.assertEqual(decided["status"], "approved")
+        flow.approvals._requests[requested["approval_id"]].approver = None
+        missing = flow.execute_restart("acme", "device-1", requested["approval_id"], "operator@example.com")
+        self.assertEqual(missing["status"], "approval_rejected")
+        self.assertFalse(missing["executed"])
+        self.assertFalse(missing["changed_device"])
+        self.assertEqual(calls, [])
+        self.assertTrue(all(row.get("action") != "repair" for row in flow.audit))
+
+        with patch.dict(os.environ, {"WINDOWS_REPAIR_ALLOW_SERVICE_RESTART": "1"}):
+            with patch("windows_repair.runner.run_argv", side_effect=AssertionError("spooler restart ran")):
+                refused = default_restart({"device_id": "device-1", "service": "Spooler", "procedure_id": "print.spooler.restart"})
+        self.assertEqual(refused["status"], "approval_required")
+        self.assertFalse(refused["executed"])
+        self.assertFalse(refused["changed_device"])
 
 
 class DeviceAndRemoteTests(unittest.TestCase):
@@ -697,6 +736,44 @@ class JobRejectionTests(unittest.TestCase):
             ages = [item.split("=", 1)[1] for item in report["evidence"] if item.startswith("evidence_age_seconds=")]
             self.assertTrue(ages)
             self.assertGreater(int(ages[0]), 86400)
+
+    def test_unauthenticated_or_expired_heartbeat_is_not_a_healthy_check_in(self) -> None:
+        """A bad secret is not stored. A later mock timestamp does not refresh an old live check-in."""
+        import time
+
+        now = time.time()
+        with tempfile.TemporaryDirectory() as tmp:
+            clock = {"now": now - 200_000}
+            store, secret, device = self._store(tmp, clock)
+            envelope = store.issue(tenant_id="acme", device_id=device, procedure_id="win.storage.space", grant=_ada())
+            store.accept(secret, envelope, provider=_Script([{
+                "evidence_source": "live_windows",
+                "mocked": False,
+                "status": "collected",
+                "ok": True,
+                "collected_at_unix": int(clock["now"]),
+            }]))
+            seen_before = store.devices[device]["last_seen"]
+            clock["now"] = now
+            with self.assertRaises(RepairDenied):
+                store.check_in("not-a-real-device-secret-value!!")
+            self.assertEqual(store.devices[device]["last_seen"], seen_before)
+            store.check_in(secret)
+            later = store.issue(tenant_id="acme", device_id=device, procedure_id="print.diagnose", grant=_ada())
+            store.accept(secret, later, provider=_Script([{
+                "evidence_source": "mock",
+                "mocked": True,
+                "status": "collected",
+                "ok": True,
+                "collected_at_unix": int(clock["now"]),
+            }]))
+            summary = store.summary()
+            self.assertEqual(summary["live_accepted_jobs"], 0)
+            self.assertGreater(summary["stale_evidence_jobs"], 0)
+            self.assertGreater(summary["evidence_age_seconds"], 86400)
+            report = DirectorGapTests()._director_repair(str(Path(tmp) / "device.json"))
+            self.assertNotEqual(report["state"], "HEALTHY")
+            self.assertEqual(report["state"], "DEGRADED")
 
     def test_failed_collector_is_not_healthy(self) -> None:
         """Mock collector. The exception is caught and is not a repair."""

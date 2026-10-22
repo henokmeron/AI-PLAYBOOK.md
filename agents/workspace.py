@@ -28,7 +28,7 @@ from .task_kinds import allowlist_for, resolve_task_kind
 from .model import ModelClient
 from .redaction import redact
 from .runtime import AgentRunner, CancellationToken
-from .state import EXECUTION_TERMINAL, AgentTask, Budget, ExecutionStatus, TaskState
+from .state import EXECUTION_TERMINAL, AgentTask, Budget, ExecutionStatus, TaskState, validate_task_id
 from .tools import Tool, ToolError, ToolInputError, ToolPermissionError, ToolRegistry
 from .trace import ExecutionTrace
 
@@ -407,6 +407,11 @@ class AgentDesk:
             self.history.save(view)
         return view
 
+    def _session_view(self, session: dict[str, Any]) -> dict[str, Any]:
+        thread = session.get("thread")
+        running = bool(thread is not None and thread.is_alive())
+        return public_view(session["task"], session["trace"], running=running)
+
     def _session(self, task_id: str) -> dict[str, Any]:
         with self._lock:
             session = self._sessions.get(task_id)
@@ -493,9 +498,20 @@ class AgentDesk:
         wait: bool = True,
         started_by: str = "",
         task_type: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
         if not isinstance(goal, str) or not goal.strip() or len(goal) > 2000:
             raise ValueError("task must be 1 to 2000 characters")
+        if task_id is not None:
+            task_id = validate_task_id(task_id)
+            with self._lock:
+                existing = self._sessions.get(task_id)
+            if existing is not None:
+                return self._session_view(existing)
+            if self.history is not None:
+                stored = self.history.get(task_id)
+                if stored is not None:
+                    return stored
         kind = resolve_task_kind(goal, task_type)
         cancel = CancellationToken()
         trace = ExecutionTrace()
@@ -529,7 +545,9 @@ class AgentDesk:
                 max_wall_seconds=wall_seconds,
             )
         allowed = allowlist_for(kind, registry.names())
-        task = runner.new_task(goal, budget=budget, allowed_tools=allowed, task_kind=kind or None)
+        task = runner.new_task(
+            goal, budget=budget, allowed_tools=allowed, task_kind=kind or None, task_id=task_id,
+        )
         session = {
             "runner": runner,
             "task": task,
@@ -539,7 +557,16 @@ class AgentDesk:
             "started_by": started_by.strip()[:128] if isinstance(started_by, str) else "",
         }
         with self._lock:
-            self._sessions[task.task_id] = session
+            current = self._sessions.get(task.task_id)
+            if current is not None:
+                existing = current
+                duplicate = True
+            else:
+                self._sessions[task.task_id] = session
+                existing = None
+                duplicate = False
+        if duplicate and existing is not None:
+            return self._session_view(existing)
 
         if wait:
             runner.run(task, cancel)
@@ -632,9 +659,7 @@ class AgentDesk:
         with self._lock:
             if task_id in self._queue:
                 self._queue = [item for item in self._queue if item != task_id]
-        thread = session.get("thread")
-        if thread is not None and thread.is_alive():
-            # Cooperative: the worker checks the token between steps.
-            return public_view(task, trace, running=True)
         runner.cancel(task, "cancelled by the operator")
-        return self._view(task, trace, running=False)
+        thread = session.get("thread")
+        running = bool(thread is not None and thread.is_alive())
+        return self._view(task, trace, running=running)

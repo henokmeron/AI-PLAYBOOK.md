@@ -412,6 +412,7 @@ class DeviceStore:
             return rows
 
     def check_in(self, secret: str) -> dict[str, Any]:
+        """Record that an authenticated device called in. This is not a healthy diagnosis."""
         with self._exclusive():
             device = self._device_for_secret(secret)
             if device is None:
@@ -600,22 +601,25 @@ class DeviceStore:
         counts = {"issued": 0, "accepted": 0, "expired": 0, "rejected": 0, "failed": 0}
         live_accepted = 0
         stale_evidence = 0
-        stamps: list[int] = []
+        live_stamps: list[int] = []
         for job in self.jobs:
             lifecycle = self._lifecycle_of(job)
             counts[lifecycle] = counts.get(lifecycle, 0) + 1
             recorded = self.job_states.get(str(job.get("job_id") or "")) or {}
             source = self._evidence_source(job)
-            fresh = recorded.get("evidence_fresh") is True
             ok = recorded.get("ok") is True
             stamp = recorded.get("collected_at_unix")
-            if isinstance(stamp, int) and not isinstance(stamp, bool):
-                stamps.append(stamp)
-            if lifecycle == "accepted" and source == "live_windows" and ok and fresh:
-                live_accepted += 1
-            elif lifecycle == "accepted" and source == "live_windows" and not fresh:
-                stale_evidence += 1
-        newest_stamp = max(stamps) if stamps else None
+            # Freshness is the stamp against this clock. A later mock result or a
+            # check-in must not make an older live_windows collection look current.
+            fresh_now = self._stamp_is_fresh(stamp)
+            if lifecycle == "accepted" and source == "live_windows":
+                if ok and isinstance(stamp, int) and not isinstance(stamp, bool):
+                    live_stamps.append(stamp)
+                if ok and fresh_now:
+                    live_accepted += 1
+                else:
+                    stale_evidence += 1
+        newest_stamp = max(live_stamps) if live_stamps else None
         evidence_age = None if newest_stamp is None else int(self._clock() - newest_stamp)
         failed = [row for row in self.audit if row.get("outcome") in _FAILED_OUTCOMES]
         return {
@@ -666,13 +670,19 @@ class DeviceStore:
             raise RepairDenied("device credential is revoked")
         raise RepairDenied("device authentication failed")
 
+    def _stamp_is_fresh(self, stamp: object) -> bool:
+        if isinstance(stamp, bool) or not isinstance(stamp, int):
+            return False
+        age = int(self._clock() - stamp)
+        return -_FUTURE_SKEW_SECONDS <= age <= STALE_AFTER_SECONDS
+
     def _evidence_clock(self, result: dict[str, Any]) -> tuple[bool, int | None, int | None]:
         raw = result.get("collected_at_unix")
         if isinstance(raw, bool) or not isinstance(raw, (int, float)):
             return False, None, None
         stamp = int(raw)
         age = int(self._clock() - stamp)
-        fresh = -_FUTURE_SKEW_SECONDS <= age <= STALE_AFTER_SECONDS
+        fresh = self._stamp_is_fresh(stamp)
         return fresh, stamp, age
 
     def _device(self, tenant_id: str, device_id: str) -> dict[str, Any]:

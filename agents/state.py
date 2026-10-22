@@ -11,6 +11,15 @@ STATE_FORMAT_VERSION = 2
 ACCEPTED_STATE_VERSIONS = frozenset({1, 2})
 
 
+def validate_task_id(task_id: str) -> str:
+    """Ids the desk can store. Path separators and traversal are rejected."""
+    if not isinstance(task_id, str) or not task_id or len(task_id) > 64:
+        raise ValueError("invalid task_id")
+    if not all(c.isalnum() or c in "-_" for c in task_id):
+        raise ValueError("invalid task_id")
+    return task_id
+
+
 class TaskState(str, Enum):
     PLANNING = "planning"
     TOOL_CALL = "tool_call"

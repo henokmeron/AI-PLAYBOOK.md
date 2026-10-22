@@ -57,6 +57,8 @@ FILE_SCOPES = READ_SCOPES + ("Files.ReadWrite",)
 SCOPES = READ_SCOPES
 GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
 ARM_ROOT = "https://management.azure.com"
+# llmfortestingclientid is single-tenant. login.microsoftonline.com/common is never used.
+DEFAULT_TENANT = "d595636e-9ef4-4890-b8a7-bde8dd5cab03"
 PERMISSIONS_NOTE = (
     "Sign-in identifies the account and requests delegated User.Read and Mail.Read. "
     "Teams, OneDrive reads, SharePoint, and Azure inventory are not requested. "
@@ -83,14 +85,9 @@ _DRIVE_ROOTS = {
     "drive/root",
     "/drive/root",
 }
-# The browser may choose one of these. It cannot supply an arbitrary directory.
+# Work and personal endpoints are available only when MICROSOFT_TENANT names them.
+# The default registration cannot select `common`.
 SIGN_IN_ACCOUNTS = (
-    (
-        "any",
-        "common",
-        "Sign in with a work, school, or personal account",
-        "Use this if the account might belong to an organisation or be a personal Microsoft account.",
-    ),
     (
         "work",
         "organizations",
@@ -105,7 +102,7 @@ SIGN_IN_ACCOUNTS = (
     ),
 )
 _TENANT_RE = re.compile(
-    r"(?:common|organizations|consumers|"
+    r"(?:organizations|consumers|"
     r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|"
     r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
     r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+)\Z"
@@ -129,9 +126,24 @@ def validate_client_id(value: str) -> str:
 
 def validate_tenant(value: str) -> str:
     tenant = value.strip()
+    if tenant.casefold() == "common":
+        raise InvalidRequest(
+            "Microsoft tenant common is not used. This app is single-tenant "
+            "for directory d595636e-9ef4-4890-b8a7-bde8dd5cab03."
+        )
     if not _TENANT_RE.fullmatch(tenant):
-        raise InvalidRequest("Microsoft tenant must be common, organizations, consumers, a directory id, or a domain")
+        raise InvalidRequest(
+            "Microsoft tenant must be organizations, consumers, a directory id, or a domain"
+        )
     return tenant
+
+
+def resolve_tenant(value: str | None) -> str:
+    """Empty and `common` both mean the single-tenant directory. `common` is not sent."""
+    tenant = (value or "").strip()
+    if not tenant or tenant.casefold() == "common":
+        return DEFAULT_TENANT
+    return validate_tenant(tenant)
 
 
 def validate_redirect(value: str) -> str:
@@ -284,22 +296,24 @@ class MicrosoftOAuth:
         self,
         *,
         client_id: str = "",
-        tenant: str = "common",
+        tenant: str = "",
         redirect_uri: str = "http://127.0.0.1:18080/api/microsoft/callback",
         token_file: Path | None = None,
         clock: Callable[[], float] = time.time,
         transport: Callable[[str, str, dict[str, str], bytes | None], tuple[int, dict[str, Any]]] | None = None,
     ) -> None:
         self.client_id = client_id.strip()
-        self.tenant = validate_tenant(tenant.strip() or "common")
+        self.tenant = resolve_tenant(tenant)
         self.redirect_uri = redirect_uri.strip()
         self.token_file = assert_safe_token_path(token_file) if token_file is not None else None
         self._clock = clock
+        self._live_transport = transport is None
         self._transport = transport or _https_transport
         self._lock = threading.Lock()
         self._pending: dict[str, tuple[str, float]] = {}
         self.bundle: TokenBundle | None = None
         self.graph_calls = 0
+        self.live_mail = False
         if self.token_file is not None and self.token_file.is_file():
             self._load()
 
@@ -311,7 +325,7 @@ class MicrosoftOAuth:
             path = "/tmp/microsoft-365-token.json"
         return cls(
             client_id=load_client_id(dict(source)),
-            tenant=source.get("MICROSOFT_TENANT", "common"),
+            tenant=source.get("MICROSOFT_TENANT", ""),
             redirect_uri=source.get(
                 "MICROSOFT_REDIRECT_URI", "http://127.0.0.1:18080/api/microsoft/callback"
             ),
@@ -323,12 +337,10 @@ class MicrosoftOAuth:
 
     def account_choices(self) -> list[dict[str, str]]:
         """Sign-in options the page may offer. A locked directory is not widened."""
-        if self.tenant == "common":
-            rows = SIGN_IN_ACCOUNTS
-        elif self.tenant == "organizations":
-            rows = (SIGN_IN_ACCOUNTS[1],)
+        if self.tenant == "organizations":
+            rows = (SIGN_IN_ACCOUNTS[0],)
         elif self.tenant == "consumers":
-            rows = (SIGN_IN_ACCOUNTS[2],)
+            rows = (SIGN_IN_ACCOUNTS[1],)
         else:
             rows = ((
                 "directory",
@@ -344,12 +356,12 @@ class MicrosoftOAuth:
     def tenant_for_account(self, account: str | None) -> str:
         choice = (account or "").strip().lower()
         choices = {item["id"]: item["tenant"] for item in self.account_choices()}
-        if choice in {"", "any"} and "any" in choices:
-            return choices["any"]
         if choice in {"", "any", "directory"} and len(choices) == 1:
             return next(iter(choices.values()))
         if choice not in choices:
-            raise InvalidRequest("Choose a work, personal, or any Microsoft account.")
+            raise InvalidRequest(
+                "Choose the configured organisation. The common directory is not used."
+            )
         return choices[choice]
 
     def public_status(self) -> dict[str, Any]:
@@ -374,6 +386,8 @@ class MicrosoftOAuth:
             "azure_read": self.has_azure_read(),
             "accounts": self.account_choices(),
             "permissions": PERMISSIONS_NOTE,
+            "directory": self.tenant,
+            "mailbox": "read" if self.live_mail else "NOT CONFIGURED",
             "redirect_uri": self.redirect_uri if self.configured() else None,
             "provider_scopes": list(READ_SCOPES) if self.configured() else [],
             "draft_scopes": list(DRAFT_SCOPES) if self.configured() else [],
@@ -510,6 +524,9 @@ class MicrosoftOAuth:
             "ConsistencyLevel": "eventual",
         }, None)
         if status == 200 and isinstance(payload, dict):
+            bare = path.split("?", 1)[0]
+            if self._live_transport and (bare == "/me/messages" or bare.startswith("/me/messages/")):
+                self.live_mail = True
             return payload
         if status == 401:
             raise AuthenticationError(
@@ -740,6 +757,7 @@ class MicrosoftOAuth:
 
     def disconnect(self) -> None:
         self.bundle = None
+        self.live_mail = False
         if self.token_file is not None and self.token_file.exists():
             self.token_file.unlink()
 

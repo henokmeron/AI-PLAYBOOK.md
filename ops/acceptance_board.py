@@ -68,7 +68,7 @@ def workstreams() -> list[dict]:
                 ("Auth unit tests passed in that suite", LOCAL_SUITE_PASSED),
                 ("Host and origin regressions passed in that suite", LOCAL_SUITE_PASSED),
             ],
-            "LOCAL/MOCK on Python 3.11. python -m ops.run_tests was 41 modules, 0 failed, exit 0, about 132 seconds. integrations.tests.test_endpoint skipped 1. api.test_gateway_reliability was 27 tests, logged a Windows socket abort, and still passed. windows_repair.tests.test_live_diagnostics passed on its automatic retry. The pod was not used.",
+            "LOCAL/MOCK on Python 3.11. python -m ops.run_tests was 44 modules, 0 failed, exit 0, about 114 seconds. integrations.tests.test_endpoint skipped 1. api.test_gateway_reliability was 31 tests, logged a Windows socket abort, and still passed. web.test_server passed on its automatic retry, 31 tests. The pod was not used.",
             "Keep the local suite green on the next code change. That does not deploy it.",
             "code",
         ),
@@ -117,7 +117,7 @@ def workstreams() -> list[dict]:
                 ("Second endpoint and Blackwell stay labelled NOT TESTED", True),
                 ("Those procedures were not marked executed", True),
             ],
-            "Docs record that START.sh on mlar88u3ku8utm exited 1 before health and that mail is not end-to-end verified. They do not mark a second endpoint, Blackwell, or a fresh machine as passed. Production stays NO-GO.",
+            "Docs record HTTP 200, one completion, and one grounded RAG answer on gom4ualdk47qrj, and that the pod checkout is not this Git tip. They do not mark mail, a second endpoint, Blackwell, or a fresh machine as passed. Production stays NO-GO.",
             "Update the same docs when the next verified fact changes.",
             "code",
         ),
@@ -140,10 +140,22 @@ def workstreams() -> list[dict]:
             "live",
             [
                 ("Deployed commit equals the intended Git tip", False),
-                ("Current pod health was read while the pod was Running this session", False),
+                ("Current pod health was read while the pod was Running this session", True),
             ],
-            "bash /workspace/ai-platform-release/START.sh on mlar88u3ku8utm began at 2026-10-22T13:11:19Z and exited 1 at 14:22:07Z: Qwen not ready after 2700s, process still running. Health at 15:00:36Z was HTTP 000 on :8002, :8010, and :8080. The loader was on shard 6/11 and GPU memory was 51923 MiB. That pod id is no longer in the console list. A different running A100, gom4ualdk47qrj, was not given START.sh. No completion and no RAG question were sent. A refused connection is not live acceptance.",
-            "Do not start the missing A100 or the H100. Do not run START.sh on gom4ualdk47qrj unless the owner approves that different pod.",
+            "On 2026-10-22 at 15:50:02Z, A100 gom4ualdk47qrj (excessive_gray_crocodile) was Running at $1.80/hr. Qwen :8002, gateway :8010, and console :8080 returned HTTP 200. The pod checkout stayed be9cbd2baf08ee1d9f1bbd192982c94575f57aeb, which is not this Git tip. This session did not run START.sh, did not restart Qwen, and did not write the Global Volume. HTTP 200 is not a deployment.",
+            "Do not start the H100. Do not run START.sh while those ports stay healthy. Do not copy this tip to the volume unless the owner approves.",
+            "user approval",
+        ),
+        _row(
+            "Inference and one RAG answer",
+            "live",
+            [
+                ("One completion returned PLATFORM_OK or PONG", True),
+                ("One grounded RAG answer was returned on 2026-10-22", True),
+                ("That answer was served by the intended Git tip", False),
+            ],
+            "LIVE VERIFIED for inference and one RAG answer only. Around 15:50Z on 2026-10-22 the gateway returned PLATFORM_OK, and a completion in the same bring-up returned PONG. One RAG answer on the demo expenses policy named 10 business days and cited expenses-policy.md. Another named the £100 approval threshold. The serving checkout was be9cbd2baf08ee1d9f1bbd192982c94575f57aeb, not this Git tip. This sample is not mail, a second endpoint, Blackwell, or a fresh machine.",
+            "Leave the running vLLM in place. Do not treat this sample as production GO.",
             "user approval",
         ),
         _row(
@@ -153,8 +165,8 @@ def workstreams() -> list[dict]:
                 ("A running console has loaded the application id", False),
                 ("A mailbox read succeeded", False),
             ],
-            "NOT CONFIGURED. The saved redirect is http://127.0.0.1:18080/api/microsoft/callback with delegated User.Read and Mail.Read only. This session did not open Azure, did not create a secret, and did not read a mailbox. No running console loaded the application id, so the consent screen was not started.",
-            "One consent click only after an approved console deploy with MICROSOFT_TENANT set to d595636e-9ef4-4890-b8a7-bde8dd5cab03. common will not complete sign-in.",
+            "NOT CONFIGURED. The saved redirect is http://127.0.0.1:18080/api/microsoft/callback with delegated User.Read and Mail.Read only. The running console on gom4ualdk47qrj has no MICROSOFT_CLIENT_ID and no token file. This session did not open Azure, did not create a secret, and did not read a mailbox. No running console loaded the application id. In this source, an empty tenant and common both resolve to directory d595636e-9ef4-4890-b8a7-bde8dd5cab03 and are not placed on authorize or token URLs. That source was not loaded into the running console.",
+            "One consent click only after an approved console deploy of this code. Do not create an Azure resource and do not restart the A100 to load it.",
             "user approval",
         ),
         _row(
@@ -233,8 +245,8 @@ def board() -> dict:
             "Live acceptance is separate. "
             "A temp extract is not a fresh machine. "
             "A push is not a deployment. "
-            "HTTP health on a stopped pod is not acceptance. "
-            "A refused connection on the running A100 is not acceptance."
+            "HTTP 200, one completion, and one RAG answer on the running A100 are not a production GO. "
+            "The pod checkout is not this Git tip."
         ),
         "workstreams": rows,
         "offline_workstreams": offline_rows,

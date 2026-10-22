@@ -15,10 +15,12 @@ from agents.workspace import AgentDesk, tools_for
 from integrations.errors import ApprovalRequired, AuthenticationError, InvalidRequest, PermissionDenied, TransientError
 from integrations.microsoft365 import microsoft_configuration, platform_catalog
 from integrations.microsoft_oauth import (
+    DEFAULT_TENANT,
     MicrosoftOAuth,
     _challenge,
     load_client_id,
     validate_redirect,
+    validate_tenant,
 )
 from integrations.state_guard import restrict_private
 from integrations.tenancy import TenantContext
@@ -151,16 +153,30 @@ class OAuthTests(unittest.TestCase):
                 "MICROSOFT_TOKEN_FILE": str(directory / "token.json"),
             })
             self.assertTrue(oauth.configured())
+            self.assertEqual(oauth.tenant, DEFAULT_TENANT)
+            self.assertNotIn("/common/", oauth.authorization_url())
             self.assertNotIn(CLIENT, json.dumps(oauth.public_status()))
+            forced = MicrosoftOAuth.from_env({
+                "MICROSOFT_CLIENT_ID": CLIENT,
+                "MICROSOFT_TENANT": "common",
+                "MICROSOFT_TOKEN_FILE": str(directory / "ignored-common.json"),
+            })
+            self.assertEqual(forced.tenant, DEFAULT_TENANT)
+            self.assertNotIn("/common/", forced.authorization_url())
             path.write_text("not-a-uuid\n", encoding="utf-8")
             with self.assertRaises(InvalidRequest):
                 load_client_id({"MICROSOFT_CLIENT_ID_FILE": str(path)})
 
     def test_authorization_url_uses_pkce_and_no_client_secret(self) -> None:
         oauth = MicrosoftOAuth(client_id=CLIENT, transport=Transport())
+        self.assertEqual(oauth.tenant, DEFAULT_TENANT)
         url = oauth.authorization_url()
-        self.assertTrue(url.startswith("https://login.microsoftonline.com/common/oauth2/v2.0/authorize?"))
+        self.assertTrue(url.startswith(
+            "https://login.microsoftonline.com/" + DEFAULT_TENANT + "/oauth2/v2.0/authorize?"
+        ))
+        self.assertNotIn("/common/", url)
         self.assertIn("code_challenge_method=S256", url)
+        self.assertIn("User.Read", url)
         self.assertIn("Mail.Read", url)
         self.assertNotIn("Mail.ReadWrite", url)
         self.assertNotIn("Files.ReadWrite", url)
@@ -169,14 +185,27 @@ class OAuthTests(unittest.TestCase):
         draft_url = oauth.authorization_url(access="draft")
         self.assertIn("Mail.ReadWrite", draft_url)
         self.assertNotIn("Mail.Send", draft_url)
+        self.assertNotIn("/common/", draft_url)
         self.assertIn("prompt=select_account", url)
-        work = oauth.authorization_url("work")
-        personal = oauth.authorization_url("personal")
-        self.assertIn("/organizations/oauth2/v2.0/authorize?", work)
-        self.assertIn("/consumers/oauth2/v2.0/authorize?", personal)
-        self.assertNotIn("client_secret", work)
+        with self.assertRaises(InvalidRequest):
+            oauth.authorization_url("work")
+        with self.assertRaises(InvalidRequest):
+            oauth.authorization_url("personal")
         with self.assertRaises(InvalidRequest):
             oauth.authorization_url("https://evil.example")
+        coerced = MicrosoftOAuth(client_id=CLIENT, tenant="common", transport=Transport())
+        self.assertEqual(coerced.tenant, DEFAULT_TENANT)
+        self.assertNotIn("/common/", coerced.authorization_url())
+        with self.assertRaises(InvalidRequest):
+            validate_tenant("common")
+        work_only = MicrosoftOAuth(client_id=CLIENT, tenant="organizations", transport=Transport())
+        personal_only = MicrosoftOAuth(client_id=CLIENT, tenant="consumers", transport=Transport())
+        work = work_only.authorization_url("work")
+        personal = personal_only.authorization_url("personal")
+        self.assertIn("/organizations/oauth2/v2.0/authorize?", work)
+        self.assertIn("/consumers/oauth2/v2.0/authorize?", personal)
+        self.assertNotIn("/common/", work)
+        self.assertNotIn("client_secret", work)
         locked = MicrosoftOAuth(
             client_id=CLIENT, tenant="contoso.onmicrosoft.com", transport=Transport(),
         )
@@ -185,7 +214,9 @@ class OAuthTests(unittest.TestCase):
             locked.tenant_for_account("personal")
         self.assertEqual([item["id"] for item in locked.account_choices()], ["directory"])
         status = oauth.public_status()
-        self.assertEqual([item["id"] for item in status["accounts"]], ["any", "work", "personal"])
+        self.assertEqual([item["id"] for item in status["accounts"]], ["directory"])
+        self.assertEqual(status["directory"], DEFAULT_TENANT)
+        self.assertEqual(status["mailbox"], "NOT CONFIGURED")
         self.assertNotIn("access_token", json.dumps(status))
         self.assertNotIn(CLIENT, json.dumps(status))
         with self.assertRaises(Exception):
@@ -253,6 +284,35 @@ class OAuthTests(unittest.TestCase):
         self.assertTrue(any(call[0] == "POST" and call[1].endswith("/token") for call in transport.calls[1:]))
         self.assertIn("Bearer access-token-refreshed", transport.calls[-1][2]["Authorization"])
         self.assertNotIn(TOKEN, json.dumps(oauth.public_status()))
+        self.assertEqual(oauth.public_status()["status"], "connected")
+        self.assertEqual(oauth.public_status()["mailbox"], "NOT CONFIGURED")
+        token_at = next(
+            i for i, call in enumerate(transport.calls)
+            if call[0] == "POST" and call[1].endswith("/token") and "refresh_token" in (call[3] or b"").decode()
+        )
+        graph_at = next(i for i, call in enumerate(transport.calls) if i > token_at and "/me/messages" in call[1])
+        self.assertLess(token_at, graph_at)
+
+    def test_expired_token_without_refresh_requires_reconnect(self) -> None:
+        now = {"t": 1_000.0}
+        transport = Transport()
+        oauth = MicrosoftOAuth(client_id=CLIENT, transport=transport, clock=lambda: now["t"])
+        url = oauth.authorization_url()
+        state = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["state"][0]
+        oauth.complete("code-1", state)
+        assert oauth.bundle is not None
+        oauth.bundle.refresh_token = ""
+        now["t"] = oauth.bundle.expires_at + 5
+        before = len(transport.calls)
+        with self.assertRaises(AuthenticationError) as caught:
+            oauth.access_token()
+        self.assertIn("Connect the account again", str(caught.exception))
+        self.assertNotIn(TOKEN, str(caught.exception))
+        self.assertIsNone(oauth.bundle)
+        self.assertEqual(oauth.public_status()["status"], "disconnected")
+        self.assertEqual(oauth.public_status()["mailbox"], "NOT CONFIGURED")
+        self.assertFalse(oauth.public_status()["connected"])
+        self.assertEqual(len(transport.calls), before)
 
     def test_pkce_verifier_matches_the_challenge_and_state_expires(self) -> None:
         transport = Transport()
@@ -524,8 +584,16 @@ class OAuthTests(unittest.TestCase):
         )
         self.assertEqual(resources["items"][0]["name"], "vm1")
         self.assertGreaterEqual(client.network_calls, 5)
+        self.assertEqual(oauth.public_status()["mailbox"], "NOT CONFIGURED")
+        self.assertFalse(oauth.live_mail)
         status = microsoft_configuration({})
         self.assertEqual(status["status"], "NOT CONFIGURED")
+        self.assertEqual(status["mailbox"], "NOT CONFIGURED")
+        marked = microsoft_configuration({"MICROSOFT_CLIENT_ID": CLIENT})
+        self.assertEqual(marked["client_id"], "present")
+        self.assertEqual(marked["status"], "configured")
+        self.assertEqual(marked["mailbox"], "NOT CONFIGURED")
+        self.assertNotIn(CLIENT, json.dumps(marked))
 
     def test_approved_draft_is_created_and_mail_is_not_sent(self) -> None:
         transport = Transport()

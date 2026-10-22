@@ -12,6 +12,7 @@ from pathlib import Path
 
 from integrations.approvals import ApprovalService
 from integrations.audit import AuditLog
+from integrations.connector import Connector, Operation
 from integrations.errors import (
     ApprovalRequired, AuthenticationError, InvalidRequest, NotFound, PermissionDenied,
     RateLimited, TenantBoundaryViolation, TransientError, WebhookVerificationError, classify_http_status,
@@ -19,10 +20,47 @@ from integrations.errors import (
 from integrations.fake import FakeDocumentConnector
 from integrations.resilience import Page, RetryPolicy, TokenBucket, call_with_retry, iterate_pages
 from integrations.secrets import EnvSecretProvider, FileSecretProvider, Secret
-from integrations.tenancy import Scope, TenantContext
+from integrations.tenancy import Access, Scope, TenantContext
 from integrations.webhooks import WebhookVerifier, sign
 
 TOKEN = "fake-token-" + "x" * 24
+
+
+class NoticeConnector(Connector):
+    """One idempotent status put and one non-idempotent send, for retry tests."""
+
+    name = "notices"
+    operations = {
+        "send_notice": Operation(
+            "send_notice", Access.WRITE, Scope.parse("notices:write"),
+            idempotent=False, requires_approval=True,
+        ),
+        "put_status": Operation(
+            "put_status", Access.WRITE, Scope.parse("notices:write"),
+            idempotent=True, requires_approval=True,
+        ),
+    }
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.sent: list[str] = []
+        self.puts = 0
+        self.fail_next_put = True
+
+    def authenticate(self, ctx: TenantContext) -> None:
+        return None
+
+    def _perform(self, ctx: TenantContext, op: Operation, params: dict) -> dict:
+        if op.name == "send_notice":
+            self.sent.append(str(params.get("text", "")))
+            if len(self.sent) == 1:
+                raise TransientError("accepted then timed out")
+            return {"sent": len(self.sent)}
+        self.puts += 1
+        if self.fail_next_put:
+            self.fail_next_put = False
+            raise TransientError("timeout before the status was stored")
+        return {"status": params.get("status"), "puts": self.puts}
 
 
 class Clock:
@@ -169,16 +207,60 @@ class RetryAndRateLimitTests(unittest.TestCase):
             connector.write(WRITER_A, "create_document", params, approval_id=req.approval_id)
         self.assertEqual(connector.calls, 1)
 
-    def test_writes_with_idempotency_key_retry_safely(self) -> None:
+    def test_idempotency_key_does_not_retry_a_non_idempotent_create(self) -> None:
         connector, _, _ = make_connector()
         params = {"title": "a", "body": "b"}
         req = connector.request_write(WRITER_A, "create_document", params, "x")
         connector.approvals.decide(req.approval_id, APPROVER_A, approve=True)
         connector.inject_faults(lambda: TransientError("timeout"))
-        out = connector.write(WRITER_A, "create_document", params, approval_id=req.approval_id,
-                              idempotency_key="k-1")
-        self.assertEqual(connector.calls, 2)
-        self.assertFalse(out["deduplicated"])
+        with self.assertRaises(TransientError):
+            connector.write(WRITER_A, "create_document", params, approval_id=req.approval_id,
+                            idempotency_key="k-1")
+        self.assertEqual(connector.calls, 1)
+
+    def test_non_idempotent_send_is_not_repeated_after_it_is_accepted(self) -> None:
+        clock = Clock()
+        connector = NoticeConnector(
+            secrets=EnvSecretProvider({"FAKE_DOCS_TOKEN"}, {"FAKE_DOCS_TOKEN": TOKEN}),
+            audit=AuditLog(clock=clock),
+            approvals=ApprovalService(clock=clock),
+            rate_limiter=TokenBucket(100, 100, clock=clock),
+            retry_policy=RetryPolicy(max_attempts=3, base_delay=0.01),
+            sleep=lambda _delay: None,
+        )
+        sender = TenantContext.create("tenant-a", "alice", ["notices:write"])
+        params = {"text": "Invoice ready"}
+        request = connector.request_write(sender, "send_notice", params, "Send notice")
+        connector.approvals.decide(request.approval_id, APPROVER_A, approve=True)
+        with self.assertRaises(TransientError):
+            connector.write(sender, "send_notice", params, approval_id=request.approval_id,
+                            idempotency_key="notice-1")
+        self.assertEqual(connector.sent, ["Invoice ready"])
+
+    def test_idempotent_write_with_key_still_retries(self) -> None:
+        clock = Clock()
+        connector = NoticeConnector(
+            secrets=EnvSecretProvider({"FAKE_DOCS_TOKEN"}, {"FAKE_DOCS_TOKEN": TOKEN}),
+            audit=AuditLog(clock=clock),
+            approvals=ApprovalService(clock=clock),
+            rate_limiter=TokenBucket(100, 100, clock=clock),
+            retry_policy=RetryPolicy(max_attempts=3, base_delay=0.01),
+            sleep=lambda _delay: None,
+        )
+        sender = TenantContext.create("tenant-a", "alice", ["notices:write"])
+        params = {"status": "open"}
+        request = connector.request_write(sender, "put_status", params, "Set status")
+        connector.approvals.decide(request.approval_id, APPROVER_A, approve=True)
+        out = connector.write(sender, "put_status", params, approval_id=request.approval_id,
+                              idempotency_key="status-1")
+        self.assertEqual(connector.puts, 2)
+        self.assertEqual(out["status"], "open")
+        connector.fail_next_put = True
+        bare = connector.request_write(sender, "put_status", params, "Set status again")
+        connector.approvals.decide(bare.approval_id, APPROVER_A, approve=True)
+        with self.assertRaises(TransientError):
+            connector.write(sender, "put_status", params, approval_id=bare.approval_id)
+        self.assertEqual(connector.puts, 3)
 
     def test_token_bucket(self) -> None:
         clock = Clock()

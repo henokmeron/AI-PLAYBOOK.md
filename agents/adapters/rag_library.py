@@ -45,8 +45,10 @@ class SearchBackend(Protocol):
 class RagLibrarySearchBackend:
     """BM25 retrieval over a managed collection using ``rag/`` functions directly.
 
-    ``allowed_collections`` is the tenant boundary: the agent can only search the
-    collections the caller was granted, even if others exist on disk.
+    Parsed chunks are reused when the file bytes are unchanged. An irrelevant
+    query returns no hits, so a weak chunk is not cited. ``allowed_collections``
+    is the tenant boundary: the agent can only search the collections the caller
+    was granted, even if others exist on disk.
     """
 
     def __init__(self, managed_root: Path, allowed_collections: list[str], rag_dir: Path = DEFAULT_RAG_DIR) -> None:
@@ -55,12 +57,13 @@ class RagLibrarySearchBackend:
         self.managed_root = Path(managed_root)
         self.allowed = frozenset(allowed_collections)
         self._rag_dir = rag_dir
+        self._store: Any = None
 
     def search(self, query: str, collection: str, top_k: int) -> list[dict[str, Any]]:
         if collection not in self.allowed:
             raise ToolPermissionError(f"collection {collection!r} is not granted to this task")
         mods = load_rag_modules(self._rag_dir)
-        library, engine = mods["document_library"], mods["rag_engine"]
+        library, pipeline = mods["document_library"], mods["retrieval_pipeline"]
         try:
             folder = library.get_collection_dir(self.managed_root, collection)
             listed = {item["filename"] for item in library.list_documents(self.managed_root, collection)}
@@ -68,15 +71,26 @@ class RagLibrarySearchBackend:
             raise ToolInputError(str(exc)) from None
         if not listed or not folder.is_dir():
             return []
+        if self._store is None:
+            self._store = pipeline.FileBackedBm25Store()
         try:
-            chunks = [c for c in engine.load_chunks(folder) if c.source in listed]
-        except RuntimeError:
+            index = self._store.load(folder)
+        except (FileNotFoundError, OSError):
             return []
-        ranked = engine.retrieve(query, chunks, top_k=top_k)
+        outcome = pipeline.search(query, index, top_k, allowed_sources=listed)
+        if outcome.abstain:
+            return []
         hits = []
-        for score, chunk, files in engine.dedupe_ranked_chunks(ranked):
-            hits.append({"file": files[0], "also_in": files[1:], "chunk": chunk.number,
-                         "score": round(float(score), 3), "text": chunk.text})
+        for group in outcome.groups[:top_k]:
+            files = group.files
+            chunk = group.chunk
+            hits.append({
+                "file": files[0],
+                "also_in": files[1:],
+                "chunk": chunk.number,
+                "score": round(float(group.score), 3),
+                "text": chunk.text,
+            })
         return hits
 
 

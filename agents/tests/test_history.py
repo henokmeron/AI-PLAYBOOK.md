@@ -87,9 +87,8 @@ class AsyncDeskTests(unittest.TestCase):
             if not final.get("running") and final.get("execution") in {"cancelled", "completed", "failed"}:
                 break
             time.sleep(0.05)
-        self.assertIn(final["execution"], {"cancelled", "completed", "failed"})
-        if final["execution"] == "cancelled":
-            self.assertEqual(final["state"], "cancelled")
+        self.assertEqual(final["execution"], "cancelled")
+        self.assertEqual(final["state"], "cancelled")
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-22T15:49Z** (One new A100 `gom4ualdk47qrj`, **$1.80/hr**, NVIDIA A100-SXM4-80GB, driver 595.91.07. `mlar88u3ku8utm` was **terminated**. One `START.sh` reached health HTTP **200 / 200 / 200**. Completions returned `PONG` and `PLATFORM_OK`. RAG answers named £100 and 10 business days. H100 was not started. Mail, a second computer, and Blackwell were not tested. Production **NO-GO**.)
+Last updated: **2026-10-22T16:30Z** (Coordinator integrated uncommitted specialist edits on top of `409c891`. A100 `gom4ualdk47qrj` was not restarted. Empty tenant and `common` resolve to directory `d595636e-9ef4-4890-b8a7-bde8dd5cab03` and are not sent. The running console has no `MICROSOFT_CLIENT_ID` and no token file. Mail stays **NOT CONFIGURED**. Inference and one RAG answer from about 15:50Z stay **LIVE VERIFIED** for that sample only. Second endpoint, Blackwell, and fresh-machine recovery stay open. Production **NO-GO**.)
 
 ## Only this repository
 
@@ -162,6 +162,15 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-22 — coordinator integrated specialist edits; production stays NO-GO
+
+- Fetched `origin`. `main` and both feature branches were `409c8913dcd338a9bfe84ab1304fdffd8305c561`. Nothing was reset, cleaned, or force-pushed. Uncommitted specialist work was kept and included after the suite passed. `__pycache__` and `ops/_coord_poll_log.txt` were not committed.
+- `integrations/microsoft_oauth.py` maps an empty tenant and `common` to directory `d595636e-9ef4-4890-b8a7-bde8dd5cab03`. `common` is not placed on authorize or token URLs. `?account=work` is not redirected to `/organizations/` unless `MICROSOFT_TENANT` is `organizations`. `web/test_server.py` now expects that directory on the configured sign-in redirect, expects `?account=directory` to use the same directory, and expects `?account=work` to be HTTP 400. PKCE, the absent client secret, the absent `Mail.Send` scope, the CSRF same-site refusal, and the rejection of an arbitrary account were not weakened.
+- The running console on `gom4ualdk47qrj` still has no `MICROSOFT_CLIENT_ID` and no token file. This session did not open Azure, did not create a secret, did not restart the console, and did not read a mailbox. Live mail stays **NOT CONFIGURED**.
+- Other specialist edits included with this commit: RAG cache keys are content hashes and a weak lexical overlap abstains; Operations overview, health, and director refuse `Sec-Fetch-Site` `cross-site` and `same-site` with HTTP 403; agent task ids are constrained, a supplied id is reused, a tool failure is not marked successful, and cancel is recorded while the worker is still stopping; connector retries require an idempotent operation plus a key; a Google Workspace skeleton stays **NOT CONFIGURED** with no client id; Windows repair requires a recorded approver and does not treat a later check-in as fresh evidence. No `agents/`, `integrations/`, `rag/`, `windows_repair/`, `web/`, or `api/` file was rewritten except the two Microsoft URL expectations in `web/test_server.py`.
+- **LIVE VERIFIED** for inference and one RAG answer only, from the 2026-10-22 bring-up around 15:50Z: health HTTP 200 on `:8002`, `:8010`, and `:8080`; completions `PONG` and `PLATFORM_OK`; a grounded RAG answer (10 business days, `expenses-policy.md`, and a £100 threshold). The pod checkout stayed `be9cbd2baf08ee1d9f1bbd192982c94575f57aeb`. This session did not run `START.sh`, did not restart Qwen, did not stop the pod, did not start the H100, and did not write the Global Volume.
+- `python -m ops.run_tests` on Python 3.11 was 44 modules, 44 ok, 0 failed, exit 0, about 114 seconds. `integrations.tests.test_endpoint` skipped 1. `api.test_gateway_reliability` was 31 tests, logged a Windows socket abort, and still passed. `web.test_server` was 31 tests and passed, including the directory redirect and the rejected work account. System Status percentages are computed from criteria. Production decision stays **NO-GO**. Still open: deployed commit equals intended Git tip, mail end-to-end, second endpoint, Blackwell live acceptance, fresh-environment recovery.
 
 ### 2026-10-22 — one new A100 deployed; old pod terminated; health 200
 

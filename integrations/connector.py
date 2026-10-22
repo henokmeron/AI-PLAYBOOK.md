@@ -86,9 +86,12 @@ class Connector:
         except IntegrationError as exc:
             self._audit(ctx, op, "denied", exc, params)
             raise
-        # Writes retry only when the provider can de-duplicate via an idempotency key.
+        # A key is not enough. Retry only operations that declare themselves idempotent,
+        # and only when the caller also supplies a key the provider can de-duplicate.
+        # Sends, deletes, and other non-idempotent writes run once.
+        may_retry = op.idempotent and bool(idempotency_key)
         call_params = dict(params, _idempotency_key=idempotency_key) if idempotency_key else params
-        return self._run(ctx, op, call_params, idempotent=bool(idempotency_key), checked=True)
+        return self._run(ctx, op, call_params, idempotent=may_retry, checked=True)
 
     # --- internals --------------------------------------------------------
     def _operation(self, name: str, access: Access) -> Operation:

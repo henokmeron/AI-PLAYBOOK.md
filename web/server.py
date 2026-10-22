@@ -643,6 +643,21 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return hmac.compare_digest(offered, session.csrf_token)
 
+    def _reject_foreign_browser_get(self) -> bool:
+        """Refuse a state-changing GET that a foreign page can fire.
+
+        These routes cannot require the CSRF header: the console loads them
+        with a plain GET. Another site sends ``Sec-Fetch-Site: cross-site``.
+        Another port on this host sends ``same-site`` and the session cookie.
+        Both are refused before the session is loaded. Same-origin, the address
+        bar (``none``), and a client that omits the header are unchanged.
+        Returns True when the 403 response was already sent.
+        """
+        if browser_fetch_site_allowed(self.headers.get("Sec-Fetch-Site")):
+            return False
+        self.send_error_json(403, "this action must start from this console")
+        return True
+
     def require_operator(
         self,
         permission: Permission | None = None,
@@ -1648,6 +1663,9 @@ class Handler(BaseHTTPRequestHandler):
         return self.server.ops  # type: ignore[attr-defined]
 
     def handle_ops_overview(self) -> None:
+        # Writes health events and may create alerts. A cross-site fetch must not.
+        if self._reject_foreign_browser_get():
+            return
         if self.require_operator(Permission.OPS_VIEW, mutating=False) is None:
             return
         if self.require_key() is None:
@@ -1660,6 +1678,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, ops.overview())
 
     def handle_ops_health(self) -> None:
+        # refresh_health appends a probe event for every service.
+        if self._reject_foreign_browser_get():
+            return
         if self.require_operator(Permission.OPS_VIEW, mutating=False) is None:
             return
         if self.require_key() is None:
@@ -1910,6 +1931,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, result)
 
     def handle_ops_director(self) -> None:
+        # build_report appends an audit event and refreshes health.
+        if self._reject_foreign_browser_get():
+            return
         if self.require_operator(Permission.OPS_VIEW, mutating=False) is None:
             return
         if self.require_key() is None:

@@ -35,8 +35,26 @@ class AcceptanceBoardTests(unittest.TestCase):
             self.assertTrue(row["next_action"])
             self.assertTrue(row["bar"].startswith("["))
             if row["lane"] == "live":
-                self.assertEqual(row["completed"], [])
                 self.assertLess(row["percent"], 100)
+            if row["name"] in {
+                "Microsoft mail",
+                "Second endpoint",
+                "Blackwell",
+                "Fresh environment",
+                "Volume and weights",
+            }:
+                self.assertEqual(row["completed"], [])
+        inference = next(row for row in live if row["name"] == "Inference and one RAG answer")
+        self.assertIn("One completion returned PLATFORM_OK or PONG", inference["completed"])
+        self.assertIn("One grounded RAG answer was returned on 2026-10-22", inference["completed"])
+        self.assertIn("That answer was served by the intended Git tip", inference["remaining"])
+        deployment = next(row for row in live if row["name"] == "RunPod deployment parity")
+        self.assertIn("Deployed commit equals the intended Git tip", deployment["remaining"])
+        completed_text = " ".join(item for row in rows for item in row["completed"])
+        self.assertNotIn("A mailbox read succeeded", completed_text)
+        self.assertNotIn("A second Windows computer ran the endpoint worker", completed_text)
+        self.assertNotIn("Live install, serve, and infer on a CC 12.0 GPU", completed_text)
+        self.assertNotIn("Recovery on a fresh machine or a new pod", completed_text)
         self.assertEqual(payload["offline_percent"], sum(row["percent"] for row in offline) // len(offline))
         self.assertEqual(payload["live_acceptance_percent"], sum(row["percent"] for row in live) // len(live))
         self.assertEqual(payload["overall_percent"], payload["live_acceptance_percent"])

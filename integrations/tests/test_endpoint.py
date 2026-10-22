@@ -316,6 +316,51 @@ class EndpointTests(unittest.TestCase):
                 checks=[self._check(collected_at_unix=1_000 + 301)],
             ))
 
+    def test_unauthenticated_or_expired_heartbeat_is_not_stored_as_healthy(self) -> None:
+        """A rejected secret leaves the previous report. An old collection time is not HEALTHY."""
+        from ops_centre.director import _endpoint_fleet
+
+        def fleet(path: Path) -> dict:
+            previous = os.environ.get("ENDPOINT_STATE_FILE")
+            os.environ["ENDPOINT_STATE_FILE"] = str(path)
+            try:
+                return _endpoint_fleet("2026-10-22T00:00:00Z")
+            finally:
+                if previous is None:
+                    os.environ.pop("ENDPOINT_STATE_FILE", None)
+                else:
+                    os.environ["ENDPOINT_STATE_FILE"] = previous
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "devices.json"
+            now = [time.time()]
+            registry = DeviceRegistry(path, clock=lambda: now[0])
+            created = registry.create_enrolment("local-console")
+            secret = "h" * 32
+            registry.enrol(created["enrolment_code"], "Office PC", secret)
+            stamp = int(now[0])
+            registry.submit(secret, _report(
+                collected_at_unix=stamp,
+                checks=[self._check(collected_at_unix=stamp, summary="disks=1")],
+            ))
+            self.assertEqual(fleet(path)["state"], "HEALTHY")
+            with self.assertRaises(AuthenticationError):
+                registry.submit("x" * 32, _report(
+                    collected_at_unix=stamp,
+                    checks=[self._check(collected_at_unix=stamp)],
+                ))
+            self.assertEqual(registry.public_report("local-console", None)["collected_at_unix"], stamp)
+            self.assertEqual(fleet(path)["state"], "HEALTHY")
+            now[0] += 20
+            registry.submit(secret, _report(
+                collected_at_unix=1_000,
+                checks=[self._check(collected_at_unix=1_000, summary="old disk")],
+            ))
+            expired = fleet(path)
+            self.assertNotEqual(expired["state"], "HEALTHY")
+            self.assertEqual(expired["state"], "DEGRADED")
+            self.assertIn("evidence_stale=true", expired["evidence"])
+
 
 class WorkerSecretFileTests(unittest.TestCase):
     def test_secret_file_is_private_on_this_windows_pc(self) -> None:

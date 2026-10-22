@@ -296,12 +296,17 @@ AZURE = ConnectorSpec(
 
 
 def microsoft_configuration(env: Mapping[str, str] | None = None) -> dict[str, str]:
-    """Report whether an application id is present. The id itself is never returned."""
+    """Report whether an application id is present. The id itself is never returned.
+
+    `status` means the application id is present or absent. `mailbox` stays
+    NOT CONFIGURED until a real Microsoft Graph mail read succeeds.
+    """
     source = env or {}
     present = bool(str(source.get("MICROSOFT_CLIENT_ID", "")).strip())
     return {
         "status": "configured" if present else "NOT CONFIGURED",
         "client_id": "present" if present else "absent",
+        "mailbox": "NOT CONFIGURED",
     }
 
 
