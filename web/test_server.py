@@ -33,6 +33,14 @@ class FakeGatewayHandler(BaseHTTPRequestHandler):
         self.close_connection = True
         return ok
 
+    def finish(self) -> None:
+        try:
+            self.wfile.flush()
+            self.request.shutdown(__import__("socket").SHUT_WR)
+        except OSError:
+            pass
+        super().finish()
+
     def _record(self) -> dict[str, str]:
         length = int(self.headers.get("Content-Length", "0") or 0)
         raw = self.rfile.read(length) if length else b""
@@ -224,6 +232,14 @@ class RecorderHandler(BaseHTTPRequestHandler):
         self.close_connection = True
         return ok
 
+    def finish(self) -> None:
+        try:
+            self.wfile.flush()
+            self.request.shutdown(__import__("socket").SHUT_WR)
+        except OSError:
+            pass
+        super().finish()
+
     def _hit(self) -> None:
         length = int(self.headers.get("Content-Length", "0") or 0)
         if length:
@@ -378,6 +394,37 @@ class ConsoleTests(unittest.TestCase):
     def request(self, base: str, method: str, path: str, payload: dict | None = None, headers: dict | None = None) -> tuple[int, bytes]:
         status, body, _headers = self.request_raw(base, method, path, payload, headers)
         return status, body
+
+    def test_repair_page_lists_read_only_checks_and_refuses_changes(self) -> None:
+        base = self.web(FakeGateway())
+        status, page = self.request(base, "GET", "/")
+        self.assertEqual(status, 200)
+        self.assertIn(b"Collect on this computer", page)
+        self.assertIn(b"repair-live-procedure", page)
+        status, body = self.request(base, "GET", "/api/repair/procedures")
+        payload = json.loads(body)
+        self.assertEqual(status, 200)
+        ids = {item["procedure_id"] for item in payload["live_read_only"]}
+        self.assertIn("print.diagnose", ids)
+        self.assertIn("win.activation.inspect", ids)
+        self.assertNotIn("print.spooler.restart", ids)
+        self.assertNotIn("net.firewall.disable", ids)
+        self.assertTrue(all(item["changes_the_computer"] is False for item in payload["live_read_only"]))
+        self.assertFalse(payload["second_endpoint"])
+        self.assertIn("do not enrol a second computer", payload["note"])
+        for procedure_id in ("net.firewall.disable", "print.spooler.restart", "credential.dump"):
+            refused, refused_body = self.request(base, "POST", "/api/repair/live", {"procedure_id": procedure_id})
+            self.assertEqual(refused, 400, procedure_id)
+            self.assertNotIn(b"changed_device", refused_body)
+        connectors_status, connectors_body = self.request(base, "GET", "/api/connectors")
+        self.assertEqual(connectors_status, 200)
+        rows = {item["connector_id"]: item for item in json.loads(connectors_body)["connectors"]}
+        self.assertEqual(rows["windows_repair"]["readiness"], "diagnostic-only")
+        diagnose = next(item for item in rows["windows_repair"]["operations"] if item["tool_name"] == "windows_repair_diagnose")
+        change = next(item for item in rows["windows_repair"]["operations"] if item["tool_name"] == "windows_repair_request_change")
+        self.assertEqual(diagnose["evidence"], "diagnostic-only")
+        self.assertEqual(change["evidence"], "not-executed")
+        self.assertTrue(change["requires_approval"])
 
     def test_repeated_status_reads_stay_connected(self) -> None:
         base = self.web(FakeGateway())

@@ -62,7 +62,8 @@ class TaskHistoryStore:
                     pass
             tmp = path.with_suffix(".tmp")
             tmp.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-            os.replace(tmp, path)
+            from integrations.state_guard import replace_file
+            replace_file(tmp, path)
             self._prune_unlocked()
         return record
 

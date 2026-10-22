@@ -1,0 +1,16 @@
+# Integration matrix
+
+A row is complete only when the evidence column names a real run. A button, a registered tool, or a runbook is not a pass. Production stays NO-GO while a mandatory acceptance gate is open.
+
+| Area | Status | Evidence | Permission | Blocker | Next action |
+|---|---|---|---|---|---|
+| Chat and document Q&A | LIVE on the A100 | Gateway completion and RAG regression 6/6 at 2026-10-22 19:47:37Z, including the train-ticket question citing `expenses-policy.md`. Abstentions had no sources. Deployed code `4eab966`. | Loopback gateway key. The console does not receive it. | None for the demo corpus. | Keep the gateway on the deployed revision. |
+| Microsoft mail | NOT CONFIGURED | Client id is loaded from a private file and the tenant is the organisation directory. No mailbox read is recorded. | Delegated User.Read and Mail.Read. Mail.Send is not requested. | A personal Gmail account was rejected by Microsoft with AADSTS50020. | The owner signs in with the work account in that directory and runs one mail search. |
+| Microsoft files and drafts | NOT RUN | Code can upload, replace, or delete one named file and update an unsent draft. No live call has been made. | Files.ReadWrite or Mail.ReadWrite, each as a separate consent. | No work-account token. | Do not enable these until mail read has succeeded. |
+| Windows read-only checks | DIAGNOSTIC ONLY | `windows_repair_diagnose` and `POST /api/repair/live` call a registered collector. The console lists those collectors. Elevated procedures are refused by that route. | Read-only. No approval for the read. Approval is required before a change, and the change still does not run. | The A100 console is Linux, so a collector there returns unavailable. This development PC is not a second endpoint. | Enrol a different Windows computer with the endpoint worker. |
+| Windows repair changes | NOT EXECUTED | `windows_repair_request_change` records an approval and does not change the computer. Firewall disable and driver install are denied. | Approval from a different person, then still no execution. | No approved execution path. | Leave it refused. |
+| Enrolled computers | NO EVIDENCE | No device is enrolled. The pod list under `/tmp` is lost when the pod stops. | A one-time enrolment code and a device secret that stays on that computer. | No second computer. | Follow `docs/runbooks/REMAINING_GATES.md`. |
+| Mac checks | NOT TESTED | Fixture results only. | None. The tool does not run on this Windows host. | No Mac agent in this repository. | Do not mark a fixture as a live Mac. |
+| Blackwell inference | NO EVIDENCE | Lock file names the CUDA 12.9 stack. It has not been installed. | Owner approval of a Blackwell pod. | No such pod. | Do not start one without approval. |
+| Fresh recovery | NOT TESTED | Local archive `758177d` matches its checksum. A temp extract is not a fresh machine. | None for a local Docker recovery. Docker Desktop is installed and stopped. | The recovery has not been run. | Start Docker only when a fresh container is the intended test. |
+| Weight backup | NO EVIDENCE | Weights are on Global Volume `cmv2p5m0d000007jk9o3931ea` only. | Owner approval of a destination. | No independent copy. | Do not copy the weights until a destination is approved. |

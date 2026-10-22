@@ -150,7 +150,8 @@ class AuthStore:
             }
             tmp = self.operators_path.with_suffix(".tmp")
             tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-            tmp.replace(self.operators_path)
+            from integrations.state_guard import replace_file
+            replace_file(tmp, self.operators_path)
             self._harden_file(self.operators_path)
 
     def save_sessions(self) -> None:
@@ -165,7 +166,8 @@ class AuthStore:
             payload = {"sessions": [asdict(item) for item in alive.values()]}
             tmp = self.sessions_path.with_suffix(".tmp")
             tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-            tmp.replace(self.sessions_path)
+            from integrations.state_guard import replace_file
+            replace_file(tmp, self.sessions_path)
             self._harden_file(self.sessions_path)
 
     def by_username(self, username: str) -> OperatorRecord | None:

@@ -164,7 +164,8 @@ class DirectorSchedule:
         temporary = self.path.with_name(self.path.name + ".tmp")
         temporary.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
         restrict_private(temporary)
-        os.replace(temporary, self.path)
+        from integrations.state_guard import replace_file
+        replace_file(temporary, self.path)
         restrict_private(self.path)
         assert_private(self.path)
 

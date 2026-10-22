@@ -259,9 +259,14 @@
             <option value="network_dns">Mocked DNS failure</option>
             <option value="driver_code_28">Mocked missing driver</option>
           </select>
+          <label for="repair-live-procedure">Read-only check on this computer</label>
+          <select id="repair-live-procedure">
+            <option value="print.diagnose">Printers</option>
+          </select>
+          <p class="meta">The list is the registered read-only checks. Collecting runs on the computer that hosts the console. It does not enrol a second computer and it does not change this one. A change still needs a separate approval, and that approval does not run the change.</p>
           <div class="form-row">
             <button type="submit" id="repair-send">Plan and diagnose</button>
-            <button type="button" id="repair-live" class="secondary">Collect live printer evidence</button>
+            <button type="button" id="repair-live" class="secondary">Collect on this computer</button>
             <button type="button" id="repair-practise" class="secondary">Practise spooler approval</button>
           </div>
         </form>

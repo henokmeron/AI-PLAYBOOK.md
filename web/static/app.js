@@ -1549,6 +1549,21 @@
       errorBox.textContent = errorMessage(error);
     });
     loadRepairDevice();
+    request("/api/repair/procedures").then(function (body) {
+      var select = document.getElementById("repair-live-procedure");
+      var checks = Array.isArray(body.live_read_only) ? body.live_read_only : [];
+      if (!checks.length) return;
+      select.textContent = "";
+      checks.forEach(function (item) {
+        var option = document.createElement("option");
+        option.value = item.procedure_id;
+        option.textContent = item.name + " (" + item.procedure_id + ")";
+        select.appendChild(option);
+      });
+    }).catch(function (error) {
+      errorBox.hidden = false;
+      errorBox.textContent = errorMessage(error);
+    });
   }
 
   var repairDevice = { id: "", secret: "" };
@@ -1639,7 +1654,8 @@
   document.getElementById("repair-live").addEventListener("click", function () {
     var errorBox = document.getElementById("repair-error");
     errorBox.hidden = true;
-    request("/api/repair/live", { method: "POST", body: { procedure_id: "print.diagnose" } }).then(function (result) {
+    var procedureId = document.getElementById("repair-live-procedure").value || "print.diagnose";
+    request("/api/repair/live", { method: "POST", body: { procedure_id: procedureId } }).then(function (result) {
       document.getElementById("repair-result").textContent = JSON.stringify(result, null, 2);
     }).catch(function (error) {
       errorBox.hidden = false;

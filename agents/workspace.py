@@ -320,11 +320,12 @@ class AgentDesk:
             "auth": "none",
             "connected": True,
             "account": None,
-            "readiness": "mock-tested",
+            "readiness": "diagnostic-only",
             "detail": (
-                "The diagnose tool can run a registered read-only collector on the computer "
-                "that hosts the console. Unit tests use a fake collector. Privileged repair "
-                "stays disabled. This is not a second computer and not a remote shell."
+                "windows_repair_diagnose runs one registered read-only collector on the computer "
+                "that hosts the console, when that computer is Windows. The A100 console is Linux, "
+                "so the collector returns unavailable there. An elevated procedure pauses for approval "
+                "and still does not change the computer. This is not a second computer and not a remote shell."
             ),
             "operations": [
                 {
@@ -335,14 +336,14 @@ class AgentDesk:
                     "scope": "windows:local",
                     "requires_approval": approval,
                     "available": True,
-                    "evidence": "mock-tested",
-                    "status": "mock-tested",
+                    "evidence": evidence,
+                    "status": evidence,
                     "provider_permissions": [],
                 }
-                for name, summary, effect, approval in (
-                    ("windows_repair_plan", "Choose a registered procedure id from a symptom.", "read", False),
-                    ("windows_repair_diagnose", "Run one registered read-only check. Result text is untrusted.", "read", False),
-                    ("windows_repair_request_change", "Record approval for an elevated procedure. Nothing is changed.", "consequential", True),
+                for name, summary, effect, approval, evidence in (
+                    ("windows_repair_plan", "Choose a registered procedure id from a symptom.", "read", False, "diagnostic-only"),
+                    ("windows_repair_diagnose", "Run one registered read-only check. Result text is untrusted.", "read", False, "diagnostic-only"),
+                    ("windows_repair_request_change", "Record approval for an elevated procedure. Nothing is changed.", "consequential", True, "not-executed"),
                 )
             ],
         })

@@ -532,6 +532,16 @@ class Handler(BaseHTTPRequestHandler):
     def config(self) -> Config:
         return self.server.config  # type: ignore[attr-defined]
 
+    def finish(self) -> None:
+        # A hard close on Windows becomes WinError 10053 while the client is
+        # still reading. Shut the write side first so the client sees a normal end.
+        try:
+            self.wfile.flush()
+            self.request.shutdown(socket.SHUT_WR)
+        except OSError:
+            pass
+        super().finish()
+
     def parse_request(self) -> bool:
         # One response per connection. HTTP/1.1 keep-alive on Windows aborts
         # the next read with WinError 10053 after the client has already finished.
@@ -1763,9 +1773,32 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.require_key() is None:
             return
+        from windows_repair.catalogue import PROCEDURES
         from windows_repair.engine import list_procedures
+        from windows_repair.providers import LIVE_PROCEDURES
 
-        self.send_json(200, {"procedures": list_procedures(), "live_printer_verified": False})
+        live = []
+        for procedure_id in sorted(LIVE_PROCEDURES):
+            procedure = PROCEDURES.get(procedure_id)
+            if procedure is None or procedure.risk != "READ_ONLY" or procedure.requires_approval:
+                continue
+            live.append({
+                "procedure_id": procedure_id,
+                "name": procedure.name,
+                "changes_the_computer": False,
+            })
+        self.send_json(200, {
+            "procedures": list_procedures(),
+            "live_printer_verified": False,
+            "live_read_only": live,
+            "second_endpoint": False,
+            "host": "console-host",
+            "note": (
+                "These checks run on the computer that hosts the console, and only when that "
+                "computer is Windows. They do not enrol a second computer and they do not change it. "
+                "The A100 console is Linux, so the same check returns unavailable there."
+            ),
+        })
 
     def _printer_flow(self):  # type: ignore[no-untyped-def]
         return self.server.printer_flow  # type: ignore[attr-defined]
@@ -1875,16 +1908,28 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.require_key() is None:
             return
+        from windows_repair.catalogue import PROCEDURES
         from windows_repair.providers import LIVE_PROCEDURES, LiveWindowsProvider
 
         payload = self.read_json_object(max_bytes=2048)
         if payload is None:
             return
         procedure_id = payload.get("procedure_id")
-        if not isinstance(procedure_id, str) or procedure_id not in LIVE_PROCEDURES:
+        procedure = PROCEDURES.get(procedure_id) if isinstance(procedure_id, str) else None
+        if (
+            procedure is None
+            or procedure_id not in LIVE_PROCEDURES
+            or procedure.risk != "READ_ONLY"
+            or procedure.requires_approval
+        ):
             self.send_error_json(400, "procedure_id is not a live read-only diagnostic")
             return
-        self.send_json(200, LiveWindowsProvider().collect(procedure_id))
+        result = LiveWindowsProvider().collect(procedure_id)
+        result["changed_device"] = False
+        result["problem_resolved"] = False
+        result["second_endpoint"] = False
+        result["host"] = "console-host"
+        self.send_json(200, result)
 
     def handle_repair_remote(self) -> None:
         if self.require_operator(Permission.OPS_VIEW, mutating=False) is None:

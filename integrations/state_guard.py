@@ -22,7 +22,31 @@ from __future__ import annotations
 import os
 import stat
 import threading
+import time
 from pathlib import Path
+
+def replace_file(source: Path, destination: Path, *, attempts: int = 5) -> None:
+    """Replace destination with source. Retry when Windows briefly locks either file.
+
+    A scanner or the previous reader can return WinError 5 for a few milliseconds
+    after a write. The replacement stays atomic on each attempt. A persistent
+    denial still raises.
+    """
+    delay = 0.05
+    last: PermissionError | None = None
+    for attempt in range(max(1, attempts)):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError as exc:
+            last = exc
+            if attempt + 1 >= attempts:
+                break
+            time.sleep(delay)
+            delay = min(delay * 2, 0.4)
+    assert last is not None
+    raise last
+
 
 class StatePermissionError(Exception):
     """Permission enforcement was requested and did not succeed."""
