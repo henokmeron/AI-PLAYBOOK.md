@@ -17,11 +17,29 @@ from .store import AuthStore, OperatorRecord, SessionRecord, utc_now
 USERNAME_RE = re.compile(r"^[a-z][a-z0-9_-]{2,31}$")
 COOKIE_NAME = "console_session"
 CSRF_HEADER = "X-CSRF-Token"
+# Browsers set this and pages cannot. same-site is another port on this host.
+_ALLOWED_FETCH_SITES = frozenset({"same-origin", "none"})
 DEFAULT_IDLE_SECONDS = 8 * 3600
 DEFAULT_ABSOLUTE_SECONDS = 24 * 3600
 LOGIN_WINDOW_SECONDS = 15 * 60
 LOGIN_MAX_FAILURES_PER_KEY = 10
 GENERIC_LOGIN_ERROR = "Invalid username or password."
+
+
+def browser_fetch_site_allowed(value: str | None) -> bool:
+    """Whether a browser navigation may start a state-changing GET.
+
+    ``None`` means the client did not send ``Sec-Fetch-Site`` (a non-browser
+    tool). ``same-origin`` is the console page. ``none`` is the address bar.
+    ``same-site`` is another port on this computer and ``cross-site`` is
+    another site. Those, and any other value, are refused. The header is
+    forbidden to script, so a page cannot claim to be same-origin.
+    """
+    if value is None:
+        return True
+    if not isinstance(value, str):
+        return False
+    return value.strip().casefold() in _ALLOWED_FETCH_SITES
 
 
 class AuthError(Exception):

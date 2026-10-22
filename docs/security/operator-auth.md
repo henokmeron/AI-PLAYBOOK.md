@@ -64,7 +64,7 @@ If `OPERATOR_AUTH_DIR` has no active operators, privileged browser APIs return *
 | Secure flag | Set when `WEB_COOKIE_SECURE=true` (use behind HTTPS tunnels if required) |
 | Idle expiry | 8 hours (sliding on activity) |
 | Absolute expiry | 24 hours |
-| CSRF | `X-CSRF-Token` header required on mutating authenticated requests |
+| CSRF | `X-CSRF-Token` header required on mutating authenticated requests. `GET /api/microsoft/start` is a link, so it cannot send that header. A browser `Sec-Fetch-Site` of `same-site` or `cross-site` is refused before any sign-in attempt is stored. Same-origin navigation from the console is unchanged. |
 | Rotation | Login issues a new session; `POST /api/auth/rotate` replaces id + CSRF |
 | Logout | `POST /api/auth/logout` clears the cookie and revokes the server session |
 

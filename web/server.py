@@ -35,7 +35,7 @@ from agents.task_kinds import needs_long_run
 from agents.model import OpenAICompatibleClient
 from agents.workspace import CONSOLE_TENANT, AgentDesk
 from auth import AuthService, Permission
-from auth.service import COOKIE_NAME, CSRF_HEADER, AuthError, SessionRecord
+from auth.service import COOKIE_NAME, CSRF_HEADER, AuthError, SessionRecord, browser_fetch_site_allowed
 from ops.acceptance_board import board as acceptance_board
 from ops_centre import OpsCentre
 from integrations.endpoint import DeviceRegistry
@@ -1062,6 +1062,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, {"connectors": rows})
 
     def handle_microsoft_start(self) -> None:
+        # A link cannot send the CSRF header. Another port on this machine is
+        # same-site, so the session cookie would be sent. Refuse that browser.
+        if not browser_fetch_site_allowed(self.headers.get("Sec-Fetch-Site")):
+            self.send_error_json(403, "sign-in must start from this console")
+            return
         if self.require_operator(Permission.CONNECTORS_MANAGE, mutating=False) is None:
             return
         query = parse_qs(urlsplit(self.path).query)

@@ -80,6 +80,7 @@ class AuthTests(unittest.TestCase):
         csrf: str | None = None,
         origin: str | None = None,
         headers: dict | None = None,
+        follow_redirects: bool = True,
     ) -> tuple[int, dict, dict[str, str]]:
         data = None if payload is None else json.dumps(payload).encode("utf-8")
         hdrs = dict(headers or {})
@@ -94,8 +95,17 @@ class AuthTests(unittest.TestCase):
         elif method in {"POST", "PUT", "DELETE", "PATCH"}:
             hdrs.setdefault("Origin", base)
         request = urllib.request.Request(base + path, data=data, headers=hdrs, method=method)
+        opener = OPENER
+        if not follow_redirects:
+            class _NoRedirect(urllib.request.HTTPErrorProcessor):
+                def http_response(self, request, response):  # type: ignore[no-untyped-def]
+                    return response
+
+                https_response = http_response
+
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
         try:
-            with OPENER.open(request, timeout=5) as response:
+            with opener.open(request, timeout=5) as response:
                 raw = response.read()
                 body = json.loads(raw.decode("utf-8") or "{}") if raw else {}
                 return int(response.getcode()), body, dict(response.headers.items())
@@ -278,6 +288,31 @@ class AuthTests(unittest.TestCase):
             base, "GET", "/api/auth/status", headers={"Host": "127.0.0.1:18080"},
         )
         self.assertEqual(status, 200)
+
+    def test_microsoft_start_rejects_other_port_browser(self) -> None:
+        """Another process on this machine must not start Microsoft sign-in with the operator cookie."""
+        base, _service = self.start_console()
+        cookie, _csrf = self.login(base)
+        status, body, headers = self.call(
+            base,
+            "GET",
+            "/api/microsoft/start",
+            cookie=cookie,
+            headers={"Sec-Fetch-Site": "same-site"},
+            follow_redirects=False,
+        )
+        self.assertEqual(status, 403, body)
+        self.assertNotIn("location", {key.casefold() for key in headers})
+        allowed, allowed_body, _allowed_headers = self.call(
+            base,
+            "GET",
+            "/api/microsoft/start",
+            cookie=cookie,
+            headers={"Sec-Fetch-Site": "same-origin"},
+            follow_redirects=False,
+        )
+        self.assertNotEqual(allowed, 403, allowed_body)
+        self.assertIn(allowed, {302, 400, 409})
 
     def test_csrf_required_on_mutating(self) -> None:
         base, _ = self.start_console()
