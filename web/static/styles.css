@@ -308,6 +308,12 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   gap: 8px;
   padding-top: 12px;
 }
+/* Secondary buttons are styled for the light page. This one sits on the dark sidebar. */
+#logout-button {
+  background: var(--sidebar-text);
+  color: var(--sidebar);
+  border-color: var(--sidebar-text);
+}
 .acceptance-row { margin: 14px 0 0; }
 .acceptance-decision {
   background: var(--danger-bg);
