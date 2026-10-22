@@ -83,13 +83,21 @@ Both are **NOT TESTED**.
 
 A second endpoint needs another Windows computer with the endpoint worker. This development PC is not that computer. Do not record its collectors as a second endpoint.
 
-Blackwell needs a GPU of compute capability 12.0 and a driver of 575 or newer, then the pinned install, check, serve, and one inference in `ops/blackwell`. The running H100 NVL is not that hardware. Do not record an H100 result as a Blackwell result.
+Blackwell needs a GPU of compute capability 12.0 and a driver of 575 or newer, then the pinned install, check, serve, and one inference in `ops/blackwell`. The running pod is an A100, not that hardware. The stopped H100 NVL is not that hardware either. Do not record an A100 or H100 result as a Blackwell result.
 
-## Reading the volume while the pod is stopped
+## Which pod to recover
 
-Checked 2026-10-22 in the signed-in RunPod console. Pod `xx9cjogra5vcwl` is **Stopped**. Global Volume “New model container” (`cmv2p5m0d000007jk9o3931ea`) is still on the Storage page: type **Global**, location **Any**, 126.0GB, 1,804 objects after a reload. The S3-compatible API does not apply. The doc is [https://docs.runpod.io/storage/s3-api](https://docs.runpod.io/storage/s3-api) (“access and manage your network volumes”). This volume’s own menu has no S3 or file-browser action. The stopped pod’s Volumes tab can show 0 Bytes; use the Storage page usage line instead. No key was created and no object was listed.
+Checked against the 2026-10-22T13:01Z record. The running pod is A100 `mlar88u3ku8utm` (`screeching_crimson_vole`) at **$1.80/hr**. Global Volume “New model container” (`cmv2p5m0d000007jk9o3931ea`) is already mounted at `/workspace`. `bash /workspace/ai-platform-release/START.sh --preflight` returned **PREFLIGHT_PASS** at 2026-10-22T13:02:45Z and did not load Qwen. The next cold start, only after the GPU load is approved, is:
 
-The read that does not create a paid resource is the next approved start of this same pod, then `ls /workspace` from the pod console or SSH. Global volumes are GPU-only ([overview](https://docs.runpod.io/storage/globalvolume/overview)), and no other pod was in the account. Do not start the pod from an unapproved session.
+```bash
+bash /workspace/ai-platform-release/START.sh
+```
+
+H100 `xx9cjogra5vcwl` (`reliable_moccasin_hummingbird`) is **Stopped** at **$0.00/hr**. Do not start it. Do not create a volume, a pod, or an S3 API key. Weights and the runtime archive stay only on this volume. There is no independent weight backup. This command was not run from the session that wrote this paragraph. Production stays **NO-GO**.
+
+## Reading the volume
+
+The volume is mounted on the running A100 above. An earlier console check, while the H100 was the only pod on the account and was **Stopped**, still applies to the Storage page: type **Global**, location **Any**, 126.0GB, 1,804 objects after a reload. The S3-compatible API does not apply. The doc is [https://docs.runpod.io/storage/s3-api](https://docs.runpod.io/storage/s3-api) (“access and manage your network volumes”). This volume’s own menu has no S3 or file-browser action. A stopped pod’s Volumes tab can show 0 Bytes; that line is not a file listing. No key was created and no object was listed. Do not start the H100 to read the volume. The A100 is already running with it mounted.
 
 ## Pre-shutdown
 

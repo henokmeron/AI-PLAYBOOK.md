@@ -375,6 +375,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 
 | Date | Change |
 | --- | --- |
+| 2026-10-22 | Recovery follows running A100 `mlar88u3ku8utm` (`screeching_crimson_vole`) at $1.80/hr. Volume `cmv2p5m0d000007jk9o3931ea` is already on `/workspace`. Next cold start is `bash /workspace/ai-platform-release/START.sh`. Preflight already passed. The full command was not run. H100 `xx9cjogra5vcwl` stays Stopped. A listed model id is not healthy when engine `/health` is dead. Weights stay only on that volume. Production **NO-GO**. |
 | 2026-10-22 | Running pod is A100 `mlar88u3ku8utm` at $1.80/hr with Global Volume `cmv2p5m0d000007jk9o3931ea` on `/workspace`. Health ports refused connections. `START.sh --preflight` returned **PREFLIGHT_PASS**. Qwen was not loaded. The H100 stayed Stopped. The volume was not written. Production **NO-GO**. |
 | 2026-10-22 | Local archive of `d6d3ac2f9cb7fb3632b042c3fe58eefe0e180eb4` SHA-256 `50df5371070cc5004cad45ec645e9da938460f077b373f08240fda1e24ac98ee`, 383 members. This note is not inside that archive. Not copied to the volume. Production **NO-GO**. |
 | 2026-10-22 | Gateway `/health` is not `ok` when no model id is reported. The console says “No model reported”. Pod `xx9cjogra5vcwl` rechecked **Stopped** at $0.00/hr. Live health was not called. Production **NO-GO**. |

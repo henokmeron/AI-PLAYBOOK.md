@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-22T13:03:23Z** (A100 `mlar88u3ku8utm` is **Running** at $1.80/hr with the platform volume mounted. Preflight **passed**. Qwen was **not** loaded. H100 stayed **Stopped**. Production **NO-GO**.)
+Last updated: **2026-10-22** (Recovery follows the running A100 `mlar88u3ku8utm` / `screeching_crimson_vole` at $1.80/hr. Volume `cmv2p5m0d000007jk9o3931ea` is mounted at `/workspace`. Preflight **passed**. The next cold start is `bash /workspace/ai-platform-release/START.sh`. It was **not** run. H100 `xx9cjogra5vcwl` stays **Stopped**. Production **NO-GO**.)
 
 ## Only this repository
 
@@ -150,13 +150,16 @@ After a failed start, nothing on `/workspace` is deleted; re-run after fixing PA
 
 ## How to start / check (do not invent new paths)
 
+The pod that is running is A100 `mlar88u3ku8utm` (`screeching_crimson_vole`), $1.80/hr, with Global Volume `cmv2p5m0d000007jk9o3931ea` already mounted at `/workspace`. `START.sh --preflight` already returned **PREFLIGHT_PASS** at 2026-10-22T13:02:45Z. Qwen is not loaded. The next cold start, only after the GPU load is approved, is exactly:
+
 ```bash
-bash /workspace/ai-platform-release/START.sh --preflight
-bash /workspace/ai-platform-release/START.sh --check
-# Only if approved / empty GPU:
-PATH=/tmp/vllm-qwen-env/bin:$PATH bash /workspace/ai-platform-release/START.sh --start
-# or after PATH fix is in the script the checkout uses:
 bash /workspace/ai-platform-release/START.sh
+```
+
+That command restores the runtime under `/tmp` and loads Qwen. It was not run. Do not start H100 `xx9cjogra5vcwl`. Do not create a volume or a pod.
+
+```bash
+bash /workspace/ai-platform-release/START.sh --check
 ```
 
 E2E helper (uses key file; does not print it):  
@@ -165,6 +168,14 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-22 — recovery path is the running A100; a dead engine is not healthy
+
+- Re-read `docs/AGENT_HANDOFF.md`, `docs/SYSTEM_MANUAL.md`, `docs/release/RECOVERY.md`, and `docs/release/PRE_SHUTDOWN.md`. The recorded check at 2026-10-22T13:01Z still stands: A100 `mlar88u3ku8utm` (`screeching_crimson_vole`) is **Running** at **$1.80/hr**, Global Volume `cmv2p5m0d000007jk9o3931ea` is mounted at `/workspace`, and `bash /workspace/ai-platform-release/START.sh --preflight` returned **PREFLIGHT_PASS** at 2026-10-22T13:02:45Z. `:8002`, `:8010`, and `:8080` refused connections. Qwen was not loaded. This session did not SSH, did not run `START.sh`, did not write `/workspace`, and did not start a pod.
+- H100 `xx9cjogra5vcwl` (`reliable_moccasin_hummingbird`) stays **Stopped** at **$0.00/hr**. It must not be started. Recovery no longer tells the operator to wait for that H100 or to start it.
+- Weights and the runtime archive stay only on volume `cmv2p5m0d000007jk9o3931ea`. Shard bytes were not copied off the volume. There is no independent weight backup.
+- Gateway `/health` and `/readyz` no longer return ready when `/v1/models` still lists a model id but engine `/health` is dead, or when the model entry itself reports a failure. `/livez` still does not call the model. LOCAL/MOCK only. Live Qwen was not run. `python -m ops.run_tests` on Python 3.11 was 41 modules, 0 failed, exit 0, about 132 seconds. `integrations.tests.test_endpoint` skipped 1. `api.test_gateway_reliability` was 27 tests, logged a Windows socket abort, and still passed. `windows_repair.tests.test_live_diagnostics` failed once on a temp-file permission error and passed on the automatic retry. Acceptance percentages were not raised.
+- Next cold start, and only after the GPU load is approved: `bash /workspace/ai-platform-release/START.sh`. Production **NO-GO**. Live gates still open: deployed commit equals intended Git tip, mail end-to-end, second endpoint, Blackwell live acceptance, fresh-environment recovery. Mail stays **NOT CONFIGURED**. Live acceptance was not raised.
 
 ### 2026-10-22 — A100 is the running volume pod; preflight passed; model not loaded
 

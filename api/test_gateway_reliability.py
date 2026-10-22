@@ -48,9 +48,15 @@ class FakeUpstream(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
+        path = self.path.split("?", 1)[0]
+        if path == "/health" and FakeUpstream.mode == "engine_dead":
+            self._send(503, b'{"status":"unhealthy"}')
+            return
         if FakeUpstream.mode == "no_models":
             self._send(200, b'{"data": []}')
-        elif FakeUpstream.mode == "http500" and self.path.endswith("/models"):
+        elif FakeUpstream.mode == "failed_model":
+            self._send(200, b'{"data":[{"id":"Qwen3.5-27B","status":"error"}]}')
+        elif FakeUpstream.mode == "http500" and path.endswith("/models"):
             self._send(500, b"{}")
         else:
             self._send(200, json.dumps({"data": [{"id": FakeUpstream.model_id}]}).encode())
@@ -221,6 +227,39 @@ class GatewayReliabilityTests(unittest.TestCase):
         self.assertEqual(body["status"], "unknown")
         self.assertEqual(body["model_count"], 0)
         self.assertNotEqual(body["status"], "ok")
+
+    def test_listed_model_is_not_healthy_when_the_engine_is_dead(self) -> None:
+        FakeUpstream.mode = "engine_dead"
+        try:
+            self.assert_alive()
+            status, body, _ = self.call("GET", "/health", auth=False)
+            self.assertEqual(status, 503)
+            self.assertEqual(body["status"], "unknown")
+            self.assertEqual(body["reason"], "model_engine_dead")
+            self.assertEqual(body["model_count"], 1)
+            self.assertNotEqual(body["status"], "ok")
+            status, body, _ = self.call("GET", "/readyz", auth=False)
+            self.assertEqual((status, body["status"], body["reason"]), (503, "not_ready", "model_engine_dead"))
+        finally:
+            FakeUpstream.mode = "ok"
+
+    def test_failed_model_entry_is_not_healthy(self) -> None:
+        self.assertEqual(
+            gateway.reported_model_count({"data": [{"id": "Qwen3.5-27B", "status": "error"}]}),
+            0,
+        )
+        self.assertFalse(gateway.engine_health_says_dead(200, b""))
+        self.assertTrue(gateway.engine_health_says_dead(503, b'{"status":"unhealthy"}'))
+        FakeUpstream.mode = "failed_model"
+        try:
+            status, body, _ = self.call("GET", "/health", auth=False)
+            self.assertEqual(status, 503)
+            self.assertEqual(body["reason"], "no_models_reported")
+            self.assertNotEqual(body["status"], "ok")
+            status, body, _ = self.call("GET", "/readyz", auth=False)
+            self.assertEqual((status, body["status"], body["reason"]), (503, "not_ready", "no_models_reported"))
+        finally:
+            FakeUpstream.mode = "ok"
 
     # Malformed requests ----------------------------------------------------
     def test_malformed_requests_get_error_ids_and_service_survives(self) -> None:
@@ -631,6 +670,36 @@ class GatewayReliabilityTests(unittest.TestCase):
         })
         self.assertIs(health["qwen3.5-27b"], False)
         self.assertIs(health["absent"], False)
+
+    def test_listed_model_with_dead_engine_health_is_not_loaded(self) -> None:
+        class ListedButDead(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802
+                path = self.path.split("?", 1)[0]
+                if path == "/health":
+                    self.send_response(503)
+                    self.send_header("Content-Type", "application/json")
+                    body = b'{"status":"unhealthy"}'
+                else:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    body = b'{"data":[{"id":"qwen3.5-27b"}]}'
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, fmt: str, *args: object) -> None:
+                return
+
+        dead = ThreadingHTTPServer(("127.0.0.1", 0), ListedButDead)
+        threading.Thread(target=dead.serve_forever, daemon=True).start()
+        self.addCleanup(dead.shutdown)
+        self.addCleanup(dead.server_close)
+        health = gateway.probe_runtime_health_by_registry({
+            "candidates": [
+                {"id": "qwen3.5-27b", "serving": {"listen_port": dead.server_address[1]}},
+            ]
+        })
+        self.assertIs(health["qwen3.5-27b"], False)
 
 
 if __name__ == "__main__":

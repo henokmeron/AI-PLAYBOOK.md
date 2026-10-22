@@ -205,40 +205,127 @@ def _candidate_listen_port(entry: dict[str, Any]) -> int | None:
         return None
 
 
+_DEAD_MODEL_STATUSES = frozenset({
+    "error", "failed", "failure", "unloaded", "dead", "unavailable",
+    "unhealthy", "not_ready", "not-ready",
+})
+
+
+def model_entry_is_loaded(item: object) -> bool:
+    """A model id is loaded only when the entry does not report a failure."""
+    if not isinstance(item, dict):
+        return False
+    model_id = item.get("id")
+    if not isinstance(model_id, str) or not model_id.strip():
+        return False
+    kind = item.get("object")
+    if isinstance(kind, str) and kind.strip().lower() == "error":
+        return False
+    status = item.get("status")
+    if isinstance(status, str) and status.strip().lower() in _DEAD_MODEL_STATUSES:
+        return False
+    error = item.get("error")
+    if isinstance(error, str) and error.strip():
+        return False
+    if isinstance(error, dict) and error:
+        return False
+    return True
+
+
 def reported_model_count(payload: object) -> int:
-    """Count model objects that carry an id. An empty list is zero."""
+    """Count loaded model objects. An empty list or a failed entry is zero."""
     if not isinstance(payload, dict):
         return 0
     entries = payload.get("data")
     if not isinstance(entries, list):
         return 0
-    count = 0
-    for item in entries:
-        if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"].strip():
-            count += 1
-    return count
+    return sum(1 for item in entries if model_entry_is_loaded(item))
 
 
-def _loopback_models_ready(port: int, timeout: float = 2) -> bool:
-    """GET loopback /v1/models. A redirect is not followed. An empty list is not loaded."""
-    request = urllib.request.Request(f"http://127.0.0.1:{port}/v1/models", method="GET")
+def engine_health_says_dead(status: int, raw: bytes) -> bool:
+    """True when an engine /health response is not a live model server.
+
+    An empty HTTP 200 is alive. A listed model id on a different URL does not
+    override a failed /health response.
+    """
+    if status < 200 or status >= 300:
+        return True
+    text = raw.strip()
+    if not text:
+        return False
+    try:
+        payload = json.loads(text.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    status_text = payload.get("status")
+    if isinstance(status_text, str) and status_text.strip().lower() in _DEAD_MODEL_STATUSES:
+        return True
+    error = payload.get("error")
+    if isinstance(error, str) and error.strip():
+        return True
+    if isinstance(error, dict) and error:
+        return True
+    return False
+
+
+def upstream_engine_health_url() -> str:
+    """vLLM publishes engine health at /health, beside the /v1 prefix."""
+    base = UPSTREAM.strip().rstrip("/")
+    if base.endswith("/v1"):
+        base = base[:-3]
+    return base + "/health"
+
+
+def _open_without_redirect(url: str, timeout: float) -> tuple[int, bytes]:
+    request = urllib.request.Request(url, method="GET")
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _RefuseRedirects)
     try:
         with opener.open(request, timeout=timeout) as response:
             status = int(getattr(response, "status", 0) or 0)
-            if status < 200 or status >= 300:
-                return False
-            raw = response.read(65536)
+            return status, response.read(65536)
     except urllib.error.HTTPError as exc:
+        raw = exc.read(65536)
+        status = int(exc.code)
         exc.close()
-        return False
+        return status, raw
+
+
+def upstream_engine_is_alive(timeout: float = 5) -> bool:
+    """False when engine /health is missing, refused, or reports a dead model."""
+    try:
+        status, raw = _open_without_redirect(upstream_engine_health_url(), timeout)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return False
+    return not engine_health_says_dead(status, raw)
+
+
+def _loopback_models_ready(port: int, timeout: float = 2) -> bool:
+    """GET loopback /v1/models and /health. A redirect is not followed.
+
+    An empty list is not loaded. A model id is not loaded when /health says
+    the engine is dead.
+    """
+    try:
+        status, raw = _open_without_redirect(f"http://127.0.0.1:{port}/v1/models", timeout)
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return False
+    if status < 200 or status >= 300:
         return False
     try:
         payload = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
         return False
-    return reported_model_count(payload) >= 1
+    if reported_model_count(payload) < 1:
+        return False
+    try:
+        health_status, health_raw = _open_without_redirect(
+            f"http://127.0.0.1:{port}/health", timeout
+        )
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return False
+    return not engine_health_says_dead(health_status, health_raw)
 
 
 def probe_runtime_health_by_registry(registry: dict[str, Any]) -> dict[str, bool]:
@@ -715,7 +802,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, {"status": "alive"})
             return
         if parsed.path == "/readyz":
-            # Readiness: the inference upstream answers /models with at least one model.
+            # Readiness: /models lists a loaded model and engine /health is alive.
             try:
                 payload = read_upstream_json("/models", timeout=5)
             except UpstreamError as exc:
@@ -724,6 +811,13 @@ class Handler(BaseHTTPRequestHandler):
             count = reported_model_count(payload)
             if count < 1:
                 self.send_json(503, {"status": "not_ready", "reason": "no_models_reported", "model_count": 0})
+                return
+            if not upstream_engine_is_alive(timeout=5):
+                self.send_json(503, {
+                    "status": "not_ready",
+                    "reason": "model_engine_dead",
+                    "model_count": count,
+                })
                 return
             self.send_json(200, {"status": "ready", "model_count": count})
             return
@@ -743,6 +837,14 @@ class Handler(BaseHTTPRequestHandler):
                     "status": "unknown",
                     "reason": "no_models_reported",
                     "model_count": 0,
+                    "upstream": "unavailable",
+                })
+                return
+            if not upstream_engine_is_alive(timeout=5):
+                self.send_json(503, {
+                    "status": "unknown",
+                    "reason": "model_engine_dead",
+                    "model_count": count,
                     "upstream": "unavailable",
                 })
                 return

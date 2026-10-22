@@ -26,14 +26,15 @@ The pod was left running. This save did not run `snapshot-published-tip.sh`, bec
 | Checksum file (`sha256sum -c` OK) | `/workspace/ai-platform-backups/manifests/AI-PLAYBOOK.md-runpod-first-6f07b58.sha256` | same digest as the archive |
 | Operator backup | `/workspace/platform-state/operator-backups/20261022T015922Z/operators.json` | `41811efc68d6723d5dc77dc1af06c882397b793ec9d5d0eae03ea9bef91ac6bf` |
 
-Weights, the runtime archive (`666bb7c3fde67503c1d728d7d9501d597069e527eabb617228beebe5e626c9fb`, `sha256sum -c` OK), RAG docs, the wheelhouse, and `START.sh` were already on the volume. Weight shard bytes were **NOT RECOMPUTED**. The gateway key, sessions, and `/tmp/console-operator.secret` were not copied. `/tmp` disappears when the pod stops. After a new pod with this same volume is Running, and only then:
+Weights, the runtime archive (`666bb7c3fde67503c1d728d7d9501d597069e527eabb617228beebe5e626c9fb`, `sha256sum -c` OK), RAG docs, the wheelhouse, and `START.sh` were already on the volume. Weight shard bytes were **NOT RECOMPUTED**. They were not copied off the volume. There is no independent weight backup. The gateway key, sessions, and `/tmp/console-operator.secret` were not copied. `/tmp` disappears when the pod stops.
+
+The pod that is running now is A100 `mlar88u3ku8utm` (`screeching_crimson_vole`) at **$1.80/hr**, with this same volume mounted at `/workspace`. Preflight already passed. The next cold start, only after the GPU load is approved, is:
 
 ```bash
-bash /workspace/ai-platform-release/START.sh --preflight
 bash /workspace/ai-platform-release/START.sh
 ```
 
-Production stays **NO-GO**.
+H100 `xx9cjogra5vcwl` is **Stopped**. Do not start it. The full command above was not run. Production stays **NO-GO**.
 
 ## 2026-10-22 stopped-pod access check
 
@@ -41,7 +42,7 @@ The console was reloaded. Pod `xx9cjogra5vcwl` (`reliable_moccasin_hummingbird`)
 
 Direct S3 access is **not** supported for this Global Volume. [The S3-compatible API](https://docs.runpod.io/storage/s3-api) is for network volumes in one data center. [Global volumes](https://docs.runpod.io/storage/globalvolume/overview) mount when a GPU pod starts, and they cannot attach to a CPU pod. The volume menu is Deploy, Edit, and Delete. There is no file browser. No S3 key was created. No object names were listed. No file was written.
 
-To read the volume, wait until this same pod is Running again under an approved start, then use the pod console or SSH on `/workspace`. Do not create a key, a volume, or a pod for that read. The snapshot and operator backup in the table above were checked before this stop. They were not re-hashed while the pod was stopped.
+The volume is already mounted on running A100 `mlar88u3ku8utm`. Read `/workspace` from that pod. H100 `xx9cjogra5vcwl` stays Stopped. Do not create a key, a volume, or a pod for that read. The snapshot and operator backup in the table above were checked before the H100 stop. They were not re-hashed for this note.
 
 Before you stop the Pod yourself, confirm:
 

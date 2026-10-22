@@ -68,7 +68,7 @@ def workstreams() -> list[dict]:
                 ("Auth unit tests passed in that suite", LOCAL_SUITE_PASSED),
                 ("Host and origin regressions passed in that suite", LOCAL_SUITE_PASSED),
             ],
-            "LOCAL/MOCK on Python 3.11. python -m ops.run_tests was 41 modules, 0 failed, exit 0, about 94 seconds. integrations.tests.test_endpoint skipped 1. api.test_gateway_reliability logged a Windows socket abort and still passed. The pod was not used.",
+            "LOCAL/MOCK on Python 3.11. python -m ops.run_tests was 41 modules, 0 failed, exit 0, about 132 seconds. integrations.tests.test_endpoint skipped 1. api.test_gateway_reliability was 27 tests, logged a Windows socket abort, and still passed. windows_repair.tests.test_live_diagnostics passed on its automatic retry. The pod was not used.",
             "Keep the local suite green on the next code change. That does not deploy it.",
             "code",
         ),
@@ -117,7 +117,7 @@ def workstreams() -> list[dict]:
                 ("Second endpoint and Blackwell stay labelled NOT TESTED", True),
                 ("Those procedures were not marked executed", True),
             ],
-            "Docs name the existing System Status board. They do not say the pod is Running and they do not say mail is end-to-end verified.",
+            "Docs name running A100 mlar88u3ku8utm and stopped H100 xx9cjogra5vcwl. They do not say mail is end-to-end verified. Production stays NO-GO.",
             "Update the same docs when the next verified fact changes.",
             "code",
         ),
@@ -142,8 +142,8 @@ def workstreams() -> list[dict]:
                 ("Deployed commit equals the intended Git tip", False),
                 ("Current pod health was read while the pod was Running this session", False),
             ],
-            "On 2026-10-22T12:55:53Z pod xx9cjogra5vcwl (reliable_moccasin_hummingbird) showed a pause icon, Start for $3.19/hr, Compute Not running, Container storage Not running, and $0.00/hr. Start was not clicked. SSH to 216.81.245.55 port 25839 was refused. The stopped pod listed no TCP port. Health URLs were not called. Pod mlar88u3ku8utm (A100, $1.80/hr) was running and was not used. Earlier HTTP 200s are not the current state.",
-            "Do not click Start. After an approved start, use the volume launcher and compare /tmp/AI-PLAYBOOK to the intended tip.",
+            "The running pod is A100 mlar88u3ku8utm (screeching_crimson_vole) at $1.80/hr with Global Volume cmv2p5m0d000007jk9o3931ea mounted at /workspace. START.sh --preflight passed. Ports :8002, :8010, and :8080 refused connections. Qwen is not loaded. The pod checkout is not this tip. H100 xx9cjogra5vcwl stayed Stopped at $0.00/hr and was not started. A refused connection is not live acceptance.",
+            "Do not start the H100. The next approved command on the running A100 is bash /workspace/ai-platform-release/START.sh. That was not run.",
             "user approval",
         ),
         _row(
@@ -153,7 +153,7 @@ def workstreams() -> list[dict]:
                 ("A running console has loaded the application id", False),
                 ("A mailbox read succeeded", False),
             ],
-            "NOT CONFIGURED. The saved redirect is http://127.0.0.1:18080/api/microsoft/callback with delegated User.Read and Mail.Read only. This session did not open Azure, did not create a secret, and did not read a mailbox. The pod console is stopped, so the consent screen was not started.",
+            "NOT CONFIGURED. The saved redirect is http://127.0.0.1:18080/api/microsoft/callback with delegated User.Read and Mail.Read only. This session did not open Azure, did not create a secret, and did not read a mailbox. The A100 is Running and the console process is not listening, so the consent screen was not started.",
             "One consent click only after an approved console deploy with MICROSOFT_TENANT set to d595636e-9ef4-4890-b8a7-bde8dd5cab03. common will not complete sign-in.",
             "user approval",
         ),
@@ -173,8 +173,8 @@ def workstreams() -> list[dict]:
             [
                 ("Live install, serve, and infer on a CC 12.0 GPU", False),
             ],
-            "NOT TESTED. The stopped H100 is not a Blackwell result. No Blackwell pod was started.",
-            "Use a CC 12.0 GPU and driver 575 or newer. Do not claim this H100 as that result.",
+            "NOT TESTED. The running A100 is not a CC 12.0 GPU. The stopped H100 is not a Blackwell result. No Blackwell pod was started.",
+            "Use a CC 12.0 GPU and driver 575 or newer. Do not claim the A100 or the H100 as that result.",
             "hardware",
         ),
         _row(
@@ -233,7 +233,8 @@ def board() -> dict:
             "Live acceptance is separate. "
             "A temp extract is not a fresh machine. "
             "A push is not a deployment. "
-            "HTTP health on a stopped pod is not acceptance."
+            "HTTP health on a stopped pod is not acceptance. "
+            "A refused connection on the running A100 is not acceptance."
         ),
         "workstreams": rows,
         "offline_workstreams": offline_rows,
