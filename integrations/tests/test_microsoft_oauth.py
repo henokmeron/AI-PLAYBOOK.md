@@ -197,8 +197,36 @@ class OAuthTests(unittest.TestCase):
         self.assertIn("prompt=select_account", url)
         with self.assertRaises(InvalidRequest):
             oauth.authorization_url("work")
-        with self.assertRaises(InvalidRequest):
-            oauth.authorization_url("personal")
+        personal_url = oauth.authorization_url("personal")
+        self.assertIn("/consumers/oauth2/v2.0/authorize?", personal_url)
+        self.assertNotIn(DEFAULT_TENANT, personal_url)
+        self.assertNotIn("/common/", personal_url)
+        self.assertNotIn("/organizations/", personal_url)
+        self.assertNotIn("client_secret", personal_url)
+        self.assertNotIn("Mail.Send", personal_url)
+        self.assertIn("User.Read", personal_url)
+        self.assertIn("Mail.Read", personal_url)
+        personal_transport = Transport()
+        personal_oauth = MicrosoftOAuth(
+            client_id=CLIENT, transport=personal_transport, clock=lambda: 1_000.0,
+        )
+        personal_started = personal_oauth.authorization_url("personal")
+        personal_state = urllib.parse.parse_qs(urllib.parse.urlsplit(personal_started).query)["state"][0]
+        personal_oauth.complete("code-1", personal_state)
+        self.assertIn("/consumers/oauth2/v2.0/token", personal_transport.calls[0][1])
+        self.assertNotIn(DEFAULT_TENANT, personal_transport.calls[0][1])
+        self.assertNotIn("/common/", personal_transport.calls[0][1])
+        personal_body = urllib.parse.parse_qs(personal_transport.calls[0][3].decode("utf-8"))
+        self.assertNotIn("client_secret", personal_body)
+        assert personal_oauth.bundle is not None
+        personal_oauth.bundle.expires_at = 0
+        personal_oauth.access_token()
+        refresh = next(
+            call for call in personal_transport.calls
+            if call[0] == "POST" and b"refresh_token" in (call[3] or b"")
+        )
+        self.assertIn("/consumers/oauth2/v2.0/token", refresh[1])
+        self.assertNotIn(DEFAULT_TENANT, refresh[1])
         with self.assertRaises(InvalidRequest):
             oauth.authorization_url("https://evil.example")
         coerced = MicrosoftOAuth(client_id=CLIENT, tenant="common", transport=Transport())
@@ -222,7 +250,11 @@ class OAuthTests(unittest.TestCase):
             locked.tenant_for_account("personal")
         self.assertEqual([item["id"] for item in locked.account_choices()], ["directory"])
         status = oauth.public_status()
-        self.assertEqual([item["id"] for item in status["accounts"]], ["directory"])
+        self.assertEqual([item["id"] for item in status["accounts"]], ["directory", "personal"])
+        self.assertEqual(status["accounts"][0]["label"], "Sign in with your organisation")
+        self.assertEqual(status["accounts"][0]["tenant"], DEFAULT_TENANT)
+        self.assertEqual(status["accounts"][1]["label"], "Sign in with a personal Microsoft account")
+        self.assertEqual(status["accounts"][1]["tenant"], "consumers")
         self.assertEqual(status["directory"], DEFAULT_TENANT)
         self.assertEqual(status["mailbox"], "NOT CONFIGURED")
         self.assertNotIn("access_token", json.dumps(status))
@@ -239,6 +271,9 @@ class OAuthTests(unittest.TestCase):
             oauth.complete("again", "not-the-state")
         bundle = oauth.complete("code-1", state)
         self.assertEqual(bundle.account, "owner@example.com")
+        self.assertIn("/" + DEFAULT_TENANT + "/oauth2/v2.0/token", transport.calls[0][1])
+        self.assertNotIn("/consumers/", transport.calls[0][1])
+        self.assertNotIn("/common/", transport.calls[0][1])
         self.assertNotIn(TOKEN, repr(oauth))
         with self.assertRaises(AuthenticationError):
             oauth.complete("code-1", state)

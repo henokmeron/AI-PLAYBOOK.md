@@ -57,11 +57,13 @@ FILE_SCOPES = READ_SCOPES + ("Files.ReadWrite",)
 SCOPES = READ_SCOPES
 GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
 ARM_ROOT = "https://management.azure.com"
-# llmfortestingclientid is single-tenant. login.microsoftonline.com/common is never used.
+# login.microsoftonline.com/common is never used. A directory id keeps its own
+# organisation button and also offers a personal button on /consumers/.
 DEFAULT_TENANT = "d595636e-9ef4-4890-b8a7-bde8dd5cab03"
 PERMISSIONS_NOTE = (
     "Sign-in identifies the account and requests delegated User.Read and Mail.Read. "
-    "This directory rejects a personal Microsoft account, including one that uses a Gmail address. "
+    "The organisation button uses this directory. A personal Microsoft account, "
+    "including one that uses a Gmail address, uses the personal button and the consumers endpoint. "
     "Teams, OneDrive reads, SharePoint, and Azure inventory are not requested. "
     "Creating or updating an unsent mail draft needs a second consent for Mail.ReadWrite. "
     "Uploading, updating, or deleting one named file needs Files.ReadWrite and that path. "
@@ -86,8 +88,9 @@ _DRIVE_ROOTS = {
     "drive/root",
     "/drive/root",
 }
-# Work and personal endpoints are available only when MICROSOFT_TENANT names them.
-# The default registration cannot select `common`.
+# `organizations` and `consumers` are offered only when MICROSOFT_TENANT names them.
+# A directory id keeps the organisation button and adds the personal button.
+# `common` is never selected.
 SIGN_IN_ACCOUNTS = (
     (
         "work",
@@ -99,8 +102,11 @@ SIGN_IN_ACCOUNTS = (
         "personal",
         "consumers",
         "Sign in with a personal Microsoft account",
-        "Only a personal account, such as Outlook, Hotmail, or Live.",
+        "Only a personal account, such as Outlook, Hotmail, Live, or a Gmail address that is a personal Microsoft account. This uses the consumers endpoint.",
     ),
+)
+_DIRECTORY_ID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z"
 )
 _TENANT_RE = re.compile(
     r"(?:organizations|consumers|"
@@ -303,6 +309,7 @@ class TokenBundle:
     expires_at: float
     account: str
     scope: str
+    authority: str = ""
 
     def public(self) -> dict[str, Any]:
         return {"account": self.account, "scope": self.scope, "connected": True}
@@ -327,7 +334,7 @@ class MicrosoftOAuth:
         self._live_transport = transport is None
         self._transport = transport or _https_transport
         self._lock = threading.Lock()
-        self._pending: dict[str, tuple[str, float]] = {}
+        self._pending: dict[str, tuple[str, float, str]] = {}
         self.bundle: TokenBundle | None = None
         self.graph_calls = 0
         self.live_mail = False
@@ -353,19 +360,32 @@ class MicrosoftOAuth:
         return bool(self.client_id)
 
     def account_choices(self) -> list[dict[str, str]]:
-        """Sign-in options the page may offer. A locked directory is not widened."""
+        """Sign-in options the page may offer.
+
+        A directory id keeps the organisation button on that directory and adds
+        the personal button on the consumers endpoint. A domain is not widened.
+        `common` is never offered.
+        """
         if self.tenant == "organizations":
             rows = (SIGN_IN_ACCOUNTS[0],)
         elif self.tenant == "consumers":
             rows = (SIGN_IN_ACCOUNTS[1],)
+        elif _DIRECTORY_ID_RE.fullmatch(self.tenant):
+            rows = (
+                (
+                    "directory",
+                    self.tenant,
+                    "Sign in with your organisation",
+                    "Use the work account in this directory.",
+                ),
+                SIGN_IN_ACCOUNTS[1],
+            )
         else:
             rows = ((
                 "directory",
                 self.tenant,
                 "Sign in with your organisation",
-                "Use the work account in this directory. A personal account "
-                "(Gmail, Outlook.com, Hotmail, or Live) is rejected by Microsoft "
-                "with AADSTS50020 and does not connect the mailbox.",
+                "Use the work account in this directory.",
             ),)
         return [
             {"id": key, "label": label, "detail": detail, "tenant": tenant}
@@ -375,11 +395,14 @@ class MicrosoftOAuth:
     def tenant_for_account(self, account: str | None) -> str:
         choice = (account or "").strip().lower()
         choices = {item["id"]: item["tenant"] for item in self.account_choices()}
+        if choice in {"", "any", "directory"} and "directory" in choices:
+            return choices["directory"]
         if choice in {"", "any", "directory"} and len(choices) == 1:
             return next(iter(choices.values()))
         if choice not in choices:
             raise InvalidRequest(
-                "Choose the configured organisation. The common directory is not used."
+                "Choose the organisation directory or a personal Microsoft account. "
+                "The common directory is not used."
             )
         return choices[choice]
 
@@ -440,7 +463,7 @@ class MicrosoftOAuth:
                 self._pending.pop(key, None)
             if len(self._pending) >= 32:
                 raise AuthenticationError("Too many unfinished Microsoft sign-in attempts. Wait and try again.")
-            self._pending[state] = (verifier, now + 600)
+            self._pending[state] = (verifier, now + 600, tenant)
         query = urllib.parse.urlencode({
             "client_id": client_id,
             "response_type": "code",
@@ -481,13 +504,14 @@ class MicrosoftOAuth:
             raise AuthenticationError("Microsoft sign-in state is missing or expired")
         if not code or len(code) > 2048:
             raise AuthenticationError("Microsoft did not return a usable sign-in code")
+        authority = validate_tenant(pending[2])
         token = self._token({
             "client_id": validate_client_id(self.client_id),
             "grant_type": "authorization_code",
             "code": code,
             "redirect_uri": validate_redirect(self.redirect_uri),
             "code_verifier": pending[0],
-        })
+        }, tenant=authority)
         account = self._account(token["access_token"])
         self.bundle = TokenBundle(
             access_token=token["access_token"],
@@ -495,6 +519,7 @@ class MicrosoftOAuth:
             expires_at=self._clock() + int(token.get("expires_in", 3600)) - 60,
             account=account,
             scope=str(token.get("scope", "")),
+            authority=authority,
         )
         self._save()
         return self.bundle
@@ -512,7 +537,7 @@ class MicrosoftOAuth:
                 "grant_type": "refresh_token",
                 "refresh_token": self.bundle.refresh_token,
                 "scope": refresh_scope,
-            })
+            }, tenant=self.bundle.authority or self.tenant)
             self.bundle.access_token = refreshed["access_token"]
             self.bundle.refresh_token = refreshed.get("refresh_token", self.bundle.refresh_token)
             self.bundle.expires_at = self._clock() + int(refreshed.get("expires_in", 3600)) - 60
@@ -793,10 +818,10 @@ class MicrosoftOAuth:
             raise AuthenticationError("Microsoft did not return an account address.")
         return account[:200]
 
-    def _token(self, fields: dict[str, str]) -> dict[str, Any]:
+    def _token(self, fields: dict[str, str], *, tenant: str | None = None) -> dict[str, Any]:
         if "client_secret" in fields or "client_assertion" in fields:
             raise AuthenticationError("This sign-in flow does not use a client secret.")
-        tenant = validate_tenant(self.tenant)
+        tenant = validate_tenant(tenant or self.tenant)
         body = urllib.parse.urlencode(fields).encode("utf-8")
         status, payload = self._transport(
             "POST",
@@ -838,6 +863,7 @@ class MicrosoftOAuth:
             "expires_at": self.bundle.expires_at,
             "account": self.bundle.account,
             "scope": self.bundle.scope,
+            "authority": self.bundle.authority,
         }, separators=(",", ":")).encode("utf-8")
         descriptor = os.open(str(temporary), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:
@@ -865,12 +891,22 @@ class MicrosoftOAuth:
             return
         if not isinstance(data, dict) or not data.get("access_token"):
             return
+        raw_authority = data.get("authority", "")
+        authority = ""
+        if isinstance(raw_authority, str) and raw_authority.strip():
+            try:
+                authority = validate_tenant(raw_authority)
+            except InvalidRequest:
+                return
+        elif raw_authority not in {"", None}:
+            return
         self.bundle = TokenBundle(
             access_token=str(data.get("access_token", "")),
             refresh_token=str(data.get("refresh_token", "")),
             expires_at=float(data.get("expires_at", 0)),
             account=str(data.get("account", "")),
             scope=str(data.get("scope", "")),
+            authority=authority,
         )
 
     def __repr__(self) -> str:

@@ -1064,7 +1064,7 @@ class ConsoleTests(unittest.TestCase):
         self.assertNotIn("access_token", body.decode("utf-8"))
         page_status, page = self.request(base, "GET", "/")
         self.assertEqual(page_status, 200)
-        self.assertIn(b"Sign in with a work or school account", page)
+        self.assertIn(b"Sign in with your organisation", page)
         self.assertIn(b"Sign in with a personal Microsoft account", page)
         self.assertIn(b"disabled", page)
         self.assertIn(b"read-only mailbox access", page)
@@ -1140,6 +1140,9 @@ class ConsoleTests(unittest.TestCase):
             directory_status, directory_location = location_for(
                 "/api/microsoft/start?account=directory"
             )
+            personal_status, personal_location = location_for(
+                "/api/microsoft/start?account=personal"
+            )
             work_status, work_location = location_for("/api/microsoft/start?account=work")
             bad_status, bad_body = self.request(base, "GET", "/api/microsoft/start?account=evil.example")
         finally:
@@ -1153,9 +1156,17 @@ class ConsoleTests(unittest.TestCase):
         self.assertNotIn("/organizations/", directory_location)
         self.assertIn("code_challenge_method=S256", directory_location)
         self.assertNotIn("client_secret", directory_location)
+        self.assertEqual(personal_status, 302)
+        self.assertIn("/consumers/oauth2/v2.0/authorize?", personal_location)
+        self.assertNotIn("/d595636e-9ef4-4890-b8a7-bde8dd5cab03/", personal_location)
+        self.assertNotIn("/common/", personal_location)
+        self.assertNotIn("/organizations/", personal_location)
+        self.assertNotIn("client_secret", personal_location)
+        self.assertNotIn("Mail.Send", personal_location)
         self.assertEqual(work_status, 400)
         self.assertNotIn("/organizations/", work_location)
         self.assertNotIn("/common/", work_location)
+        self.assertNotIn("/consumers/", work_location)
         self.assertEqual(bad_status, 400)
         self.assertNotIn(b"11111111", bad_body)
 
