@@ -81,6 +81,12 @@ A second endpoint needs another Windows computer with the endpoint worker. This 
 
 Blackwell needs a GPU of compute capability 12.0 and a driver of 575 or newer, then the pinned install, check, serve, and one inference in `ops/blackwell`. The running H100 NVL is not that hardware. Do not record an H100 result as a Blackwell result.
 
+## Reading the volume while the pod is stopped
+
+Checked 2026-10-22 in the signed-in RunPod console. Pod `xx9cjogra5vcwl` is **Stopped**. Global Volume “New model container” (`cmv2p5m0d000007jk9o3931ea`) is still on the Storage page: type **Global**, location **Any**, 126.0GB, 1,804 objects after a reload. The S3-compatible API does not apply. The doc is [https://docs.runpod.io/storage/s3-api](https://docs.runpod.io/storage/s3-api) (“access and manage your network volumes”). This volume’s own menu has no S3 or file-browser action. The stopped pod’s Volumes tab can show 0 Bytes; use the Storage page usage line instead. No key was created and no object was listed.
+
+The read that does not create a paid resource is the next approved start of this same pod, then `ls /workspace` from the pod console or SSH. Global volumes are GPU-only ([overview](https://docs.runpod.io/storage/globalvolume/overview)), and no other pod was in the account. Do not start the pod from an unapproved session.
+
 ## Pre-shutdown
 
-See `docs/release/PRE_SHUTDOWN.md`. The checkpoint script does not stop the Pod.
+See `docs/release/PRE_SHUTDOWN.md`. The checkpoint script does not stop the Pod. The stopped-pod access check is recorded there.

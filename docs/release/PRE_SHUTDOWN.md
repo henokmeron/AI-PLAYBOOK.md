@@ -35,6 +35,14 @@ bash /workspace/ai-platform-release/START.sh
 
 Production stays **NO-GO**.
 
+## 2026-10-22 stopped-pod access check
+
+The console was reloaded. Pod `xx9cjogra5vcwl` (`reliable_moccasin_hummingbird`) is **Stopped**, cost **$0.00/hr**, Compute **Not running**. It was not started. The Storage page, after reload, still shows Global Volume “New model container” `cmv2p5m0d000007jk9o3931ea`, type **Global**, location **Any**, **126.0GB**, **1,804 objects**, **$11.34/mo**. A stale tab had shown 1,794 objects. The stopped-pod Volumes tab shows **0 Bytes / 0 objects**. That line is not a file listing and does not match the Storage page.
+
+Direct S3 access is **not** supported for this Global Volume. [The S3-compatible API](https://docs.runpod.io/storage/s3-api) is for network volumes in one data center. [Global volumes](https://docs.runpod.io/storage/globalvolume/overview) mount when a GPU pod starts, and they cannot attach to a CPU pod. The volume menu is Deploy, Edit, and Delete. There is no file browser. No S3 key was created. No object names were listed. No file was written.
+
+To read the volume, wait until this same pod is Running again under an approved start, then use the pod console or SSH on `/workspace`. Do not create a key, a volume, or a pod for that read. The snapshot and operator backup in the table above were checked before this stop. They were not re-hashed while the pod was stopped.
+
 Before you stop the Pod yourself, confirm:
 
 1. GitHub `main` is the commit you intend to keep.

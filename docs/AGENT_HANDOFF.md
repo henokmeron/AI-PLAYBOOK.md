@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-22** (shutdown save: source snapshot `6f07b58` and one operator backup are on the Global Volume and checksum-checked. The pod was left running. Go-live **NO-GO**.)
+Last updated: **2026-10-22** (pod `xx9cjogra5vcwl` is **Stopped**. This Global Volume has no direct S3 file API and no stopped-pod file browser. Go-live **NO-GO**.)
 
 ## Only this repository
 
@@ -46,13 +46,13 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 | Item | Value | Status |
 | --- | --- | --- |
-| Active test Pod | RunPod `xx9cjogra5vcwl` (“reliable_moccasin_hummingbird”), **H100 NVL**, **$3.20/hr** | **VERIFIED** running on 2026-10-22. Pods list showed one pod, GPU util 0%, memory rings 23% and 89%, disk 20%. `nvidia-smi` reported 85,415 MiB used of 95,830 MiB, driver **595.91.07**. Not stopped, started, resized, or reloaded. |
+| Active test Pod | RunPod `xx9cjogra5vcwl` (“reliable_moccasin_hummingbird”), **H100 NVL** | **VERIFIED** **Stopped** on 2026-10-22 after a Pods page reload. Pause-icon tooltip text “Stopped”. Cost **$0.00/hr**. Inspector: Compute **Not running**, Container storage **Not running**. The Start control shows **$3.19/hr** and was not clicked. One pod, page 1 of 1. Not started, resized, reloaded, or terminated. |
 | Prior Pod | `1cj381fjuujeq7` / `vx4oe3oyfsqnz8` | Gone from console / left alone. Do not recreate extras. |
-| SSH (TCP) | `root@216.81.245.55 -p 25839`, key `%USERPROFILE%\.ssh\id_ed25519` | **VERIFIED** read-only on 2026-10-22. The key file is present on this PC. Do not print it. |
-| GPU / driver | H100 NVL, **85,415 MiB used** of **95,830 MiB**, driver **595.91.07** | **VERIFIED** 2026-10-22 by `nvidia-smi`. Console GPU util was 0%. |
+| SSH (TCP) | Earlier session used the key at `%USERPROFILE%\.ssh\id_ed25519`. Host and port can change after a start. | **NOT RECHECKED**. The pod is stopped. Do not print the key. |
+| GPU / driver | Last read while the pod was running: H100 NVL, **85,415 MiB used** of **95,830 MiB**, driver **595.91.07** | **NOT RECHECKED** while stopped. |
 | Container | PyTorch 2.8.0; runtime in `/tmp/vllm-qwen-env` | Restored from volume archive. |
-| Global Volume | Console id `cmv2p5m0d000007jk9o3931ea` (“New model container”), filesystem `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (`fuse.geesefs`) | **VERIFIED** 2026-10-22. A new source snapshot `6f07b58` and one operator backup were written. Weights, the runtime archive, RAG, `START.sh`, and older snapshots were not overwritten. No new volume was created. |
-| Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | **VERIFIED** 2026-10-22: `:8002/health` 200, `:8010/health` 200, `:8080/` 200, `:8080/api/status` 200. Pod checkout `/tmp/AI-PLAYBOOK` is **`a0e9422145aae4e38025709d1ca88288e42f375b`**, behind GitHub `main`. Do not claim the running console is the latest commit. |
+| Global Volume | Console id `cmv2p5m0d000007jk9o3931ea` (“New model container”). Filesystem `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (`fuse.geesefs`) was verified earlier over SSH and was **not** re-checked while the pod is stopped. | **VERIFIED** on the Storage page after a reload: type badge **Global**, location **Any**, **126.0GB stored**, **1,804 objects**, **$11.34/mo**. A stale tab first showed 1,794 objects. The stopped-pod Volumes tab shows **0 Bytes / 0 objects** and is not a file list. Direct S3 API is **not** supported. No file was written. No new volume was created. |
+| Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | **NOT RECHECKED**. The pod is stopped. Earlier HTTP 200s were while it was running, on checkout **`a0e9422145aae4e38025709d1ca88288e42f375b`**. Do not treat those 200s as the current state. |
 | Other Pod | Older idle/terminated Pods | Leave alone unless user says otherwise |
 
 ### Exact volume paths that must remain
@@ -163,6 +163,17 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-22 — Global Volume access while the H100 is stopped
+
+- Remote was `https://github.com/henokmeron/AI-PLAYBOOK.md.git`. Local `main` was `a05e17715a045c538c92bfce72181bdb1a9fae6c` before this note. Untracked `__pycache__` was left uncommitted. The pod was not started, stopped, resized, reloaded, or redeployed. No volume, S3 key, or other paid resource was created. No file was written on the volume. No secret was printed.
+- Pods page, reloaded: one pod, `reliable_moccasin_hummingbird` / `xx9cjogra5vcwl`, H100 NVL. Pause-icon tooltip text **Stopped**. Cost **$0.00/hr**. Utilization, memory, and disk cells empty. Inspector Details: Compute **Not running**, Container storage **Not running**, GPU location **US-KS-2** (the pod's last data center, not a volume region). The Start control reads **Start for $3.19/hr** and was not clicked. Terminate was not clicked. No second pod, so there is no already-running CPU pod.
+- Storage page `https://console.runpod.io/user/storage`, page title **Network Storage**. The only row is **New model container**, id `cmv2p5m0d000007jk9o3931ea`, type badge **Global**, location **Any**, **126.0GB stored**, **1,804 objects** after reload, **$11.34/mo**. The already-open tab first showed 1,794 objects; that matched the earlier running-pod note and was stale until reload. The row menu (`global-volume-actions-menu`) is **Deploy**, **Edit**, **Delete**. There is no Browse, no file list, and no S3 action on this volume. The page-level **Create S3 API key** button was not clicked. The Keys page was not opened.
+- Pod inspector Volumes tab, while stopped: type **Global**, “Mounted at `/workspace`”, and the usage line **0 Bytes / 0 objects**. That contradicts the Storage page. It is not a directory listing. Do not treat 0 objects as an empty volume. Object names were not listed.
+- Official docs, read this session: [S3-compatible API](https://docs.runpod.io/storage/s3-api) says “Use Runpod’s S3-compatible API to access and manage your network volumes.” The word global does not appear on that page. Endpoints are per data center, for example `https://s3api-us-ks-2.runpod.io/`, path `s3://NETWORK_VOLUME_ID/...`. [Storage overview](https://docs.runpod.io/storage/overview) lists the S3 API as “Manage files on your network volumes” and lists Global volume compute as **GPU only**. [Global volume overview](https://docs.runpod.io/storage/globalvolume/overview) says a global volume “mounts automatically at startup” and “Global volumes can't be attached to CPU Pods or CPU Serverless endpoints.”
+- Direct S3 access for **this** Global Volume: **not supported**. No credential was created and none was used. The safest read that does not start a GPU pod and does not create a paid resource is to wait for the next approved start of this same pod, then `ls /workspace` from the pod console or SSH. Do not create an S3 key for this volume. Do not create a CPU pod. A zero-GPU start would still be starting the pod.
+- `ops/test_lanes.py` records that `python -m ops.run_tests` is LOCAL/MOCK, including `windows_repair.tests.test_live_diagnostics` on this PC, and that `agents.live_smoke`, `agents.live_async_smoke`, `evaluation.run_live_platform_smoke`, and `evaluation.run_live_rag_regression` are REQUIRES LIVE INFERENCE and REQUIRES DEPLOYED H100. Those four were not run.
+- LOCAL/MOCK: `python -m unittest ops.test_lanes ops.test_acceptance_board ops.test_run_tests` ran 3 tests, exit 0. `python -m ops.run_tests` on Python 3.11 was 40 modules, 0 failed, exit 0, about 116 seconds. `integrations.tests.test_endpoint` reported 1 skip. `api.test_gateway_reliability` logged a Windows socket abort and still passed. `git diff --check` exit 0. Acceptance percentages were not raised. Production **NO-GO**. Failing acceptance: deployed commit equals intended Git tip, mail end-to-end, second endpoint, Blackwell live acceptance, fresh-environment recovery.
 
 ### 2026-10-22 — volume snapshot before the owner stops the H100
 

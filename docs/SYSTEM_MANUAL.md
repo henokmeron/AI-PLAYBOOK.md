@@ -121,6 +121,8 @@ flowchart LR
 | `/tmp/...` | **No** (often wiped on stop/recreate) | Rebuilt by `START.sh` | N/A |
 | GPU memory (loaded model) | **No** | Reloaded on next start (~minutes) | N/A |
 
+While the pod is **Stopped**, the Storage page still shows this Global Volume’s size and object count. That page is not a file browser. RunPod’s S3-compatible API is for a **network** volume in one data center ([S3-compatible API](https://docs.runpod.io/storage/s3-api)). It does not read this Global Volume, whose location is **Any**. The stopped pod’s Volumes tab can show **0 Bytes**; that is not a listing. On 2026-10-22 the Storage page, after a reload, showed **126.0GB** and **1,804 objects**, and the Volumes tab showed **0 Bytes / 0 objects**. Read files only after an approved start, from `/workspace` on the running pod. Do not create an S3 key for this volume.
+
 ### What must never go in GitHub
 
 - Model weight shards (~52 GiB)
@@ -277,7 +279,7 @@ So: the Helpdesk agent is a **controlled coworker** for diagnosis and safe local
 
 ### A. Start after Stop (same volume)
 
-1. RunPod → Pod `4lvr54b0wmkz6c` → **Start** (needs funds; ~$1.79/hr on A100).
+1. The existing pod is `xx9cjogra5vcwl` (`reliable_moccasin_hummingbird`), H100 NVL. On 2026-10-22 the console showed it **Stopped** at $0.00/hr. Start it only when you mean to pay for the GPU. The Start control showed $3.19/hr. Do not create a new volume, a new pod, or an S3 API key. The S3 API does not list this Global Volume.
 2. Wait until Running; copy new SSH IP/port if changed.
 3. SSH in, then:
 
@@ -374,6 +376,7 @@ RunPod balance warnings (~$5 threshold) mean: **Stop the Pod** and add funds bef
 
 | Date | Change |
 | --- | --- |
+| 2026-10-22 | Pod `xx9cjogra5vcwl` rechecked **Stopped** at $0.00/hr. Storage page after reload: Global Volume `cmv2p5m0d000007jk9o3931ea`, 126.0GB, 1,804 objects, location Any. No S3 API and no file browser for that volume. Stopped-pod Volumes tab showed 0 Bytes and is not a listing. Nothing was started or written. `ops/test_lanes.py` separates the local suite from the four live H100 scripts. Production **NO-GO**. |
 | 2026-10-22 | Shutdown save. Source snapshot `6f07b58` and operator backup `20261022T015922Z` were written to the existing Global Volume and checksum-checked. Weights, runtime archive, RAG, `START.sh`, and older snapshots were not replaced. The gateway key was not copied. Next start, after a pod with this volume is Running: `bash /workspace/ai-platform-release/START.sh --preflight` then `bash /workspace/ai-platform-release/START.sh`. Not run during the save. Production **NO-GO**. |
 | 2026-10-22 | System Status shows the finish-order board from `GET /api/acceptance`. Decision **NO-GO**. Saved Entra redirect re-read. `update-source-only.sh` now checks the GitHub origin and was not run on the H100. Volume snapshot script stays dry-run without `VOLUME_COPY_APPROVED=yes`. Second endpoint and live Blackwell remain **NOT TESTED**. Not deployed. |
 | 2026-10-22 | Release helper finds a working git binary, and `update-source-only.sh` can fast-forward a checkout without signalling Qwen. That script was not run on the H100. Default Microsoft sign-in requests `User.Read` and `Mail.Read` only. Mail remains **NOT CONFIGURED**. Not deployed. |

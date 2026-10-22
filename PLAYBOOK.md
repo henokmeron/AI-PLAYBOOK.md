@@ -311,6 +311,11 @@ Phase 7 — Advanced model customisation
 - Treat the playbook as a reproducible blueprint for future AI-assisted automation.
 
 ## 13. Change log
+### 2026-10-22 — Stopped Global Volume has no direct file API
+
+- **VERIFIED:** Pod `xx9cjogra5vcwl` is **Stopped** at $0.00/hr. Storage page after reload: Global Volume `cmv2p5m0d000007jk9o3931ea`, location **Any**, 126.0GB, 1,804 objects. The volume menu has no file browser. [S3-compatible API](https://docs.runpod.io/storage/s3-api) applies to network volumes, not this Global Volume. The stopped-pod Volumes tab showed 0 Bytes and was not used as a listing. No pod was started. No key was created. No volume file was written.
+- **Tested locally:** `ops/test_lanes.py` keeps live H100 scripts out of `python -m ops.run_tests`. Those scripts were not run. Go-live **NO-GO**.
+
 ### 2026-10-22 — Source snapshot saved before the H100 stop
 
 - **VERIFIED:** Global Volume copy of commit `6f07b581f4dd4a7ee2811a99e9ac62edbee3eac8` at `/workspace/ai-platform-backups/source-snapshots/AI-PLAYBOOK.md-runpod-first-6f07b58.tar.gz`, SHA-256 `3cf154feb99536781232408ea06cc93373e14fe69e1d866daffa64ecdb015de7`. Operator backup `/workspace/platform-state/operator-backups/20261022T015922Z/`. Runtime checksum OK. Weight shards were not re-hashed. The pod was left running. `START.sh` was not run. Go-live **NO-GO**.

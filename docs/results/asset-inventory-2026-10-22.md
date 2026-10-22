@@ -1,5 +1,20 @@
 # Asset inventory — 2026-10-22
 
+## Stopped-pod access check the same day
+
+The Pods page was reloaded. Pod `xx9cjogra5vcwl` / `reliable_moccasin_hummingbird` is **Stopped** (pause-icon tooltip “Stopped”, **$0.00/hr**, Compute **Not running**). It was not started. No file was written on the volume. No S3 key, volume, or pod was created. Object names were not listed. SSH was not used, so the filesystem id and the checksums below were not recomputed.
+
+| Item | Evidence | Label |
+| --- | --- | --- |
+| Storage page after reload | “New model container” `cmv2p5m0d000007jk9o3931ea`, type badge **Global**, location **Any**, **126.0GB stored**, **1,804 objects**, **$11.34/mo** | **VERIFIED**. The already-open tab first showed 1,794 objects. |
+| Volume actions | Menu items Deploy, Edit, Delete. No Browse and no S3 action on this row. Page-level “Create S3 API key” was not clicked. | **VERIFIED** there is no file browser for this volume. |
+| Stopped-pod Volumes tab | Type Global, “Mounted at `/workspace`”, usage line **0 Bytes / 0 objects** | **VERIFIED** as a UI line only. It is not a listing and it does not match the Storage page. Do not treat the volume as empty. |
+| S3-compatible API | [https://docs.runpod.io/storage/s3-api](https://docs.runpod.io/storage/s3-api) is for network volumes. [Global volume overview](https://docs.runpod.io/storage/globalvolume/overview) says the volume mounts at GPU-pod startup and cannot attach to a CPU pod. | **NOT SUPPORTED** for this Global Volume. No credential was used. |
+| Other pods | Pods page, page 1 of 1, only `xx9cjogra5vcwl` | No already-running CPU pod to attach. |
+| Safest read | Next approved start of this same pod, then `ls /workspace` from the pod console or SSH | Does not create a paid resource. A start was not performed. |
+
+Weights stay only on the volume. They were not copied off. The earlier checksum rows in this file were not re-checked during this stop.
+
 ## Shutdown save the same day
 
 The pod was left running. No service was restarted. No Azure resource was created. No secret is recorded here. New files were written only at the paths below. Older volume files were not overwritten.
