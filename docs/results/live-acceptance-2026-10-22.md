@@ -233,3 +233,9 @@ With the evidence file from `d6d3beb`, both tests pass. Any accurate new live re
 - Gateway restarted from pid 54370 to **72553**. Console restarted from pid 64569 to **72560**. vLLM stayed pid **1826**.
 - 19:46:42Z: health 200 on 8002 and 8010, console 200 on 8080.
 - 19:47:37Z `python3 -m evaluation.run_live_rag_regression` exit 0, **6/6**. P3 `What type of train ticket should employees choose?` was HTTP 200, status answered, the answer contained `standard`, and the source was `expenses-policy.md`. N1 and N2 abstained with no sources.
+
+## Console redeploy of 0a94d36 (20:10Z)
+
+- Pod HEAD `0a94d36387f5d3a1e4ca9343687b6eac7b85f814`. Console restarted from pid 72560 to **76664**. Gateway stayed **72553**. vLLM stayed **1826**.
+- 20:10:19Z: health 200 on 8002 and 8010, console 200 on 8080.
+- Gateway code did not change, so the 19:47:37Z RAG regression of 6/6 still stands. It was not run again.

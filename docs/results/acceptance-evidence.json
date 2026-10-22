@@ -53,6 +53,16 @@
           "evidence_kind": "live",
           "detail": "200/200/200 after gateway pid 72553 and console pid 72560 restarted onto 4eab966. vLLM pid 1826 unchanged.",
           "citation": "docs/results/live-acceptance-2026-10-22.md, redeploy of 4eab966"
+        },
+        {
+          "source_sha": "0a94d36387f5d3a1e4ca9343687b6eac7b85f814",
+          "deployed_sha": "0a94d36387f5d3a1e4ca9343687b6eac7b85f814",
+          "command": "SOURCE_UPDATE_APPROVED=yes bash ops/release/update-source-only.sh; restart web/server.py only; curl health on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T20:10:19Z",
+          "result": "http_200",
+          "evidence_kind": "live",
+          "detail": "200/200/200 after console pid 76664. Gateway pid 72553 and vLLM pid 1826 were not restarted.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, console redeploy of 0a94d36"
         }
       ]
     },
@@ -107,6 +117,16 @@
           "evidence_kind": "live",
           "detail": "Pod HEAD 4eab966. Gateway 72553 and console 72560 started after the checkout. vLLM pid 1826 not signalled.",
           "citation": "docs/results/live-acceptance-2026-10-22.md, redeploy of 4eab966"
+        },
+        {
+          "source_sha": "0a94d36387f5d3a1e4ca9343687b6eac7b85f814",
+          "deployed_sha": "0a94d36387f5d3a1e4ca9343687b6eac7b85f814",
+          "command": "SOURCE_UPDATE_APPROVED=yes bash ops/release/update-source-only.sh; restart web/server.py only; curl health on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-22T20:10:19Z",
+          "result": "deployed_sha_read",
+          "evidence_kind": "live",
+          "detail": "Pod HEAD 0a94d36. Console 76664 started after the checkout. Gateway 72553 was already running code that this commit does not change. vLLM 1826 unchanged.",
+          "citation": "docs/results/live-acceptance-2026-10-22.md, console redeploy of 0a94d36"
         }
       ]
     },
