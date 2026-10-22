@@ -146,6 +146,12 @@ class FakeGatewayHandler(BaseHTTPRequestHandler):
             return
         if entry["path"] == "/v1/rag/documents":
             payload = json.loads(entry["body"])
+            if payload.get("filename") == "already.pdf":
+                self._json(409, {
+                    "error": "document already exists; set overwrite=true to replace it",
+                    "error_id": "a288badc64e649c3",
+                })
+                return
             self._json(201, {
                 "status": "stored",
                 "document": {
@@ -932,6 +938,20 @@ class ConsoleTests(unittest.TestCase):
         forwarded = json.loads(gateway.hits[-1]["body"])
         self.assertEqual(forwarded["content_base64"], "UG9saWN5IHRleHQ=")
         self.assertEqual(gateway.hits[-1]["authorization"], f"Bearer {KEY}")
+
+        status, body = self.request(base, "POST", "/api/documents", {
+            "collection": "my-docs", "filename": "already.pdf", "content_base64": "UG9saWN5IHRleHQ=",
+            "overwrite": False,
+        })
+        self.assertEqual(status, 409)
+        duplicate = json.loads(body)
+        self.assertEqual(duplicate["error"], "This file is already in the collection.")
+        self.assertEqual(duplicate["error_id"], "a288badc64e649c3")
+        self.assertNotIn("gateway request failed", duplicate["error"])
+        self.assertEqual(
+            server.safe_error_text({"error": "model selection refused"}, 409, KEY),
+            "model selection refused",
+        )
 
         status, body = self.request(base, "DELETE", "/api/documents?collection=my-docs&filename=policy.md")
         self.assertEqual(status, 200)

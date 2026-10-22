@@ -501,6 +501,8 @@ class GatewayReliabilityTests(unittest.TestCase):
         self.assertEqual(body["document"]["duplicate_of"], ["a.txt"])
         status, body, _ = self.upload("life", "a.txt", b"other")
         self.assertEqual(status, 409)
+        self.assertEqual(body["error"], "document already exists; set overwrite=true to replace it")
+        self.assertNotIn("other", (self.managed / "life" / "a.txt").read_text(encoding="utf-8"))
         status, body, _ = self.ask("ZETA expense receipts business days?", collection="life")
         self.assertEqual(body["status"], "answered")
         self.assertEqual(body["usage"]["prompt_tokens"], 1234)

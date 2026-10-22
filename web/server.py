@@ -62,6 +62,10 @@ COLLECTION_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 MODEL_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 SAFE_ERROR_RE = re.compile(r"^[A-Za-z0-9 ,.'():_/-]{1,200}$")
 ERROR_ID_RE = re.compile(r"\A[0-9a-f]{16}\Z")
+# Shown when a second upload of the same filename is refused. The gateway
+# wording includes ";" and "=" (overwrite=true), which SAFE_ERROR_RE drops,
+# so the page would otherwise say only "gateway request failed (409)".
+DUPLICATE_DOCUMENT_MESSAGE = "This file is already in the collection."
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
@@ -225,6 +229,10 @@ def safe_error_text(payload: dict[str, Any] | None, status: int, secret: str) ->
     message = ""
     if isinstance(payload, dict) and isinstance(payload.get("error"), str):
         message = scrub(payload["error"].strip(), secret)
+    # Translate before the character filter. A duplicate filename is a 409
+    # with an explicit overwrite hint; that hint must not become a bare failure.
+    if status == 409 and "document already exists" in message.casefold():
+        return DUPLICATE_DOCUMENT_MESSAGE
     if message and SAFE_ERROR_RE.fullmatch(message) and "[redacted]" not in message:
         return message
     return f"gateway request failed ({status})"

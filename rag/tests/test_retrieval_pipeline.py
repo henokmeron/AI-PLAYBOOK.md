@@ -344,6 +344,35 @@ class SearchAndEvidenceTests(unittest.TestCase):
         outline = rp.split_numbered_questions("List the two rules:\n1. Badges\n2. Hours")
         self.assertEqual(outline, ["List the two rules:\n1. Badges\n2. Hours"])
 
+    @unittest.skipUnless(HAVE_PYPDF, "pypdf not installed")
+    def test_indexed_pdf_cites_an_answerable_question_and_abstains_on_a_missing_fact(self) -> None:
+        from build_dataset_v1 import minimal_pdf
+
+        folder = Path(self.tmp.name) / "pdf-only"
+        folder.mkdir()
+        (folder / "handbook.pdf").write_bytes(minimal_pdf([
+            ["A good requirement is clear and verifiable."],
+            ["Unclear requirements create problems during design and testing."],
+        ]))
+        index = rp.load_collection(folder)
+        self.assertTrue(any(chunk.source == "handbook.pdf" for chunk in index.chunks))
+        answerable = (
+            "What characteristics make a good requirement, and how can an unclear "
+            "requirement create problems during design and testing?"
+        )
+        missing = (
+            "According to this handbook, what is the current 2026 cost of launching a NASA mission? "
+            "Give the exact figure and page."
+        )
+        hit = rp.search(answerable, index, 4, min_coverage=0.15)
+        self.assertFalse(hit.abstain)
+        self.assertTrue(hit.groups)
+        self.assertTrue(all(group.chunk.source == "handbook.pdf" for group in hit.groups))
+        absent = rp.search(missing, index, 4, min_coverage=0.15)
+        self.assertTrue(absent.abstain)
+        self.assertEqual(absent.reason, "low_query_coverage")
+        self.assertEqual(absent.groups, [])
+
     def test_weak_chunk_is_not_cited_beside_a_real_match(self) -> None:
         folder = Path(self.tmp.name) / "mixed"
         folder.mkdir()
