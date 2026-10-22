@@ -311,6 +311,11 @@ Phase 7 — Advanced model customisation
 - Treat the playbook as a reproducible blueprint for future AI-assisted automation.
 
 ## 13. Change log
+### 2026-10-22 — Approved A100 load exited 1 before health
+
+- **FAILED live:** `bash /workspace/ai-platform-release/START.sh` on `mlar88u3ku8utm` began at 2026-10-22T13:11:19Z and exited **1** at 14:22:07Z. Qwen was still loading (shard 6/11 at 15:00:36Z, GPU 51923 MiB). `:8002`, `:8010`, and `:8080` stayed HTTP 000. No completion and no RAG question. The H100 was not started. `START.sh`, the runtime archive, and the `6f07b58` snapshot were the same sizes at 14:22:23Z as before the load.
+- **AFTER:** That pod id is no longer listed. `gom4ualdk47qrj` is a different running A100 and was not given `START.sh`. Go-live **NO-GO**.
+
 ### 2026-10-22 — A100 volume pod preflight, model still down
 
 - **VERIFIED live:** Pod `mlar88u3ku8utm` (`screeching_crimson_vole`) is Running, A100 SXM, $1.80/hr. Global Volume `cmv2p5m0d000007jk9o3931ea` is mounted at `/workspace` (`5aac0c77-6fcc-4be9-a112-dfe3890e1373`). `START.sh --preflight` returned **PREFLIGHT_PASS** at 2026-10-22T13:02:45Z. Checkout `/tmp/AI-PLAYBOOK` is `cbbf185eecc6e46130ac4bdc1a8089fba0e89052`.

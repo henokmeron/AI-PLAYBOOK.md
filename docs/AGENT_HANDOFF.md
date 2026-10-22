@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-22** (The Qwen load on A100 `mlar88u3ku8utm` reached safetensors shard **7/11** at 15:06:18Z and was still on that shard at 15:13:39Z, GPU **51923 MiB / 81920 MiB**, health HTTP **000**. SSH `195.26.233.38:53380` then refused the connection. At 15:21:57Z that pod id was not in the pods list. The only listed pod was `gom4ualdk47qrj` (`excessive_gray_crocodile`), A100 SXM, **$1.80/hr**, Stop button present, same Global Volume, GPU **0 MiB**, no vLLM, and pid **12621** absent. `START.sh` was not run. Live health is **not** VERIFIED. Production **NO-GO**.)
+Last updated: **2026-10-22T15:24:59Z** (`bash /workspace/ai-platform-release/START.sh` on `mlar88u3ku8utm` began at 13:11:19Z and **exited 1** at 14:22:07Z. Health stayed HTTP **000**. That pod is no longer listed. `gom4ualdk47qrj` is a different running A100 and was not given `START.sh`. Production **NO-GO**.)
 
 ## Only this repository
 
@@ -162,6 +162,14 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-22 — the one START.sh exited 1; no completion; no second start
+
+- This session ran `bash /workspace/ai-platform-release/START.sh` on `mlar88u3ku8utm` at **2026-10-22T13:11:19Z**. No Gemma flag. The script logged source `f7043f8`, checksum-checked the runtime archive, restored `/tmp/vllm-qwen-env`, and logged Qwen start at **13:37:02Z**. It exited **1** at **14:22:07Z** (70 minutes 48 seconds). The error tail was `ERROR: Qwen not ready after 2700s (process 12621 still running; re-run later to reuse it)` and `Rollback: nothing on /workspace was deleted or overwritten.` The process was not killed. `START.sh` was not run again.
+- Health from this session: HTTP **000** on `:8002/health`, `:8010/health`, and `:8080/api/status` at 14:22:23Z (shard 4/11, GPU 51923 MiB), 14:34:42Z, 14:45:22Z (shard 5/11), and 15:00:36Z (shard 6/11, GPU 51923 MiB, vLLM still running). No completion and no RAG question. No smoke script was run, because the gateway was not listening.
+- Volume sizes were the same at 13:11:06Z and 14:22:23Z: `START.sh` 3517 bytes, SHA-256 `41af7e93f34f2d28d9b97d53b18a4c58565dcb50e35bcdd6e71e40cfdaf92ca6`; runtime archive 4060580548 bytes; snapshot `AI-PLAYBOOK.md-runpod-first-6f07b58.tar.gz` 696562 bytes. Weight directory then was 75 files and 55586176127 bytes. Those paths were not stat'd again after the old SSH port refused.
+- After 15:00:36Z, TCP `195.26.233.38:53380` failed. Before 15:24:59Z the console search for `mlar88u3ku8utm` with **All statuses** returned no row. The only listed pod was `gom4ualdk47qrj` (`excessive_gray_crocodile`), A100 SXM, $1.80/hr, Details uptime **11m 43s**, Stop button present and not clicked. This session did not SSH that pod and did not run `START.sh` there. H100 `xx9cjogra5vcwl` was not started. Mail was not read.
+- Live acceptance was not raised. Health never returned 200. Second endpoint, Blackwell, fresh-machine recovery, independent weight backup, and mailbox read stay blocked. Production **NO-GO**. `update-source-only.sh` was not run. This recording commit is not deployed.
 
 ### 2026-10-22 — shard 7, then the old A100 host refused SSH
 
