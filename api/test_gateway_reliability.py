@@ -34,6 +34,7 @@ DOC_MARKER = "UNIQUEDOCMARKER"
 class FakeUpstream(BaseHTTPRequestHandler):
     mode = "ok"
     answer = "The deadline is 10 business days [Source 1]."
+    finish_reason = "stop"
     model_id = "fake-model"
     requests: list[dict] = []
     captured: list[bytes] = []
@@ -87,7 +88,7 @@ class FakeUpstream(BaseHTTPRequestHandler):
             self._send(200, b"not json at all")
             return
         body = {
-            "choices": [{"message": {"content": FakeUpstream.answer}, "finish_reason": "stop"}],
+            "choices": [{"message": {"content": FakeUpstream.answer}, "finish_reason": FakeUpstream.finish_reason}],
             "usage": {"prompt_tokens": 1234, "completion_tokens": 56, "total_tokens": 1290},
         }
         self._send(200, json.dumps(body).encode())
@@ -141,6 +142,7 @@ class GatewayReliabilityTests(unittest.TestCase):
     def setUp(self) -> None:
         FakeUpstream.mode = "ok"
         FakeUpstream.answer = "The deadline is 10 business days [Source 1]."
+        FakeUpstream.finish_reason = "stop"
         FakeUpstream.model_id = "fake-model"
         FakeUpstream.requests = []
 
@@ -758,6 +760,7 @@ class GatewayReliabilityTests(unittest.TestCase):
         prompt = FakeUpstream.requests[-1]["messages"][1]["content"]
         self.assertIn(tail, prompt)
         self.assertIn("A missing passage is not a cut-off question.", prompt)
+        self.assertIn("one short paragraph", prompt)
         status, rejected, _ = self.ask("x" * (gateway.MAX_QUESTION_CHARS + 1), collection="long-question")
         self.assertEqual(status, 413, rejected)
 
@@ -776,6 +779,23 @@ class GatewayReliabilityTests(unittest.TestCase):
         self.assertEqual(prose, gateway.RAG_PROSE_CHARS_PER_TOKEN)
         self.assertEqual(table, gateway.RAG_CHARS_PER_TOKEN)
         self.assertGreater(prose, table)
+
+    def test_token_limit_note_does_not_mention_age_bands_for_a_handbook_question(self) -> None:
+        self.upload("limit-note", "handbook.md", b"A good requirement is clear and verifiable.\n")
+        FakeUpstream.answer = "A good requirement is clear [Source 1]."
+        FakeUpstream.finish_reason = "length"
+        try:
+            status, body, _ = self.ask(
+                "What makes a good requirement verifiable?",
+                collection="limit-note",
+            )
+        finally:
+            FakeUpstream.finish_reason = "stop"
+            FakeUpstream.answer = "The deadline is 10 business days [Source 1]."
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["retrieval"]["truncated"])
+        self.assertIn("token limit", body["answer"])
+        self.assertNotIn("age band", body["answer"].casefold())
 
     def test_gemma_request_while_qwen_live_is_refused_with_409(self) -> None:
         try:

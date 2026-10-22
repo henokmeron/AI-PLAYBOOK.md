@@ -710,8 +710,9 @@ def build_rag_completion_messages(
                 "For council-specific fees, only answer when the council and rate are both "
                 "present in the retrieved evidence. "
                 "If any requested category is missing from the evidence, say the answer is incomplete. "
-                "Answer each numbered question. When the evidence does not support one, name that "
-                "question and say the evidence is insufficient. A missing passage is not a cut-off question."
+                "Answer each numbered question in one short paragraph so every number is covered. "
+                "When the evidence does not support one, name that question and say the evidence is insufficient. "
+                "A missing passage is not a cut-off question."
             ),
         },
     ]
@@ -1335,10 +1336,15 @@ class Handler(BaseHTTPRequestHandler):
             finish_reason = choice.get("finish_reason")
             truncated = finish_reason == "length"
             if truncated:
+                if question_requests_weekly_calculation(model_question) or "age band" in model_question.casefold():
+                    remainder = (
+                        "Ask a follow-up for the remaining age bands or placement types."
+                    )
+                else:
+                    remainder = "Ask a follow-up for any numbered question that was not covered."
                 answer_text += (
                     "\n\n[Incomplete answer: generation stopped at the token limit before "
-                    "every requested category could be covered. Ask a follow-up for the "
-                    "remaining age bands or placement types.]"
+                    f"every requested part could be covered. {remainder}]"
                 )
         except UpstreamError as exc:
             self._log_fields["upstream_ms"] = round((time.monotonic() - upstream_started) * 1000, 1)
