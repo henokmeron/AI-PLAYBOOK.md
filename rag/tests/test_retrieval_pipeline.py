@@ -291,6 +291,59 @@ class SearchAndEvidenceTests(unittest.TestCase):
         self.assertEqual(relevant.groups[0].chunk.source, "policy.txt")
         self.assertIn("10 business days", relevant.groups[0].chunk.text)
 
+    def test_numbered_paste_keeps_answerable_questions_and_abstains_the_missing_fact(self) -> None:
+        folder = Path(self.tmp.name) / "quiz"
+        folder.mkdir()
+        (folder / "handbook.txt").write_text(
+            "A good requirement is clear and verifiable. "
+            "Unclear requirements create problems during design and testing.",
+            encoding="utf-8",
+        )
+        index = rp.load_collection(folder)
+        answerable = (
+            "What characteristics make a good requirement, and how can an unclear "
+            "requirement create problems during design and testing?"
+        )
+        missing = (
+            "According to this handbook, what is the current 2026 cost of launching a NASA mission? "
+            "Give the exact figure and page. If the handbook does not contain that information, explicitly say so."
+        )
+        extras = [
+            "What is the blorptown zyglot quota for the flarnish registry?",
+            "What is the quindle sprocket tariff in the yelve market?",
+            "What is the marnwick pollen index for the drebble coast?",
+            "What is the solvane ledger code for the pindle exchange?",
+            "What is the hortwin beacon interval at the clamble yard?",
+            "What is the vexlar permit fee for the snibble dock?",
+            "What is the bramble octane rating for the zindle fleet?",
+        ]
+        parts = [answerable, *extras, missing]
+        paste = "\n".join(f"{number}. {text}" for number, text in enumerate(parts, start=1))
+        pooled = rp._search_one(paste, index, 8, min_score=0.0, min_coverage=0.15, status=rp.embedding_status(None))
+        self.assertTrue(pooled.abstain)
+        self.assertEqual(pooled.reason, "low_query_coverage")
+        alone = rp.search(answerable, index, 8, min_coverage=0.15)
+        self.assertFalse(alone.abstain)
+        self.assertIn("verifiable", alone.groups[0].chunk.text)
+        absent = rp.search(missing, index, 8, min_coverage=0.15)
+        self.assertTrue(absent.abstain)
+        self.assertEqual(absent.reason, "low_query_coverage")
+        self.assertEqual(absent.part_abstain, ())
+        outcome = rp.search(paste, index, 8, min_coverage=0.15)
+        self.assertFalse(outcome.abstain)
+        self.assertTrue(any("verifiable" in group.chunk.text for group in outcome.groups))
+        self.assertEqual(len(outcome.part_abstain), len(parts))
+        self.assertFalse(outcome.part_abstain[0])
+        self.assertTrue(all(outcome.part_abstain[1:]))
+        model_question, notes = rp.generation_question(paste, outcome.part_abstain)
+        self.assertIn("good requirement", model_question)
+        self.assertNotIn("NASA", model_question)
+        self.assertNotIn("blorptown", model_question)
+        self.assertIn("Question 9 was not answered because the supplied documents do not cover it.", notes)
+        self.assertTrue(all("NASA" not in note for note in notes))
+        outline = rp.split_numbered_questions("List the two rules:\n1. Badges\n2. Hours")
+        self.assertEqual(outline, ["List the two rules:\n1. Badges\n2. Hours"])
+
     def test_weak_chunk_is_not_cited_beside_a_real_match(self) -> None:
         folder = Path(self.tmp.name) / "mixed"
         folder.mkdir()

@@ -219,6 +219,9 @@ class SearchOutcome:
     top_k_used: int
     ranked_count: int
     embedding: dict[str, Any] = field(default_factory=dict)
+    # One flag per numbered part. Empty for a single question. True means that
+    # part failed the same coverage gate and must not be sent to the model.
+    part_abstain: tuple[bool, ...] = ()
 
 
 def embedding_status(embedder: Any | None = None) -> dict[str, Any]:
@@ -235,6 +238,99 @@ def embedding_status(embedder: Any | None = None) -> dict[str, Any]:
     return {"available": False, "reason": "unavailable", "retrieval": "bm25"}
 
 
+_NUMBERED_ITEM_RE = re.compile(r"(?m)^[ \t]*(\d{1,2})[.)][ \t]+")
+
+
+def split_numbered_questions(question: str) -> list[str]:
+    """Split a pasted quiz into questions. A short outline stays one question.
+
+    Coverage is measured on the whole string. A handbook quiz mixes answerable
+    questions with a missing-fact question, and the missing terms pull the
+    combined score under the abstain floor. Numbered questions are gated
+    separately. ``1. Badges`` / ``2. Hours`` is not a quiz and is left intact.
+    """
+    text = question.strip()
+    matches = list(_NUMBERED_ITEM_RE.finditer(text))
+    if len(matches) < 2:
+        return [text] if text else [question]
+    parts: list[str] = []
+    preamble = text[:matches[0].start()].strip()
+    if preamble:
+        parts.append(preamble)
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        part = text[match.start():end].strip()
+        if part:
+            parts.append(part)
+    if len(parts) < 2:
+        return [text]
+    separate = [part for part in parts if "?" in part or len(part) >= 40]
+    if len(separate) < 2:
+        return [text]
+    return parts
+
+
+def generation_question(question: str, part_abstain: tuple[bool, ...]) -> tuple[str, list[str]]:
+    """Question text for the model, plus notes for parts the gate rejected.
+
+    Rejected parts are omitted from the model prompt so a missing fact cannot
+    be filled in from a neighbouring hit.
+    """
+    parts = split_numbered_questions(question)
+    if len(parts) < 2 or len(part_abstain) != len(parts) or not any(part_abstain):
+        return question, []
+    kept = [part for part, dropped in zip(parts, part_abstain) if not dropped]
+    notes: list[str] = []
+    for part, dropped in zip(parts, part_abstain):
+        if not dropped:
+            continue
+        match = re.match(r"[ \t]*(\d{1,2})[.)]", part)
+        label = f"Question {match.group(1)}" if match else "The unnumbered part"
+        notes.append(f"{label} was not answered because the supplied documents do not cover it.")
+    if not kept:
+        return question, notes
+    return "\n\n".join(kept), notes
+
+
+def _merge_ranked_groups(outcomes: list[SearchOutcome], limit: int) -> list[RankedGroup]:
+    """Keep the best chunk from each passing part, then fill by score."""
+    chosen: list[RankedGroup] = []
+    seen: set[tuple[str, int]] = set()
+
+    def add(group: RankedGroup) -> None:
+        key = (group.chunk.source, group.chunk.number)
+        if key in seen:
+            return
+        seen.add(key)
+        chosen.append(group)
+
+    for outcome in outcomes:
+        if outcome.groups:
+            add(outcome.groups[0])
+    if len(chosen) >= limit:
+        return chosen[:limit]
+    rest = sorted(
+        (group for outcome in outcomes for group in outcome.groups),
+        key=lambda group: group.score,
+        reverse=True,
+    )
+    for group in rest:
+        if len(chosen) >= limit:
+            break
+        add(group)
+    return chosen
+
+
+def _multipart_abstain_reason(outcomes: list[SearchOutcome]) -> str:
+    reasons = [outcome.reason or "no_match" for outcome in outcomes]
+    if reasons and all(reason == "no_match" for reason in reasons):
+        return "no_match"
+    for reason in ("low_query_coverage", "below_min_score", "instruction_not_evidence"):
+        if reason in reasons:
+            return reason
+    return reasons[0] if reasons else "no_match"
+
+
 def search(
     question: str,
     chunks_or_index: list[Chunk] | CollectionIndex | Bm25Index,
@@ -246,6 +342,55 @@ def search(
     embedder: Any | None = None,
 ) -> SearchOutcome:
     status = embedding_status(embedder)
+    parts = split_numbered_questions(question)
+    if len(parts) < 2:
+        return _search_one(
+            question, chunks_or_index, top_k,
+            allowed_sources=allowed_sources, min_score=min_score,
+            min_coverage=min_coverage, status=status,
+        )
+    outcomes = [
+        _search_one(
+            part, chunks_or_index, top_k,
+            allowed_sources=allowed_sources, min_score=min_score,
+            min_coverage=min_coverage, status=status,
+        )
+        for part in parts
+    ]
+    flags = tuple(outcome.abstain for outcome in outcomes)
+    passing = [outcome for outcome in outcomes if not outcome.abstain]
+    ranked_count = sum(outcome.ranked_count for outcome in outcomes)
+    top_k_used = max(outcome.top_k_used for outcome in outcomes)
+    if not passing:
+        scores = [outcome.top_score for outcome in outcomes if outcome.top_score is not None]
+        coverages = [outcome.top_coverage for outcome in outcomes if outcome.top_coverage is not None]
+        return SearchOutcome(
+            [], True, _multipart_abstain_reason(outcomes),
+            max(scores) if scores else None,
+            max(coverages) if coverages else None,
+            top_k_used, ranked_count, status, flags,
+        )
+    merged = _merge_ranked_groups(passing, TOP_K_MAX)
+    return SearchOutcome(
+        merged, False, None,
+        max(group.score for group in merged),
+        max(group.coverage for group in merged),
+        top_k_used, ranked_count, status, flags,
+    )
+
+
+def _search_one(
+    question: str,
+    chunks_or_index: list[Chunk] | CollectionIndex | Bm25Index,
+    top_k: int = TOP_K_DEFAULT,
+    *,
+    allowed_sources: set[str] | None = None,
+    min_score: float = 0.0,
+    min_coverage: float = DEFAULT_MIN_COVERAGE,
+    status: dict[str, Any] | None = None,
+) -> SearchOutcome:
+    if status is None:
+        status = embedding_status(None)
     if isinstance(chunks_or_index, CollectionIndex):
         index = chunks_or_index.index
     elif isinstance(chunks_or_index, Bm25Index):

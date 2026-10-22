@@ -687,6 +687,53 @@ class GatewayReliabilityTests(unittest.TestCase):
             gateway.PLATFORM_MODEL_REGISTRY = self.saved["PLATFORM_MODEL_REGISTRY"]
             FakeUpstream.model_id = "fake-model"
 
+    def test_numbered_paste_cites_the_handbook_and_abstains_on_the_missing_fact(self) -> None:
+        handbook = (
+            "A good requirement is clear and verifiable. "
+            "Unclear requirements create problems during design and testing.\n"
+        )
+        status, body, _ = self.upload("paste-check", "handbook.md", handbook.encode())
+        self.assertEqual(status, 201, body)
+        answerable = (
+            "What characteristics make a good requirement, and how can an unclear "
+            "requirement create problems during design and testing?"
+        )
+        missing = (
+            "According to this handbook, what is the current 2026 cost of launching a NASA mission? "
+            "Give the exact figure and page."
+        )
+        extras = [
+            "What is the blorptown zyglot quota for the flarnish registry?",
+            "What is the quindle sprocket tariff in the yelve market?",
+            "What is the marnwick pollen index for the drebble coast?",
+            "What is the solvane ledger code for the pindle exchange?",
+            "What is the hortwin beacon interval at the clamble yard?",
+            "What is the vexlar permit fee for the snibble dock?",
+            "What is the bramble octane rating for the zindle fleet?",
+        ]
+        paste = "\n".join(f"{number}. {text}" for number, text in enumerate([answerable, *extras, missing], start=1))
+        before = len(FakeUpstream.requests)
+        status, body, _ = self.ask(paste, collection="paste-check", top_k=4)
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["status"], "answered", body.get("answer"))
+        self.assertEqual(body["retrieval"].get("partial_coverage"), True)
+        self.assertTrue(body["sources"])
+        self.assertIn("handbook.md", json.dumps(body["sources"]))
+        self.assertIn("Question 9 was not answered because the supplied documents do not cover it.", body["answer"])
+        self.assertEqual(len(FakeUpstream.requests), before + 1)
+        prompt = json.dumps(FakeUpstream.requests[-1])
+        self.assertIn("good requirement", prompt)
+        self.assertNotIn("NASA", prompt)
+        self.assertNotIn("blorptown", prompt)
+        calls = len(FakeUpstream.requests)
+        status, body, _ = self.ask(missing, collection="paste-check")
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["status"], "abstained")
+        self.assertEqual(body["retrieval"]["reason"], "low_query_coverage")
+        self.assertIn("do not appear to cover this question", body["answer"])
+        self.assertEqual(body["sources"], [])
+        self.assertEqual(len(FakeUpstream.requests), calls)
+
     def test_gemma_request_while_qwen_live_is_refused_with_409(self) -> None:
         try:
             import yaml  # noqa: F401

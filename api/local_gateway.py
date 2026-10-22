@@ -39,6 +39,7 @@ from retrieval_pipeline import (
     answer_delivery,
     build_evidence,
     contains_instruction_like_text,
+    generation_question,
     neutralise_evidence_text,
     search,
 )
@@ -1222,7 +1223,12 @@ class Handler(BaseHTTPRequestHandler):
                 answer = "No sufficiently relevant evidence was found in the supplied documents."
                 retrieval.update({"top_score": round(outcome.top_score, 3), "minimum_score": minimum_score})
             elif outcome.reason == "low_query_coverage":
-                answer = "The supplied documents do not appear to cover this question."
+                if outcome.part_abstain and all(outcome.part_abstain):
+                    answer = (
+                        "None of the numbered questions were covered by the supplied documents."
+                    )
+                else:
+                    answer = "The supplied documents do not appear to cover this question."
                 retrieval.update({
                     "top_score": round(outcome.top_score, 3),
                     "top_coverage": round(outcome.top_coverage, 3),
@@ -1234,7 +1240,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         top_score = outcome.top_score
-        history, char_budget, history_dropped = fit_history_to_budget(question, history, collection_files)
+        model_question, uncovered_notes = generation_question(question, outcome.part_abstain)
+        history, char_budget, history_dropped = fit_history_to_budget(model_question, history, collection_files)
         pack = build_evidence(outcome.groups, char_budget)
         sources = pack.sources
         evidence = pack.blocks
@@ -1273,7 +1280,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             reported_model = decision.get("resolved_id") or model_token
             messages = build_rag_completion_messages(
-                question,
+                model_question,
                 evidence,
                 history,
                 collection_files=collection_files,
@@ -1346,6 +1353,9 @@ class Handler(BaseHTTPRequestHandler):
         }
         if citation_reason:
             retrieval["reason"] = citation_reason
+        elif status == "answered" and uncovered_notes:
+            answer_text = "\n".join(uncovered_notes) + "\n\n" + answer_text
+            retrieval["partial_coverage"] = True
         if skipped:
             retrieval["skipped_files"] = skipped
         body: dict[str, Any] = {
