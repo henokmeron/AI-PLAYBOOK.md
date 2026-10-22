@@ -8,15 +8,15 @@ Statuses mean:
 - **MISSING** — not built.
 - **BLOCKED** — needs credentials, a running Pod, or a decision this session must not make.
 
-Checked 2026-10-22 against the local `main` working tree. Named operator login is in this tree. It is not a live Pod claim. The saved Entra redirect was re-read on an earlier pass the same day; this pass did not open Azure and did not read a mailbox. System Status separates offline implementation from live acceptance. Production stays **NO-GO**.
+Checked 2026-10-22T12:55:53Z against the local `main` working tree and the RunPod console. Named operator login is in this tree. It is not a live Pod claim. Pod `xx9cjogra5vcwl` was **Stopped** at $0.00/hr and was not started. This pass did not open Azure and did not read a mailbox. System Status separates offline implementation from live acceptance. Production stays **NO-GO**.
 
 The machine-readable registry is `windows_repair/capabilities.py`. Its statuses are PASS, PARTIAL, FAIL, NOT IMPLEMENTED, BLOCKED, and NOT VERIFIED. Windows read-only diagnostics are not Mac, Android, iPhone, or web-device support. There is no macOS, Android, or iOS agent in this repository. Web control is the loopback console only.
 
 | Capability | Status | Evidence |
 | --- | --- | --- |
 | Loopback console (chat, documents, status) | IMPLEMENTED BUT NOT LIVE-VERIFIED | `web/server.py`, `web/test_server.py` |
-| Model gateway | IMPLEMENTED BUT NOT LIVE-VERIFIED | `api/local_gateway.py` |
-| Qwen on RunPod | BLOCKED | Pod `xx9cjogra5vcwl` is Stopped. It was not started. Not a live claim. |
+| Model gateway | IMPLEMENTED BUT NOT LIVE-VERIFIED | `api/local_gateway.py`. `/health` is HTTP 503 `unknown` when no model id is reported. Mock only. Not deployed. |
+| Qwen on RunPod | BLOCKED | Pod `xx9cjogra5vcwl` rechecked Stopped at $0.00/hr on 2026-10-22T12:55:53Z. Start was not clicked. Health URLs were not called. |
 | IT Helpdesk agent and approvals | IMPLEMENTED BUT NOT LIVE-VERIFIED | `agents/`; prior live note is in `docs/results/`, not re-run here |
 | RAG answers with citations / abstention | IMPLEMENTED AND TESTED in source | `rag/`. Unit tests cover empty, malformed, duplicate, and unavailable-embedding cases, a colon in a filename, a collection symlink, sibling cache invalidation, an uncited model answer, and “do not cite” text. Ranking stays BM25. Live Qwen generation was not re-run. |
 | Operations Centre probes, alerts, incidents | IMPLEMENTED AND TESTED in source | `ops_centre/`, `ops_centre/tests/test_ops_centre.py` |

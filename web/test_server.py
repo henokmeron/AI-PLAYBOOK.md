@@ -87,6 +87,9 @@ class FakeGatewayHandler(BaseHTTPRequestHandler):
         if path != "/health":
             self._json(404, {"error": "not found"})
             return
+        if getattr(self.server, "health_body", None) is not None:
+            self._json(self.server.health_code, self.server.health_body)
+            return
         if self.server.health_code == 503:
             self._json(503, {"status": "degraded", "upstream": "unavailable"})
             return
@@ -198,6 +201,7 @@ class FakeGateway(ThreadingHTTPServer):
         self.hits: list[dict[str, str]] = []
         self.lock = threading.Lock()
         self.health_code = 200
+        self.health_body = None
         self.mode = "ok"
         self.redirect_to = ""
         super().__init__(("127.0.0.1", 0), FakeGatewayHandler)
@@ -558,6 +562,17 @@ class ConsoleTests(unittest.TestCase):
         payload = json.loads(self.request(base, "GET", "/api/status")[1])
         self.assertEqual(payload["connection"], "degraded")
         self.assertEqual(payload["upstream"], "unavailable")
+
+        unknown = FakeGateway()
+        unknown.health_code = 200
+        unknown.health_body = {"status": "ok", "upstream": "ok", "model_count": 0}
+        base = self.web(unknown)
+        payload = json.loads(self.request(base, "GET", "/api/status")[1])
+        self.assertEqual(payload["connection"], "unknown")
+        self.assertNotEqual(payload["connection"], "ready")
+        self.assertFalse(payload["runpod_verified"])
+        script = (Path(__file__).resolve().parent / "static" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("No model reported", script)
 
         gateway = FakeGateway()
         base = self.web(gateway, api_key="")

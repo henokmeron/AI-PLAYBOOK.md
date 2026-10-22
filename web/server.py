@@ -245,7 +245,7 @@ def public_health(payload: dict[str, Any] | None) -> dict[str, Any] | None:
     if not isinstance(payload, dict):
         return None
     public: dict[str, Any] = {}
-    if payload.get("status") in {"ok", "degraded"}:
+    if payload.get("status") in {"ok", "degraded", "unknown"}:
         public["status"] = payload["status"]
     if payload.get("upstream") in {"ok", "unavailable"}:
         public["upstream"] = payload["upstream"]
@@ -409,13 +409,29 @@ def redact_request_log(text: str) -> str:
     return head + " [query redacted]" + version
 
 
-def connection_state(*, reachable: bool, upstream_ok: bool, key_ok: bool, model_ok: bool) -> str:
+def models_reported(health: dict[str, Any] | None) -> bool:
+    if not isinstance(health, dict):
+        return False
+    count = health.get("model_count")
+    return isinstance(count, int) and not isinstance(count, bool) and count >= 1
+
+
+def connection_state(
+    *,
+    reachable: bool,
+    upstream_ok: bool,
+    key_ok: bool,
+    model_ok: bool,
+    models_reported: bool = True,
+) -> str:
     if not reachable:
         return "unreachable"
     if not key_ok:
         return "key_missing"
     if not model_ok:
         return "model_missing"
+    if not models_reported:
+        return "unknown"
     if not upstream_ok:
         return "degraded"
     return "ready"
@@ -2081,14 +2097,19 @@ class Handler(BaseHTTPRequestHandler):
         key_ok = len(key) >= 32
         result = call_gateway(config, "GET", "/health", None, config.health_timeout, include_key=False)
         health = public_health(result.payload) if result.reachable and result.status == 200 else None
-        upstream_ok = bool(health and health.get("status") == "ok" and health.get("upstream") == "ok")
+        reported = models_reported(health)
+        upstream_ok = bool(
+            health and health.get("status") == "ok" and health.get("upstream") == "ok" and reported
+        )
         if result.reachable and not upstream_ok and result.status == 503:
             health = public_health(result.payload) or {"status": "degraded", "upstream": "unavailable"}
+            reported = True
         state = connection_state(
             reachable=result.reachable,
             upstream_ok=upstream_ok,
             key_ok=key_ok,
             model_ok=bool(config.model_id),
+            models_reported=reported,
         )
         key_file_found = False
         if config.api_key_file:
@@ -2111,6 +2132,11 @@ class Handler(BaseHTTPRequestHandler):
             detail = (
                 "The gateway answered. Set PLATFORM_MODEL_ID before using chat. "
                 "Document questions can still use the model selected by the gateway. "
+                "RunPod connectivity is not verified."
+            )
+        elif result.status == 200 and not reported:
+            detail = (
+                "The gateway answered, but it reported no loaded model. "
                 "RunPod connectivity is not verified."
             )
         elif not upstream_ok:

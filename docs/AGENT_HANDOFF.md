@@ -4,7 +4,7 @@
 **Operator system map (beginner manual):** `docs/SYSTEM_MANUAL.md` — keep that file updated when architecture, paths, or operating steps change.  
 **Before you finish a chat, update this file** with what you verified, what you changed, what failed, and what the next agent must not break. Do not delete older sections; add a dated entry at the top of “Session log”.
 
-Last updated: **2026-10-22** (offline implementation is separate from live acceptance on System Status. Pod `xx9cjogra5vcwl` is **Stopped**. Production **NO-GO**.)
+Last updated: **2026-10-22T12:55:53Z** (H100 `xx9cjogra5vcwl` rechecked **Stopped** at $0.00/hr. Start was not clicked. Live health was not called. Production **NO-GO**.)
 
 ## Only this repository
 
@@ -46,13 +46,13 @@ The local branch `feature/qwen3.5-27b-integration` used to sit at stale `467ca3e
 
 | Item | Value | Status |
 | --- | --- | --- |
-| Active test Pod | RunPod `xx9cjogra5vcwl` (“reliable_moccasin_hummingbird”), **H100 NVL** | **VERIFIED** **Stopped** on 2026-10-22 after a Pods page reload. Pause-icon tooltip text “Stopped”. Cost **$0.00/hr**. Inspector: Compute **Not running**, Container storage **Not running**. The Start control shows **$3.19/hr** and was not clicked. One pod, page 1 of 1. Not started, resized, reloaded, or terminated. |
+| Active test Pod | RunPod `xx9cjogra5vcwl` (“reliable_moccasin_hummingbird”), **H100 NVL** | **VERIFIED** **Stopped** on 2026-10-22. Page `https://console.runpod.io/pods?id=xx9cjogra5vcwl` showed a pause icon, **Start for $3.19/hr**, Compute **Not running**, Container storage **Not running**, total **$0.00/hr**. The list price was also **$0.00/hr**. Start was not clicked. A different pod, `screeching_crimson_vole` (`mlar88u3ku8utm`, A100 SXM, **$1.80/hr**), was Running and was not used. |
 | Prior Pod | `1cj381fjuujeq7` / `vx4oe3oyfsqnz8` | Gone from console / left alone. Do not recreate extras. |
-| SSH (TCP) | Earlier session used the key at `%USERPROFILE%\.ssh\id_ed25519`. Host and port can change after a start. | **NOT RECHECKED**. The pod is stopped. Do not print the key. |
+| SSH (TCP) | Previous endpoint `root@216.81.245.55` port `25839`, key `%USERPROFILE%\.ssh\id_ed25519`. | **REFUSED** on 2026-10-22. The stopped pod’s inspector has no Connect tab and no current TCP port. The key was not printed. |
 | GPU / driver | Last read while the pod was running: H100 NVL, **85,415 MiB used** of **95,830 MiB**, driver **595.91.07** | **NOT RECHECKED** while stopped. |
 | Container | PyTorch 2.8.0; runtime in `/tmp/vllm-qwen-env` | Restored from volume archive. |
 | Global Volume | Console id `cmv2p5m0d000007jk9o3931ea` (“New model container”). Filesystem `5aac0c77-6fcc-4be9-a112-dfe3890e1373` at `/workspace` (`fuse.geesefs`) was verified earlier over SSH and was **not** re-checked while the pod is stopped. | **VERIFIED** on the Storage page after a reload: type badge **Global**, location **Any**, **126.0GB stored**, **1,804 objects**, **$11.34/mo**. A stale tab first showed 1,794 objects. The stopped-pod Volumes tab shows **0 Bytes / 0 objects** and is not a file list. Direct S3 API is **not** supported. No file was written. No new volume was created. |
-| Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | **NOT RECHECKED**. The pod is stopped. Earlier HTTP 200s were while it was running, on checkout **`a0e9422145aae4e38025709d1ca88288e42f375b`**. Do not treat those 200s as the current state. |
+| Qwen / Gateway / Console | `:8002` / `:8010` / `:8080` | **NOT CALLED** on 2026-10-22. The pod is stopped, so there was no process to probe. Earlier HTTP 200s were while it was running, on checkout **`a0e9422145aae4e38025709d1ca88288e42f375b`**. Do not treat those 200s as the current state. Qwen was not signalled and was not reloaded. |
 | Other Pod | Older idle/terminated Pods | Leave alone unless user says otherwise |
 
 ### Exact volume paths that must remain
@@ -163,6 +163,16 @@ E2E helper (uses key file; does not print it):
 ---
 
 ## Session log (newest first)
+
+### 2026-10-22 — empty model list is not healthy; H100 still stopped
+
+- Remote was `https://github.com/henokmeron/AI-PLAYBOOK.md.git`. Before this commit, `git ls-remote` showed `b0ead09a8df7c5cd6abace971331ef46de6646a7` on `HEAD`, `main`, `feature/qwen-a100-start-hardening`, and `feature/qwen3.5-27b-integration`. Untracked `__pycache__` was left uncommitted. No secret was printed. Nothing was force-pushed.
+- A gateway `/health` answer of `ok` with zero models, and a registry probe that treated HTTP 200 with `{"data":[]}` as loaded, was a local bug. `/health` and the registry probe now require a model id. No upstream, or an empty list, returns HTTP 503 with `status` `unknown` (`model_server_absent` or `no_models_reported`). `/livez` is still process-only. The console connection is `unknown`, label “No model reported”, when a gateway returns HTTP 200 with `model_count` 0. `runpod_verified` stays false.
+- LOCAL/MOCK: the new cases failed against the old code and passed after the fix. `python -m ops.run_tests` on Python 3.11 was 41 modules, 0 failed, exit 0, about 94 seconds. `integrations.tests.test_endpoint` skipped 1. `api.test_gateway_reliability` logged a Windows socket abort and still passed. Live Qwen was not run.
+- RunPod console at `2026-10-22T12:55:53Z`: pod `xx9cjogra5vcwl` (`reliable_moccasin_hummingbird`) is **Stopped**. Pause icon, Start for **$3.19/hr**, Compute **Not running**, Container storage **Not running**, **$0.00/hr**. Start was not clicked. Terminate was not clicked. SSH to `216.81.245.55:25839` was refused. No current TCP port was shown. `:8002/health`, `:8010/health`, and `:8080/api/status` were not called. `/tmp/AI-PLAYBOOK` was not read. `update-source-only.sh` was not run. No volume path was written.
+- `screeching_crimson_vole` (`mlar88u3ku8utm`, A100 SXM, $1.80/hr) was Running. It was not used. Gemma was not loaded. This PC is not a second endpoint. Blackwell was not verified.
+- Microsoft loopback consent was not started because the pod console is not running. No secret was created. Mail scopes were not widened. Status stays **NOT CONFIGURED**.
+- Production **NO-GO**. Live checks are **BLOCKED** until this H100 is Running. Qwen was not restarted because it was not running.
 
 ### 2026-10-22 — uncited answers and “do not cite” text
 

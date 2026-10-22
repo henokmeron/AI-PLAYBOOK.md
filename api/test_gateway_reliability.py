@@ -203,7 +203,10 @@ class GatewayReliabilityTests(unittest.TestCase):
             self.assertEqual(body["reason"], "upstream_unreachable")
             self.assertIn("error_id", body)
             status, body, _ = self.call("GET", "/health", auth=False)
-            self.assertEqual((status, body["status"], body["upstream"]), (503, "degraded", "unavailable"))
+            self.assertEqual(status, 503)
+            self.assertEqual(body["status"], "unknown")
+            self.assertEqual(body["reason"], "model_server_absent")
+            self.assertNotEqual(body["status"], "ok")
         finally:
             gateway.UPSTREAM = previous
 
@@ -214,7 +217,10 @@ class GatewayReliabilityTests(unittest.TestCase):
         status, body, _ = self.call("GET", "/readyz", auth=False)
         self.assertEqual((status, body["reason"]), (503, "no_models_reported"))
         status, body, _ = self.call("GET", "/health", auth=False)
-        self.assertEqual((status, body["status"], body["model_count"]), (200, "ok", 0))
+        self.assertEqual(status, 503)
+        self.assertEqual(body["status"], "unknown")
+        self.assertEqual(body["model_count"], 0)
+        self.assertNotEqual(body["status"], "ok")
 
     # Malformed requests ----------------------------------------------------
     def test_malformed_requests_get_error_ids_and_service_survives(self) -> None:
@@ -580,7 +586,7 @@ class GatewayReliabilityTests(unittest.TestCase):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(b'{"data":[]}')
+                self.wfile.write(b'{"data":[{"id":"qwen3.5-27b"}]}')
 
             def log_message(self, fmt: str, *args: object) -> None:
                 return
@@ -601,6 +607,30 @@ class GatewayReliabilityTests(unittest.TestCase):
         self.assertEqual(health["redirected"], False)
         self.assertEqual(health["ready"], True)
         self.assertEqual(captured, [])
+
+    def test_empty_model_list_is_not_loaded(self) -> None:
+        class Empty(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"data":[]}')
+
+            def log_message(self, fmt: str, *args: object) -> None:
+                return
+
+        empty = ThreadingHTTPServer(("127.0.0.1", 0), Empty)
+        threading.Thread(target=empty.serve_forever, daemon=True).start()
+        self.addCleanup(empty.shutdown)
+        self.addCleanup(empty.server_close)
+        health = gateway.probe_runtime_health_by_registry({
+            "candidates": [
+                {"id": "qwen3.5-27b", "serving": {"listen_port": empty.server_address[1]}},
+                {"id": "absent", "serving": {"listen_port": 9}},
+            ]
+        })
+        self.assertIs(health["qwen3.5-27b"], False)
+        self.assertIs(health["absent"], False)
 
 
 if __name__ == "__main__":

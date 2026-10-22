@@ -207,6 +207,7 @@
     if (connection === "key_missing") return "API key not configured";
     if (connection === "model_missing") return "Model id not configured";
     if (connection === "unreachable") return "Gateway unreachable";
+    if (connection === "unknown") return "No model reported";
     return "Status unavailable";
   }
 

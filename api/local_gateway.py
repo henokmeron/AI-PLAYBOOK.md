@@ -205,18 +205,40 @@ def _candidate_listen_port(entry: dict[str, Any]) -> int | None:
         return None
 
 
+def reported_model_count(payload: object) -> int:
+    """Count model objects that carry an id. An empty list is zero."""
+    if not isinstance(payload, dict):
+        return 0
+    entries = payload.get("data")
+    if not isinstance(entries, list):
+        return 0
+    count = 0
+    for item in entries:
+        if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"].strip():
+            count += 1
+    return count
+
+
 def _loopback_models_ready(port: int, timeout: float = 2) -> bool:
-    """GET loopback /v1/models. A redirect is not followed and is not healthy."""
+    """GET loopback /v1/models. A redirect is not followed. An empty list is not loaded."""
     request = urllib.request.Request(f"http://127.0.0.1:{port}/v1/models", method="GET")
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _RefuseRedirects)
     try:
         with opener.open(request, timeout=timeout) as response:
-            return 200 <= int(getattr(response, "status", 0) or 0) < 300
+            status = int(getattr(response, "status", 0) or 0)
+            if status < 200 or status >= 300:
+                return False
+            raw = response.read(65536)
     except urllib.error.HTTPError as exc:
         exc.close()
         return False
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):
         return False
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        return False
+    return reported_model_count(payload) >= 1
 
 
 def probe_runtime_health_by_registry(registry: dict[str, Any]) -> dict[str, bool]:
@@ -696,27 +718,38 @@ class Handler(BaseHTTPRequestHandler):
             # Readiness: the inference upstream answers /models with at least one model.
             try:
                 payload = read_upstream_json("/models", timeout=5)
-                entries = payload.get("data", [])
-                count = len(entries) if isinstance(entries, list) else 0
             except UpstreamError as exc:
                 self.send_json(503, {"status": "not_ready", "reason": exc.reason})
                 return
+            count = reported_model_count(payload)
             if count < 1:
-                self.send_json(503, {"status": "not_ready", "reason": "no_models_reported"})
+                self.send_json(503, {"status": "not_ready", "reason": "no_models_reported", "model_count": 0})
                 return
             self.send_json(200, {"status": "ready", "model_count": count})
             return
         if parsed.path == "/health":
             try:
                 payload = read_upstream_json("/models", timeout=5)
-                entries = payload.get("data", [])
-                count = len(entries) if isinstance(entries, list) else 0
-                body: dict[str, Any] = {"status": "ok", "upstream": "ok", "model_count": count}
-                if PLATFORM_DEFAULT_MODEL_ID:
-                    body["default_model_id"] = PLATFORM_DEFAULT_MODEL_ID
-                self.send_json(200, body)
             except Exception:
-                self.send_json(503, {"status": "degraded", "upstream": "unavailable"})
+                self.send_json(503, {
+                    "status": "unknown",
+                    "reason": "model_server_absent",
+                    "upstream": "unavailable",
+                })
+                return
+            count = reported_model_count(payload)
+            if count < 1:
+                self.send_json(503, {
+                    "status": "unknown",
+                    "reason": "no_models_reported",
+                    "model_count": 0,
+                    "upstream": "unavailable",
+                })
+                return
+            body: dict[str, Any] = {"status": "ok", "upstream": "ok", "model_count": count}
+            if PLATFORM_DEFAULT_MODEL_ID:
+                body["default_model_id"] = PLATFORM_DEFAULT_MODEL_ID
+            self.send_json(200, body)
             return
         if parsed.path == "/v1/platform/models":
             if not self.require_auth_and_rate_limit():
