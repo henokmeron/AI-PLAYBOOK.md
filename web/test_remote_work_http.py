@@ -38,9 +38,13 @@ class RemoteWorkHttpTests(unittest.TestCase):
         os.environ["ENDPOINT_STATE_FILE"] = str(Path(state_dir.name) / "devices.json")
         from auth.service import AuthService
 
-        AuthService(auth_dir.name).create_operator(
+        auth = AuthService(auth_dir.name)
+        auth.create_operator(
             "admin", "unit-test-admin-password", "admin", allow_first_admin=True, actor="test",
         )
+        # A second operator with the same role approves, because the operator
+        # who raised an order may not approve it.
+        auth.create_operator("approver", "unit-test-approver-password", "admin", actor="admin")
         self.httpd = server.WebServer(server.Config(
             host="127.0.0.1",
             port=0,
@@ -164,6 +168,20 @@ class RemoteWorkHttpTests(unittest.TestCase):
         self.assertEqual(backdoor, 401)
         self.assertEqual(backdoor_body["state"], "refused")
 
+        status, own = self.request(
+            "POST", "/api/remote-work/approve",
+            {"order_id": created["id"]},
+            auth=True,
+        )
+        self.assertEqual(status, 403, own)
+        self.assertEqual(own["state"], "refused")
+        self.assertEqual(own["error"], "the operator who raised an order cannot approve it")
+
+        status, _ = self.request(
+            "POST", "/api/auth/login",
+            {"username": "approver", "password": "unit-test-approver-password"},
+        )
+        self.assertEqual(status, 200)
         status, approved = self.request(
             "POST", "/api/remote-work/approve",
             {"order_id": created["id"]},

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import tempfile
 import time
 import unittest
@@ -31,6 +32,7 @@ from integrations.remote_worker import WORKER_VERSION, exchange, main, poll_once
 
 DEVICE = "a" * 32
 OTHER = "b" * 32
+LIVE_SWITCH_ON = mock.patch.dict(os.environ, {"REMOTE_IT_WORK_LIVE": "1"})
 OPERATOR = "it.operator"
 PIN = "0123456789abcdef" * 4
 SENTINEL = "SENTINEL-PASSWORD-do-not-log-9f3a"
@@ -100,6 +102,25 @@ class RemoteWorkTests(unittest.TestCase):
         self.store = WorkStore(clock=self.clock)
         register_enrolled_device(self.store, DEVICE)
         register_enrolled_device(self.store, OTHER)
+        # Make any real OS command fail loudly so only injected fakes run.
+        blocked = mock.patch.object(
+            remote_work.subprocess, "run",
+            side_effect=AssertionError("tests must not start a real OS command"),
+        )
+        blocked.start()
+        self.addCleanup(blocked.stop)
+
+    def test_injected_runner_is_refused_without_the_live_switch(self) -> None:
+        order = self._approve(self._service())
+        runner = RecordingRunner()
+        with mock.patch.dict(os.environ, {remote_work.LIVE_ENV: "0"}):
+            with self.assertRaises(WorkRefused) as caught:
+                execute_work_order(self.store, order["id"], live=True, runner=runner)
+        self.assertEqual(caught.exception.message, "live execution is disabled")
+        self.assertEqual(runner.calls, [])
+        plan = execute_work_order(self.store, order["id"], live=False, runner=runner)
+        self.assertFalse(plan["executed"])
+        self.assertEqual(runner.calls, [])
 
     def _service(self, device_id: str = DEVICE, target: str = "Spooler", params: dict | None = None) -> dict:
         body = {"start_type": "automatic", "status": "stopped"} if params is None else params
@@ -187,6 +208,7 @@ class RemoteWorkTests(unittest.TestCase):
             )
         return result, transport
 
+    @LIVE_SWITCH_ON
     def test_each_action_succeeds_through_the_fake_runner_when_approval_matches(self) -> None:
         runner = RecordingRunner()
         spool = r"C:\Windows\System32\spool\PRINTERS\HP-Lab\job.spl"
@@ -418,6 +440,17 @@ class RemoteWorkTests(unittest.TestCase):
             complete_job(self.store, OTHER, order["id"], outcome="failed")
         self.assertEqual(other.exception.message, "job belongs to another device")
 
+    def test_operator_who_raised_order_cannot_approve_it(self) -> None:
+        order = self._service()
+        for same in (OPERATOR, OPERATOR.upper()):
+            with self.assertRaises(WorkRefused) as caught:
+                approve_work_order(self.store, order["id"], same)
+            self.assertEqual(caught.exception.message, "the operator who raised an order cannot approve it")
+        self.assertEqual(self.store.orders[order["id"]]["state"], "pending_approval")
+        self.assertIsNone(self.store.orders[order["id"]].get("approval"))
+        approved = approve_work_order(self.store, order["id"], "approver")
+        self.assertEqual(approved["state"], "approved")
+
     def test_refused_is_terminal(self) -> None:
         order = self._service(target="reboot")
         self.assertEqual(order["state"], "refused")
@@ -507,11 +540,13 @@ class RemoteWorkTests(unittest.TestCase):
         self.assertEqual(caught.exception.message, "live execution is disabled")
         self.assertEqual(default_runner_invocations(), 0)
         claim_job(self.store, DEVICE, order["id"])
-        ran = execute_work_order(self.store, order["id"], live=True, runner=runner)
+        with LIVE_SWITCH_ON:
+            ran = execute_work_order(self.store, order["id"], live=True, runner=runner)
         self.assertTrue(ran["executed"])
         self.assertEqual(runner.calls[0]["argv"], ["sc.exe", "start", "Spooler"])
         self.assertNotIn("password", runner.calls[0])
 
+    @LIVE_SWITCH_ON
     def test_printer_queue_refuses_paths_outside_its_spool(self) -> None:
         outside = (
             r"C:\Windows\System32\config\SAM",
@@ -538,6 +573,7 @@ class RemoteWorkTests(unittest.TestCase):
         self.assertEqual(runner.calls[0]["queue"], "HP-Lab")
         self.assertNotIn(r"C:\Windows\System32\config", json.dumps(runner.calls))
 
+    @LIVE_SWITCH_ON
     def test_onboard_password_never_enters_the_audit_or_the_order(self) -> None:
         refused = create_work_order(
             self.store, device_id=DEVICE, action="setup.onboard.local_user",
@@ -586,6 +622,7 @@ class RemoteWorkTests(unittest.TestCase):
         removed = self._offboard(params={"mode": "remove", "admin_count": 3})
         self.assertEqual(removed["state"], "pending_approval")
 
+    @LIVE_SWITCH_ON
     def test_download_refuses_arbitrary_urls_and_does_not_use_the_network(self) -> None:
         self.assertEqual(self._download(url="http://updates.example.com/a.cab")["error"], "download URL must be https")
         self.assertEqual(self._download(url="https://evil.example/a.cab")["error"], "download host is not on the allowlist")
@@ -618,6 +655,7 @@ class RemoteWorkTests(unittest.TestCase):
         self.assertNotIn("urlopen", source + worker)
         self.assertNotIn("getaddrinfo", source + worker)
 
+    @LIVE_SWITCH_ON
     def test_install_is_plan_only_and_refuses_other_sources(self) -> None:
         bad = self._install(source="cmd")
         self.assertEqual(bad["error"], "install source is not allowlisted")
@@ -681,9 +719,12 @@ class RemoteWorkTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "keep.txt"
             path.write_text("keep", encoding="utf-8")
+            # The delete policy only accepts Windows paths. Off Windows, plan a
+            # Windows-shaped target and still prove the real file is untouched.
+            target = str(path) if os.name == "nt" else DELETE_OK
             order = self._approve(create_work_order(
                 self.store, device_id=DEVICE, action="change.delete",
-                target=str(path), operator_id=OPERATOR,
+                target=target, operator_id=OPERATOR,
             ))
             runner = RecordingRunner()
             plan = execute_work_order(self.store, order["id"], live=False, runner=runner)
@@ -694,6 +735,7 @@ class RemoteWorkTests(unittest.TestCase):
             self.assertEqual(runner.calls, [])
             self.assertEqual(default_runner_invocations(), 0)
 
+    @LIVE_SWITCH_ON
     def test_audit_shape_and_worker_round_trip_hide_the_password(self) -> None:
         order = self._approve(create_work_order(
             self.store, device_id=DEVICE, action="setup.onboard.local_user",
@@ -718,6 +760,7 @@ class RemoteWorkTests(unittest.TestCase):
         self.assertGreater(len(self.store.audit), 1)
         self.assertEqual(self.store.audit[0], first)
 
+    @LIVE_SWITCH_ON
     def test_worker_runs_one_job_for_its_own_device(self) -> None:
         own = self._approve(self._service())
         other = self._approve(self._service(device_id=OTHER, target="wuauserv"))
