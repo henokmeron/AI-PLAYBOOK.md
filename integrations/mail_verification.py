@@ -271,7 +271,7 @@ class MailboxVerificationHarness:
             )
             logger.warning("Negative match verification failed: authentication error")
             
-        except Exception:
+        except Exception as exc:
             # Catch all other errors (TransientError, PermissionDenied, etc.)
             result = VerificationResult(
                 success=False,

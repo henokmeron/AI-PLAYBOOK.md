@@ -39,7 +39,8 @@ class MockTransport:
         if url.startswith("https://graph.microsoft.com/v1.0/me?"):
             return 200, {"mail": "test@example.com", "displayName": "Test User"}
         
-        if "/me/messages" in url and "$search=" in url:
+        # Check for /me/messages with search parameter (handles both encoded and unencoded)
+        if "/me/messages" in url and ("$search=" in url or "%24search=" in url):
             if self.response_type == "success_with_results":
                 # Return results without exposing content
                 return 200, {"value": [
@@ -309,13 +310,13 @@ class MailVerificationTests(unittest.TestCase):
         # Check that the Graph call included $select=id
         graph_calls = [
             call for call in transport.calls
-            if "/me/messages" in call[1] and "$search=" in call[1]
+            if "/me/messages" in call[1] and ("$search=" in call[1] or "%24search=" in call[1])
         ]
         self.assertEqual(len(graph_calls), 1)
         
         # Verify $select=id is present (no subject, body, etc.)
         url = graph_calls[0][1]
-        self.assertIn("$select=id", url)
+        self.assertTrue("$select=id" in url or "%24select=id" in url)
         self.assertNotIn("subject", url.lower())
         self.assertNotIn("body", url.lower())
 
