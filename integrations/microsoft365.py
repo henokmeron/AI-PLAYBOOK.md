@@ -18,6 +18,7 @@ from .catalog import Catalog, ConnectorSpec, Effect, OperationSpec
 from .endpoint import ENDPOINT, DeviceRegistry, EndpointService
 from .errors import AuthenticationError, InvalidRequest, NotFound, PermissionDenied
 from .microsoft_oauth import MicrosoftOAuth, validate_drive_path
+from .microsoft_resilience import GraphResilience
 
 _MESSAGE_ID = re.compile(r"[A-Za-z0-9_+=/\-]{8,512}\Z")
 _MAIL_RESULT = {
@@ -344,9 +345,15 @@ def _item(row_id: str, name: str, detail: str = "", link: str = "") -> dict[str,
 class Microsoft365Client:
     """Graph reads plus approved draft and named-file writes. Sending mail is refused."""
 
-    def __init__(self, oauth: MicrosoftOAuth | None = None) -> None:
+    def __init__(self, oauth: MicrosoftOAuth | None = None, use_resilience: bool = True) -> None:
         self.oauth = oauth
         self.network_calls = 0
+        # Wire resilience features for retry, pagination, and throttling
+        self._resilience: GraphResilience | None = None
+        if use_resilience and oauth is not None:
+            from .resilience import RetryPolicy
+            policy = RetryPolicy(max_attempts=4, base_delay=1.0, max_delay=32.0)
+            self._resilience = GraphResilience(oauth, retry_policy=policy)
 
     def apply(self, catalog: Catalog, tenant_id: str) -> None:
         record = catalog.connection(tenant_id, MICROSOFT_365.connector_id)
@@ -771,6 +778,12 @@ class Microsoft365Client:
             raise AuthenticationError("Microsoft 365 is not connected. No request was sent.")
         before = self.oauth.graph_calls
         try:
+            # Use resilient Graph client with retry and throttling support
+            if self._resilience is not None:
+                return self._resilience.graph_get_with_retry(
+                    path, query, required_scope=scope, idempotent=True
+                )
+            # Fallback to direct call if resilience disabled
             return self.oauth.graph_get(path, query, required_scope=scope)
         finally:
             self.network_calls += self.oauth.graph_calls - before
