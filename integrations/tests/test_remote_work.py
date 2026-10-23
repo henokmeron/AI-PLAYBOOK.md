@@ -28,7 +28,15 @@ from integrations.remote_work import (
     service_facts_from_text,
     snapshot,
 )
-from integrations.remote_worker import WORKER_VERSION, exchange, main, poll_once
+from integrations.remote_worker import (
+    WORKER_VERSION,
+    ConsoleTransport,
+    exchange,
+    main,
+    poll_once,
+    serve,
+    session_once,
+)
 
 DEVICE = "a" * 32
 OTHER = "b" * 32
@@ -77,6 +85,18 @@ class StoreTransport:
             result=result,
             redact=redact,
         )
+
+
+class SessionTransport(StoreTransport):
+    """Store transport plus liveness. Heartbeat does not approve a work order."""
+
+    def heartbeat(self, utc: str, worker_version: str) -> dict:
+        self.events.append("heartbeat")
+        return post_heartbeat(self.store, {
+            "device_id": DEVICE,
+            "utc": utc,
+            "worker_version": worker_version,
+        })
 
 
 class RecordingRunner:
@@ -805,6 +825,183 @@ class RemoteWorkTests(unittest.TestCase):
         self.assertFalse(json.loads(again.getvalue())["result"]["executed"])
         self.assertEqual(default_runner_invocations(), 0)
         self.assertNotIn("192.168.", Path(remote_worker.__file__).read_text(encoding="utf-8"))
+
+    def test_serve_posts_heartbeat_without_a_second_approval(self) -> None:
+        os.environ.pop("REMOTE_IT_WORK_LIVE", None)
+        transport = SessionTransport(self.store)
+        stdout = io.StringIO()
+        with mock.patch("socket.socket", side_effect=AssertionError("network")), \
+                mock.patch("socket.getaddrinfo", side_effect=AssertionError("dns")), \
+                mock.patch("subprocess.run", side_effect=AssertionError("shell")):
+            code = serve(transport, live=False, cycles=1, sleep=lambda _seconds: None, stdout=stdout, now=self.clock.moment)
+        self.assertEqual(code, 0)
+        body = json.loads(stdout.getvalue())
+        self.assertEqual(body["state"], "idle")
+        self.assertEqual(body["device_id"], DEVICE)
+        self.assertEqual(len(self.store.heartbeats), 1)
+        self.assertEqual(set(self.store.heartbeats[0]), {"device_id", "utc", "worker_version"})
+        self.assertEqual(self.store.orders, {})
+        self.assertEqual(transport.events, ["heartbeat", "poll"])
+        self.assertEqual(default_runner_invocations(), 0)
+
+    @LIVE_SWITCH_ON
+    def test_serve_claims_one_own_job_and_posts_the_result(self) -> None:
+        own = self._approve(self._service())
+        other = self._approve(self._service(device_id=OTHER, target="wuauserv"))
+        transport = SessionTransport(self.store)
+        runner = RecordingRunner()
+        stdout = io.StringIO()
+        sleeps: list[float] = []
+        with mock.patch("socket.socket", side_effect=AssertionError("network")), \
+                mock.patch("socket.getaddrinfo", side_effect=AssertionError("dns")), \
+                mock.patch("subprocess.run", side_effect=AssertionError("shell")):
+            code = serve(
+                transport,
+                live=True,
+                runner=runner,
+                cycles=2,
+                interval=5,
+                sleep=sleeps.append,
+                stdout=stdout,
+                now=self.clock.moment,
+            )
+        self.assertEqual(code, 0)
+        lines = [json.loads(line) for line in stdout.getvalue().splitlines()]
+        self.assertEqual(lines[0]["state"], "succeeded")
+        self.assertEqual(lines[0]["order_id"], own["id"])
+        self.assertEqual(lines[0]["target"], "Spooler")
+        self.assertEqual(lines[1]["state"], "idle")
+        self.assertEqual(self.store.orders[other["id"]]["state"], "approved")
+        self.assertEqual(runner.calls[0]["target"], "Spooler")
+        self.assertEqual(len(runner.calls), 1)
+        self.assertEqual(sleeps, [5])
+        self.assertEqual(transport.events.count("claim"), 1)
+        self.assertEqual(transport.events.count("complete"), 1)
+        self.assertGreaterEqual(transport.events.count("heartbeat"), 2)
+        self.assertEqual(default_runner_invocations(), 0)
+        stopped = io.StringIO()
+
+        def interrupt(_seconds: float) -> None:
+            raise KeyboardInterrupt
+
+        again = SessionTransport(self.store)
+        with mock.patch("socket.socket", side_effect=AssertionError("network")):
+            code = serve(again, live=False, sleep=interrupt, stdout=stopped, now=self.clock.moment)
+        self.assertEqual(code, 0)
+
+    def test_serve_leaves_unarmed_jobs_approved(self) -> None:
+        os.environ.pop("REMOTE_IT_WORK_LIVE", None)
+        service = self._approve(self._service())
+        download = self._approve(self._download())
+        onboard = self._approve(create_work_order(
+            self.store, device_id=DEVICE, action="setup.onboard.local_user",
+            target="alice", operator_id=OPERATOR,
+        ))
+        transport = SessionTransport(self.store)
+        with mock.patch("socket.socket", side_effect=AssertionError("network")), \
+                mock.patch("socket.getaddrinfo", side_effect=AssertionError("dns")), \
+                mock.patch("subprocess.run", side_effect=AssertionError("shell")):
+            waiting = session_once(transport, live=False, now=self.clock.moment)
+            self.assertEqual(waiting["state"], "waiting")
+            self.assertEqual(waiting["error"], "live execution is disabled")
+            held = session_once(transport, live=True, runner=None, now=self.clock.moment)
+            self.assertEqual(held["state"], "waiting")
+            self.assertIn(held["error"], {
+                "this action is plan only",
+                "live execution is disabled",
+                "local user password is not acceptable",
+            })
+        self.assertNotIn("claim", transport.events)
+        for order in (service, download, onboard):
+            self.assertEqual(self.store.orders[order["id"]]["state"], "approved")
+        self.assertEqual(default_runner_invocations(), 0)
+
+    @LIVE_SWITCH_ON
+    def test_serve_onboard_waits_for_the_password_and_hides_it(self) -> None:
+        service = self._approve(self._service())
+        onboard = self._approve(create_work_order(
+            self.store, device_id=DEVICE, action="setup.onboard.local_user",
+            target="alice", operator_id=OPERATOR,
+        ))
+        transport = SessionTransport(self.store)
+        runner = RecordingRunner()
+        with mock.patch("socket.socket", side_effect=AssertionError("network")), \
+                mock.patch("socket.getaddrinfo", side_effect=AssertionError("dns")), \
+                mock.patch("subprocess.run", side_effect=AssertionError("shell")):
+            first = session_once(transport, live=True, runner=runner, now=self.clock.moment)
+            self.assertEqual(first["order_id"], service["id"])
+            self.assertEqual(self.store.orders[onboard["id"]]["state"], "approved")
+            waiting = session_once(transport, live=True, runner=runner, now=self.clock.moment)
+            self.assertEqual(waiting["state"], "waiting")
+            self.assertEqual(waiting["order_id"], onboard["id"])
+            self.assertEqual(waiting["error"], "local user password is not acceptable")
+            self.assertEqual(self.store.orders[onboard["id"]]["state"], "approved")
+            finished = session_once(
+                transport, live=True, runner=runner,
+                handler_input={"password": SENTINEL}, now=self.clock.moment,
+            )
+        self.assertEqual(finished["order_id"], onboard["id"])
+        self.assertEqual(finished["state"], "succeeded")
+        self.assertEqual(runner.calls[-1]["password"], SENTINEL)
+        self.assertNotIn(SENTINEL, json.dumps(finished))
+        self.assertNotIn(SENTINEL, json.dumps(snapshot(self.store)))
+        self.assertEqual(default_runner_invocations(), 0)
+
+    def test_console_transport_uses_the_device_bearer_and_stays_injectable(self) -> None:
+        os.environ.pop("REMOTE_IT_WORK_LIVE", None)
+        secret = "unit-test-device-secret-not-live-0123456789abcdef"
+        calls: list[tuple[str, dict, dict]] = []
+
+        def post(origin: str, path: str, payload: dict, headers: dict | None = None, timeout: float = 10) -> dict:
+            del origin, timeout
+            calls.append((path, payload, dict(headers or {})))
+            if path.endswith("/heartbeat"):
+                return {"device_id": DEVICE, "utc": payload["utc"], "worker_version": payload["worker_version"]}
+            if path.endswith("/poll"):
+                return {"jobs": [
+                    {"id": "other", "device_id": OTHER, "state": "approved"},
+                    {"id": "own", "device_id": DEVICE, "state": "approved", "action": "repair.service.restart", "target": "Spooler"},
+                ]}
+            raise AssertionError(path)
+
+        transport = ConsoleTransport("http://127.0.0.1:8080", secret, post=post)
+        with mock.patch("socket.socket", side_effect=AssertionError("network")), \
+                mock.patch("socket.getaddrinfo", side_effect=AssertionError("dns")):
+            record = transport.heartbeat(UTC, WORKER_VERSION)
+            jobs = transport.poll(DEVICE)
+        self.assertEqual(record["device_id"], DEVICE)
+        self.assertEqual([job["id"] for job in jobs], ["own"])
+        self.assertEqual(calls[0][0], "/api/remote-work/heartbeat")
+        self.assertEqual(calls[0][2]["Authorization"], "Bearer " + secret)
+        self.assertEqual(calls[0][1], {"utc": UTC, "worker_version": WORKER_VERSION})
+        self.assertNotIn(secret, json.dumps(record))
+        self.assertNotIn(secret, json.dumps(jobs))
+        worker = Path(remote_worker.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("urlopen", worker)
+        self.assertNotIn("getaddrinfo", worker)
+        self.assertNotIn("192.168.", worker)
+
+    def test_serve_cli_refuses_a_missing_token_without_a_socket(self) -> None:
+        os.environ.pop("REMOTE_IT_WORK_LIVE", None)
+        stdout = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = str(Path(tmp) / "device-secret")
+            with mock.patch("socket.socket", side_effect=AssertionError("network")), \
+                    mock.patch("socket.getaddrinfo", side_effect=AssertionError("dns")), \
+                    mock.patch("subprocess.run", side_effect=AssertionError("shell")):
+                code = main(
+                    ["serve", "--console", "http://127.0.0.1:8080", "--token-file", missing],
+                    stdout=stdout,
+                )
+        self.assertEqual(code, 1)
+        body = json.loads(stdout.getvalue())
+        self.assertEqual(body["state"], "refused")
+        self.assertNotIn("Bearer", body["error"])
+        usage = io.StringIO()
+        code = main(["serve"], stdout=usage)
+        self.assertEqual(code, 2)
+        self.assertIn("token-file", json.loads(usage.getvalue())["error"])
+        self.assertEqual(default_runner_invocations(), 0)
 
     def test_service_fact_parser_reads_sc_text(self) -> None:
         facts = service_facts_from_text(
