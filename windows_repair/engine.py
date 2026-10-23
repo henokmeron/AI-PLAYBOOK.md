@@ -293,6 +293,32 @@ def _startup_reading(procedure_id: str, evidence: dict[str, Any]) -> dict[str, A
     )
 
 
+def _memory_figure(value: Any) -> str:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return "unknown"
+    return str(value)
+
+
+def _hardware(evidence: dict[str, Any]) -> dict[str, Any]:
+    return _unfixed(
+        "Hardware identity only. No driver was installed.",
+        facts=[
+            f"Manufacturer {_plain(evidence.get('manufacturer') or 'unknown', 48)}.",
+            f"Model {_plain(evidence.get('model') or 'unknown', 48)}.",
+            f"BIOS {_plain(evidence.get('bios_version') or evidence.get('bios') or 'unknown', 48)}.",
+            f"CPU {_plain(evidence.get('cpu') or 'unknown', 64)}.",
+            (
+                "Memory available="
+                f"{_memory_figure(evidence.get('memory_available_bytes'))} "
+                f"total={_memory_figure(evidence.get('memory_total_bytes'))}."
+            ),
+            f"Status {_plain(evidence.get('status') or 'unavailable', 40)}.",
+        ],
+        hypotheses=["Identity is not a health verdict and does not authorise a repair."],
+        procedure_id="hw.identity.inspect",
+    )
+
+
 def _note(procedure_id: str, evidence: dict[str, Any]) -> dict[str, Any]:
     keys = ", ".join(sorted(str(key) for key in evidence)) or "none"
     return _unfixed(
@@ -321,6 +347,7 @@ _RUNNERS = {
     "interpret_tls": _tls,
     "interpret_browser": _browser,
     "interpret_permissions": _permissions,
+    "interpret_hardware": _hardware,
 }
 
 
@@ -396,6 +423,16 @@ def _adapt_live(procedure_id: str, live: dict[str, Any]) -> dict[str, Any]:
         return {
             "application": live.get("application") or "none",
             "fault": live.get("fault") or "none",
+        }
+    if procedure_id == "hw.identity.inspect":
+        return {
+            "manufacturer": live.get("manufacturer") or "",
+            "model": live.get("model") or "",
+            "bios_version": live.get("bios_version") or live.get("bios") or "",
+            "cpu": live.get("cpu") or "",
+            "memory_available_bytes": live.get("memory_available_bytes"),
+            "memory_total_bytes": live.get("memory_total_bytes"),
+            "status": live.get("status") or "unavailable",
         }
     return {key: value for key, value in live.items() if key not in {"gateway", "addresses"}}
 

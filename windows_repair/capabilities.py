@@ -31,6 +31,7 @@ _LIVE_RAN_ON_THIS_PC = frozenset({
     "app.browser.inspect",
     "app.permissions.inspect",
     "app.crash.evidence",
+    "hw.identity.inspect",
 })
 _DENIED_RUNNERS = frozenset({"propose_only", "deny_driver_install", "deny_destructive"})
 
