@@ -16,6 +16,8 @@ Gates: every PR needs Endpoint's self-check with its own test run, one peer revi
 
 #14 and #8 are parked. Board unchanged at 3/9 live and 3/8 mandatory. Production NO-GO.
 
+Standing safety lines: Qwen pid 6739 stays up and is not restarted; gateway pid 6497 not signalled; no weight copies, no pod. Do not mark second_endpoint_worker_ok and do not add deployed_sha_read. Office PC bead5785f3674aaeb92c189f8c1b5b8c is not re-enrolled from this PC; the owner runs office-pc-clone.md on that laptop. Mail stays User.Read and Mail.Read only, sends nothing, does not search for 'the' or search live until the Founder gives a distinctive phrase; Power Automate stays NOT TESTED. No random computer-repair tools, driver packs or third-party agents; downloads only from the allowlist with hash and signature checks; a library only if pinned, tested and safer than current code.
+
 ## ASSIGNMENTS
 
 One builder only: Agent 4 (Endpoint). Others stand down from building.
