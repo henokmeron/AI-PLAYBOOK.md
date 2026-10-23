@@ -8,18 +8,21 @@ States: draft -> pending_approval -> approved -> claimed -> succeeded | failed.
 ``refused`` is a separate terminal state. An approval is single-use, lasts 15
 minutes, and is bound to the device id, action id, and target.
 
-HTTP is intentionally unwired. ``require_operator`` can guard create and
-approve, and ``_device_bearer`` only checks that a Bearer header is present.
-Nothing already public maps that secret to a device id without storing a
-diagnostic (``DeviceRegistry.submit``) or using the other repair enrolment.
-``integrations/endpoint.py`` is not modified here. The console should call
-``create_work_order``, ``approve_work_order``, ``poll_jobs``, and
-``complete_job``. Enrolled liveness uses ``post_heartbeat`` and does not need
-a second approval. Do not invent a token for these calls.
+The console calls ``create_work_order``, ``approve_work_order``,
+``poll_jobs``, ``claim_job``, ``complete_job``, and ``post_heartbeat``.
+Create and approve require an operator session. Poll, claim, complete, and
+heartbeat require the device secret check in ``integrations/endpoint.py``:
+``DeviceRegistry.authenticated_device_id`` compares the stored hash and does
+not keep the secret or write a diagnostic. Enrolled liveness uses
+``post_heartbeat`` and does not need a second approval. Do not invent a token
+for these calls.
 
-Live OS changes run only when the order is approved, the caller passes
-``live=True``, and a runner is injected or ``REMOTE_IT_WORK_LIVE=1``. Download
-and install stay plans. Passwords are a handler input and are not stored.
+Live OS changes run only when the order is claimed, the caller passes
+``live=True``, and a runner is injected or, for the actions that have a
+default runner, ``REMOTE_IT_WORK_LIVE=1``. Download, install, and heartbeat
+never use that default runner. They finish only when an injected runner is
+passed, and this module does not open a socket or start pnputil or Windows
+Update. Passwords are a handler input and are not stored.
 """
 from __future__ import annotations
 
@@ -38,7 +41,10 @@ from urllib.parse import urlsplit
 APPROVAL_TTL_SECONDS = 15 * 60
 LIVE_ENV = "REMOTE_IT_WORK_LIVE"
 HEARTBEAT = "monitor.heartbeat"
+# Download and install never use the default live runner. An injected runner
+# may finish them after the order is claimed. Heartbeat is the same.
 PLAN_ONLY = frozenset({"change.download", "change.install"})
+DELEGATED = frozenset({HEARTBEAT, "change.download", "change.install"})
 
 ACTIONS = frozenset({
     HEARTBEAT,
@@ -67,7 +73,9 @@ CONSOLE_FUNCTIONS = (
     "create_work_order",
     "approve_work_order",
     "poll_jobs",
+    "claim_job",
     "complete_job",
+    "post_heartbeat",
 )
 
 _DEVICE_ID = re.compile(r"[0-9a-f]{32}\Z")
@@ -356,9 +364,11 @@ def execute(
 ) -> dict[str, Any]:
     """Return a plan unless the order is approved and ``live`` is true.
 
-    Download and install never call a runner. The default live runner is used
-    only when ``runner`` is omitted, ``live`` is true, and ``REMOTE_IT_WORK_LIVE``
-    is ``1``.
+    Download, install, and heartbeat call a runner only when the order is
+    claimed, ``live`` is true, and the caller injected ``runner``. They never
+    use the default live runner, open a socket, or start pnputil or Windows
+    Update. Other actions use the default runner only when ``runner`` is
+    omitted, ``live`` is true, and ``REMOTE_IT_WORK_LIVE`` is ``1``.
     """
     if not isinstance(order, dict):
         raise WorkRefused("work order is not valid")
@@ -384,11 +394,17 @@ def execute(
         if not isinstance(offered, str) or offered.lower() != approved_pin:
             raise WorkRefused("staged file sha256 does not match the approved pin")
     plan = _plan_for(order, supplied)
-    if action in PLAN_ONLY or action == HEARTBEAT:
-        plan["executed"] = False
-        return plan
     moment = time.time() if now is None else now
-    if not live or not _execution_authorized(order, moment):
+    authorized = bool(live) and _execution_authorized(order, moment)
+    if action in DELEGATED:
+        claimed = order.get("state") == "claimed"
+        if not authorized or not claimed or runner is None:
+            plan["executed"] = False
+            return plan
+        runner(_runner_request(order, supplied, plan))
+        plan["executed"] = True
+        return plan
+    if not authorized:
         plan["executed"] = False
         return plan
     active = runner
@@ -396,8 +412,7 @@ def execute(
         if os.environ.get(LIVE_ENV) != "1":
             raise WorkRefused("live execution is disabled")
         active = default_live_runner
-    request = _runner_request(order, supplied, plan)
-    active(request)
+    active(_runner_request(order, supplied, plan))
     plan["executed"] = True
     return plan
 
@@ -759,15 +774,34 @@ def _plan_for(order: dict[str, Any], handler_input: dict[str, Any]) -> dict[str,
 
 
 def _runner_request(order: dict[str, Any], handler_input: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
+    if plan["op"] == "heartbeat":
+        return {
+            "op": "heartbeat",
+            "device_id": plan["device_id"],
+            "utc": plan["utc"],
+            "worker_version": plan["worker_version"],
+        }
+    if plan["op"] == "download":
+        return {
+            "op": "download",
+            "url": order["target"],
+            "host": plan.get("host"),
+            "destination": plan.get("destination"),
+            "sha256": plan.get("sha256"),
+            "allowlist": list(order["params"].get("allowlist") or []),
+            "network": False,
+        }
     request = {
         "op": plan["op"],
         "argv": list(plan.get("argv") or []),
         "target": order["target"],
     }
-    if plan["op"] in {"clear_queue", "delete_spool_file"}:
+    if plan["op"] == "clear_queue":
         request["queue"] = order["target"]
-        if plan["op"] == "delete_spool_file":
-            request["path"] = plan["path"]
+        request["spool_dir"] = plan.get("spool_dir")
+    if plan["op"] == "delete_spool_file":
+        request["queue"] = order["target"]
+        request["path"] = plan["path"]
     if plan["op"] == "create_local_user":
         password = handler_input.get("password")
         if not isinstance(password, str) or password == "":
@@ -777,6 +811,11 @@ def _runner_request(order: dict[str, Any], handler_input: dict[str, Any], plan: 
     if plan["op"] in {"disable_local_user", "remove_local_user"}:
         request["username"] = order["target"]
         request["admin_count"] = order["params"].get("admin_count")
+    if plan["op"] == "install":
+        request["source"] = plan.get("source")
+        request["sha256"] = plan.get("sha256")
+        request["path"] = order["target"]
+        request["invoke"] = False
     if plan["op"] == "delete_file":
         request["path"] = order["target"]
     return request
@@ -1054,6 +1093,11 @@ def _key_is_secret(key: object) -> bool:
         return True
     folded = key.casefold().replace("-", "_")
     return any(part in folded for part in _SECRET_PARTS)
+
+
+def contains_secret(value: object) -> bool:
+    """True when a key looks like a password, secret, token, or serial."""
+    return _contains_secret_key(value)
 
 
 def _contains_secret_key(value: object) -> bool:

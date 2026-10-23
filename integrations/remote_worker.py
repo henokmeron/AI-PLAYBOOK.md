@@ -5,6 +5,9 @@ Usage: python -m integrations.remote_worker poll-once [--jobs FILE]
 The process prints one JSON result. It does not pass live=True unless the
 operator adds ``--live``. Even then, the default runner stays disabled until
 REMOTE_IT_WORK_LIVE=1. Tests inject a runner and must not call the default.
+
+``exchange`` polls, claims, and completes through an injected transport. Tests
+pass a fake transport. This module does not open a socket.
 """
 from __future__ import annotations
 
@@ -99,6 +102,121 @@ def poll_once(
         "state": "succeeded" if executed else "planned",
         "result": safe,
         "error": None,
+    }
+
+
+def exchange(
+    transport: Any,
+    *,
+    device_id: str,
+    runner: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    live: bool = False,
+    handler_input: dict[str, Any] | None = None,
+    now: float | None = None,
+) -> dict[str, Any]:
+    """Poll, claim, and complete one job. The transport is injected.
+
+    No socket is opened here. A missing or mismatched approval returns
+    ``state`` ``refused`` and does not mark the order succeeded.
+    """
+    if not isinstance(device_id, str):
+        raise WorkRefused("device id is not valid")
+    poll = getattr(transport, "poll", None)
+    claim = getattr(transport, "claim", None)
+    complete = getattr(transport, "complete", None)
+    if not callable(poll) or not callable(claim) or not callable(complete):
+        raise WorkRefused("transport is not acceptable")
+    jobs = poll(device_id)
+    if not isinstance(jobs, list):
+        raise WorkRefused("jobs must be a list")
+    if _surveillance({"jobs": jobs}) or _surveillance(handler_input):
+        raise WorkRefused("heartbeat accepts only device id, UTC time, and worker version")
+    moment = time.time() if now is None else now
+    chosen = _first_job(device_id, jobs, moment)
+    if chosen is None:
+        return {
+            "device_id": device_id,
+            "action": None,
+            "target": None,
+            "state": "idle",
+            "result": None,
+            "error": None,
+        }
+    order_id = chosen.get("id")
+    if not isinstance(order_id, str) or not order_id:
+        raise WorkRefused("work order was not found")
+    try:
+        claimed = claim(device_id, order_id)
+    except WorkRefused as exc:
+        return _exchange_refused(device_id, chosen, exc.message)
+    if not isinstance(claimed, dict):
+        raise WorkRefused("work order is not valid")
+    password = _pop_password(claimed)
+    handler = dict(handler_input) if isinstance(handler_input, dict) else {}
+    nested = claimed.get("handler_input") if isinstance(claimed.get("handler_input"), dict) else {}
+    for key, value in nested.items():
+        handler.setdefault(key, value)
+    if password is not None:
+        handler["password"] = password
+    try:
+        result = execute(claimed, live=live, runner=runner, handler_input=handler, now=moment)
+    except WorkRefused as exc:
+        message = exc.message
+        if isinstance(password, str) and password and password in message:
+            message = "result was refused"
+        return _exchange_refused(device_id, chosen, message)
+    redact = (password,) if isinstance(password, str) else ()
+    safe = _scrub(result, redact)
+    executed = bool(isinstance(safe, dict) and safe.get("executed"))
+    if not executed:
+        return {
+            "device_id": device_id,
+            "order_id": order_id,
+            "action": claimed.get("action"),
+            "target": claimed.get("target"),
+            "state": "planned",
+            "result": safe,
+            "error": None,
+        }
+    stored = _liveness_only(safe) if claimed.get("action") == HEARTBEAT else safe
+    completed = complete(
+        device_id,
+        order_id,
+        outcome="succeeded",
+        error=None,
+        result=stored if isinstance(stored, dict) else None,
+        redact=redact,
+    )
+    if not isinstance(completed, dict):
+        raise WorkRefused("work order is not valid")
+    return {
+        "device_id": device_id,
+        "order_id": order_id,
+        "action": claimed.get("action"),
+        "target": claimed.get("target"),
+        "state": completed.get("state"),
+        "result": completed.get("result"),
+        "error": completed.get("error"),
+    }
+
+
+def _liveness_only(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "device_id": result.get("device_id"),
+        "utc": result.get("utc"),
+        "worker_version": result.get("worker_version"),
+    }
+
+
+def _exchange_refused(device_id: str, chosen: dict[str, Any], message: str) -> dict[str, Any]:
+    return {
+        "device_id": device_id,
+        "order_id": chosen.get("id"),
+        "action": chosen.get("action"),
+        "target": chosen.get("target"),
+        "state": "refused",
+        "result": None,
+        "error": message,
     }
 
 

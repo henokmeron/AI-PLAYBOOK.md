@@ -42,6 +42,18 @@ from ops.acceptance_board import board as acceptance_board
 from ops_centre import OpsCentre
 from integrations.endpoint import DeviceRegistry
 from integrations.errors import AuthenticationError, InvalidRequest, RateLimited
+from integrations.remote_work import (
+    WorkRefused,
+    WorkStore,
+    approve_work_order,
+    claim_job,
+    complete_job,
+    contains_secret,
+    create_work_order,
+    poll_jobs,
+    post_heartbeat,
+    register_enrolled_device,
+)
 from integrations.microsoft365 import platform_catalog
 from integrations.microsoft_oauth import MicrosoftOAuth
 
@@ -568,6 +580,7 @@ class WebServer(ThreadingHTTPServer):
         self.auth = AuthService(record_event=self.ops.record_event)
         from windows_repair.printer_flow import PrinterWorkflow
         self.printer_flow = PrinterWorkflow()
+        self.remote_work_store = WorkStore()
         ticket_root = os.environ.get("HELPDESK_TICKET_DIR", "").strip()
         if ticket_root:
             self.tickets_dir = Path(ticket_root)
@@ -982,6 +995,18 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_ticket_approve()
         elif path == "/api/helpdesk/tickets/execute":
             self.handle_ticket_execute()
+        elif path == "/api/remote-work/orders":
+            self.handle_remote_work_create()
+        elif path == "/api/remote-work/approve":
+            self.handle_remote_work_approve()
+        elif path == "/api/remote-work/poll":
+            self.handle_remote_work_poll()
+        elif path == "/api/remote-work/claim":
+            self.handle_remote_work_claim()
+        elif path == "/api/remote-work/complete":
+            self.handle_remote_work_complete()
+        elif path == "/api/remote-work/heartbeat":
+            self.handle_remote_work_heartbeat()
         else:
             self.send_error_json(404, "not found")
 
@@ -1777,6 +1802,218 @@ class Handler(BaseHTTPRequestHandler):
             self._repair_denied(exc)
             return
         self.send_json(200, {"revoked": True, "repair_authority": False, "operator": session.username})
+
+    def _remote_work(self) -> WorkStore:
+        store = getattr(self.server, "remote_work_store", None)
+        if store is None:
+            store = WorkStore()
+            self.server.remote_work_store = store  # type: ignore[attr-defined]
+        return store
+
+    def _remote_refused(self, status: int, message: str) -> None:
+        self.send_json(status, {"error": message, "state": "refused"})
+
+    def _remote_secret_refused(self, payload: dict[str, Any]) -> bool:
+        if contains_secret(payload):
+            self._remote_refused(400, "a secret was refused and was not stored")
+            return True
+        return False
+
+    def _remember_enrolled_device(self, device_id: str) -> None:
+        rows = self.server.devices.public_devices(CONSOLE_TENANT)  # type: ignore[attr-defined]
+        enrolled = any(
+            row.get("device_id") == device_id and row.get("status") == "enrolled"
+            for row in rows
+        )
+        if not enrolled:
+            raise WorkRefused("device is not enrolled")
+        register_enrolled_device(self._remote_work(), device_id)
+
+    def _remote_device_id(self) -> str | None:
+        """Device id from the endpoint hash check. The secret is not stored."""
+        secret = self._device_bearer()
+        if secret is None:
+            return None
+        try:
+            device_id = self.server.devices.authenticated_device_id(secret)  # type: ignore[attr-defined]
+        except AuthenticationError as exc:
+            self._remote_refused(401, exc.message)
+            return None
+        try:
+            register_enrolled_device(self._remote_work(), device_id)
+        except WorkRefused as exc:
+            self._remote_refused(403, exc.message)
+            return None
+        return device_id
+
+    def handle_remote_work_create(self) -> None:
+        session = self.require_operator(Permission.CONNECTORS_MANAGE, mutating=True)
+        if session is None:
+            return
+        if not self._loopback_client():
+            self.send_error_json(403, "device routes are only available on the loopback console")
+            return
+        payload = self.read_json_object(max_bytes=8192)
+        if payload is None:
+            return
+        if self._remote_secret_refused(payload):
+            return
+        params = payload.get("params", {})
+        if params is None:
+            params = {}
+        try:
+            device_id = payload.get("device_id")
+            if not isinstance(device_id, str):
+                raise WorkRefused("device is not enrolled")
+            if not isinstance(params, dict):
+                raise WorkRefused("parameters are not acceptable")
+            self._remember_enrolled_device(device_id)
+            order = create_work_order(
+                self._remote_work(),
+                device_id=device_id,
+                action=payload.get("action") if isinstance(payload.get("action"), str) else "",
+                target=payload.get("target") if isinstance(payload.get("target"), str) else "",
+                operator_id=session.username,
+                params=params,
+            )
+        except WorkRefused as exc:
+            self._remote_refused(403, exc.message)
+            return
+        self.send_json(200, order)
+
+    def handle_remote_work_approve(self) -> None:
+        session = self.require_operator(Permission.CONNECTORS_MANAGE, mutating=True)
+        if session is None:
+            return
+        if not self._loopback_client():
+            self.send_error_json(403, "device routes are only available on the loopback console")
+            return
+        payload = self.read_json_object(max_bytes=4096)
+        if payload is None:
+            return
+        if self._remote_secret_refused(payload):
+            return
+        order_id = payload.get("order_id")
+        if not isinstance(order_id, str) or not order_id:
+            self._remote_refused(400, "work order was not found")
+            return
+        try:
+            order = approve_work_order(self._remote_work(), order_id, session.username)
+        except WorkRefused as exc:
+            self._remote_refused(403, exc.message)
+            return
+        self.send_json(200, order)
+
+    def handle_remote_work_poll(self) -> None:
+        if not self._loopback_client():
+            self.send_error_json(403, "device routes are only available on the loopback console")
+            return
+        device_id = self._remote_device_id()
+        if device_id is None:
+            return
+        payload = self.read_json_object(max_bytes=4096)
+        if payload is None:
+            return
+        if self._remote_secret_refused(payload):
+            return
+        if "device_id" in payload and payload.get("device_id") != device_id:
+            self._remote_refused(403, "job belongs to another device")
+            return
+        try:
+            jobs = poll_jobs(self._remote_work(), device_id)
+        except WorkRefused as exc:
+            self._remote_refused(403, exc.message)
+            return
+        self.send_json(200, {"jobs": jobs, "remote_control": False})
+
+    def handle_remote_work_claim(self) -> None:
+        if not self._loopback_client():
+            self.send_error_json(403, "device routes are only available on the loopback console")
+            return
+        device_id = self._remote_device_id()
+        if device_id is None:
+            return
+        payload = self.read_json_object(max_bytes=4096)
+        if payload is None:
+            return
+        if self._remote_secret_refused(payload):
+            return
+        if "device_id" in payload and payload.get("device_id") != device_id:
+            self._remote_refused(403, "job belongs to another device")
+            return
+        order_id = payload.get("order_id")
+        if not isinstance(order_id, str) or not order_id:
+            self._remote_refused(400, "work order was not found")
+            return
+        try:
+            order = claim_job(self._remote_work(), device_id, order_id)
+        except WorkRefused as exc:
+            self._remote_refused(403, exc.message)
+            return
+        self.send_json(200, order)
+
+    def handle_remote_work_complete(self) -> None:
+        if not self._loopback_client():
+            self.send_error_json(403, "device routes are only available on the loopback console")
+            return
+        device_id = self._remote_device_id()
+        if device_id is None:
+            return
+        payload = self.read_json_object(max_bytes=65536)
+        if payload is None:
+            return
+        if self._remote_secret_refused(payload):
+            return
+        if "device_id" in payload and payload.get("device_id") != device_id:
+            self._remote_refused(403, "job belongs to another device")
+            return
+        order_id = payload.get("order_id")
+        outcome = payload.get("outcome")
+        if not isinstance(order_id, str) or not isinstance(outcome, str):
+            self._remote_refused(400, "job is not claimed")
+            return
+        error = payload.get("error")
+        result = payload.get("result")
+        try:
+            order = complete_job(
+                self._remote_work(),
+                device_id,
+                order_id,
+                outcome=outcome,
+                error=error if isinstance(error, str) or error is None else None,
+                result=result if isinstance(result, dict) else None,
+            )
+        except WorkRefused as exc:
+            self._remote_refused(403, exc.message)
+            return
+        self.send_json(200, order)
+
+    def handle_remote_work_heartbeat(self) -> None:
+        if not self._loopback_client():
+            self.send_error_json(403, "device routes are only available on the loopback console")
+            return
+        device_id = self._remote_device_id()
+        if device_id is None:
+            return
+        payload = self.read_json_object(max_bytes=4096)
+        if payload is None:
+            return
+        if self._remote_secret_refused(payload):
+            return
+        extra = set(payload) - {"utc", "worker_version", "device_id"}
+        if extra or ("device_id" in payload and payload.get("device_id") != device_id):
+            self._remote_refused(403, "heartbeat accepts only device id, UTC time, and worker version")
+            return
+        try:
+            record = post_heartbeat(self._remote_work(), {
+                "device_id": device_id,
+                "utc": payload.get("utc"),
+                "worker_version": payload.get("worker_version"),
+            })
+        except WorkRefused as exc:
+            self._remote_refused(403, exc.message)
+            return
+        self.send_json(200, record)
 
     def _agent_model(self) -> OpenAICompatibleClient:
         model_id = self.config.model_id if MODEL_ID_RE.fullmatch(self.config.model_id or "") else None

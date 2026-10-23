@@ -570,17 +570,32 @@ class DeviceRegistry:
             self._save()
         return device_id
 
-    def submit(self, device_secret: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def authenticated_device_id(self, device_secret: str) -> str:
+        """Map a device secret to its id with the same hash comparison as ``submit``.
+
+        The plaintext secret is not stored, and this does not write a diagnostic.
+        """
+        with self._lock:
+            return self._enrolled_for_secret(device_secret).device_id
+
+    def _enrolled_for_secret(self, device_secret: str) -> _Device:
+        """Caller holds ``self._lock``. Compare hashes only."""
         if not isinstance(device_secret, str) or len(device_secret) < 32:
             raise AuthenticationError("device secret was rejected")
         digest = _digest(device_secret)
+        device = next(
+            (item for item in self._devices.values() if secrets.compare_digest(item.secret_hash, digest)),
+            None,
+        )
+        if device is None or device.status != "enrolled":
+            raise AuthenticationError("device secret was rejected")
+        return device
+
+    def submit(self, device_secret: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(device_secret, str) or len(device_secret) < 32:
+            raise AuthenticationError("device secret was rejected")
         with self._lock:
-            device = next(
-                (item for item in self._devices.values() if secrets.compare_digest(item.secret_hash, digest)),
-                None,
-            )
-            if device is None or device.status != "enrolled":
-                raise AuthenticationError("device secret was rejected")
+            device = self._enrolled_for_secret(device_secret)
             now = self._clock()
             if device.last_report_at and now - device.last_report_at < _MIN_REPORT_GAP:
                 raise RateLimited("a diagnostic was accepted recently", retry_after=_MIN_REPORT_GAP)
