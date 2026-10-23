@@ -1270,6 +1270,13 @@ class Handler(BaseHTTPRequestHandler):
     def _loopback_client(self) -> bool:
         return self.client_address[0] in {"127.0.0.1", "::1"}
 
+    def _loopback_or_gateway(self) -> bool:
+        """Check if request is from loopback or the TLS device gateway."""
+        if self._loopback_client():
+            return True
+        # Check if this request came through the device gateway
+        return getattr(self, "_is_gateway_request", False)
+
     def _refresh_endpoint(self) -> None:
         self.server.endpoint.apply(self.server.desk.catalog)  # type: ignore[attr-defined]
 
@@ -1486,7 +1493,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, created)
 
     def handle_device_enroll(self) -> None:
-        if not self._loopback_client():
+        if not self._loopback_or_gateway():
             self.send_error_json(403, "device routes are only available on the loopback console")
             return
         payload = self.read_json_object(max_bytes=4096)
@@ -1511,7 +1518,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, {"device_id": device_id, "remote_control": False})
 
     def handle_device_report(self) -> None:
-        if not self._loopback_client():
+        if not self._loopback_or_gateway():
             self.send_error_json(403, "device routes are only available on the loopback console")
             return
         header = self.headers.get("Authorization", "")
@@ -1905,7 +1912,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, order)
 
     def handle_remote_work_poll(self) -> None:
-        if not self._loopback_client():
+        if not self._loopback_or_gateway():
             self.send_error_json(403, "device routes are only available on the loopback console")
             return
         device_id = self._remote_device_id()
@@ -1927,7 +1934,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, {"jobs": jobs, "remote_control": False})
 
     def handle_remote_work_claim(self) -> None:
-        if not self._loopback_client():
+        if not self._loopback_or_gateway():
             self.send_error_json(403, "device routes are only available on the loopback console")
             return
         device_id = self._remote_device_id()
@@ -1953,7 +1960,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, order)
 
     def handle_remote_work_complete(self) -> None:
-        if not self._loopback_client():
+        if not self._loopback_or_gateway():
             self.send_error_json(403, "device routes are only available on the loopback console")
             return
         device_id = self._remote_device_id()
@@ -1989,7 +1996,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, order)
 
     def handle_remote_work_heartbeat(self) -> None:
-        if not self._loopback_client():
+        if not self._loopback_or_gateway():
             self.send_error_json(403, "device routes are only available on the loopback console")
             return
         device_id = self._remote_device_id()
@@ -3150,12 +3157,37 @@ def main(argv: list[str] | None = None) -> int:
     print(f"API key configured: {'yes' if len(config.resolve_api_key()) >= 32 else 'no'}", flush=True)
     print(f"Model id configured: {'yes' if config.model_id else 'no'}", flush=True)
     print("RunPod connectivity is not verified by starting this process.", flush=True)
+
+    # Optionally start the device gateway
+    gateway = None
+    gateway_thread = None
+    if os.environ.get("DEVICE_GATEWAY_ENABLED", "").strip() == "1":
+        try:
+            from device_gateway import create_gateway
+            gateway = create_gateway(httpd)
+            gateway_host, gateway_port = gateway.server_address[:2]
+            print(f"Device gateway listening on https://{gateway_host}:{gateway_port}", flush=True)
+            # Run gateway in a separate thread
+            import threading
+            gateway_thread = threading.Thread(target=gateway.serve_forever, daemon=True)
+            gateway_thread.start()
+        except ValueError as exc:
+            print(f"ERROR: device gateway configuration invalid: {exc}", flush=True)
+            httpd.server_close()
+            return 2
+        except OSError as exc:
+            print(f"ERROR: could not bind device gateway: {exc}", flush=True)
+            httpd.server_close()
+            return 2
+
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         httpd.server_close()
+        if gateway:
+            gateway.server_close()
     return 0
 
 
