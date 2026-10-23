@@ -144,6 +144,22 @@ class FakeGatewayHandler(BaseHTTPRequestHandler):
                 "choices": [{"message": {"role": "assistant", "content": "gateway works"}}],
             })
             return
+        if entry["path"] == "/v1/rag/documents/content":
+            payload = json.loads(entry["body"])
+            if payload.get("actor") != "admin":
+                self._json(403, {"error": "actor is not allowed to download this document"})
+                return
+            self._json(200, {
+                "document": {
+                    "collection": payload.get("collection"),
+                    "filename": payload.get("filename"),
+                    "owner": "admin",
+                    "version": 1,
+                    "status": "active",
+                    "content_base64": "T3duZXIgb25seQ==",
+                }
+            })
+            return
         if entry["path"] == "/v1/rag/documents":
             payload = json.loads(entry["body"])
             if payload.get("filename") == "already.pdf":
@@ -962,6 +978,91 @@ class ConsoleTests(unittest.TestCase):
         self.assertTrue(deleted["deleted"])
         self.assertTrue(deleted["removed_from_index"])
         self.assertEqual(gateway.hits[-1]["method"], "DELETE")
+
+    def test_document_download_uses_the_session_and_not_a_public_url(self) -> None:
+        gateway = FakeGateway()
+        base = self.web(gateway)
+        status, body = self.request(base, "GET", "/api/documents/content?collection=my-docs&filename=policy.md")
+        self.assertEqual(status, 404)
+        self.assertNotIn(b"T3duZXIgb25seQ==", body)
+        before = len(gateway.hits)
+        status, body = self.request(base, "POST", "/api/documents/content", {
+            "collection": "my-docs", "filename": "policy.md", "actor": "intruder",
+        })
+        self.assertEqual(status, 200)
+        payload = json.loads(body)
+        self.assertEqual(payload["document"]["content_base64"], "T3duZXIgb25seQ==")
+        self.assertNotIn("url", payload)
+        self.assertNotIn("url", payload["document"])
+        forwarded = json.loads(gateway.hits[-1]["body"])
+        self.assertEqual(forwarded["actor"], "admin")
+        self.assertNotIn("intruder", gateway.hits[-1]["body"])
+        self.assertGreater(len(gateway.hits), before)
+        status, body = self.request(base, "POST", "/api/documents", {
+            "collection": "my-docs", "filename": "policy.md", "content_base64": "UG9saWN5IHRleHQ=",
+            "overwrite": False, "owner": "intruder",
+        })
+        self.assertEqual(status, 201)
+        uploaded = json.loads(gateway.hits[-1]["body"])
+        self.assertEqual(uploaded["owner"], "admin")
+        self.assertNotEqual(uploaded["owner"], "intruder")
+
+    def test_helpdesk_ticket_separates_recommendation_from_diagnosis(self) -> None:
+        gateway = FakeGateway()
+        base = self.web(gateway)
+        status, page = self.request(base, "GET", "/")
+        self.assertEqual(status, 200)
+        self.assertIn(b"Helpdesk tickets", page)
+        self.assertIn(b"AI recommendation", page)
+        self.assertIn(b"verified diagnosis", page)
+        status, script = self.request(base, "GET", "/static/app.js")
+        self.assertIn(b"Verified diagnosis:", script)
+        self.assertIn(b"AI recommendation:", script)
+        status, body = self.request(base, "POST", "/api/helpdesk/tickets", {
+            "title": "Users cannot print",
+            "detail": "Queue stuck",
+            "device_id": "fixture-not-second",
+            "fixture_label": "not-the-second-endpoint",
+            "evidence_ref": "job:fixture-evidence-1",
+            "requested_severity": "low",
+            "counts_as_second_endpoint": True,
+        })
+        self.assertEqual(status, 201)
+        ticket = json.loads(body)["ticket"]
+        self.assertEqual(ticket["severity"], "high")
+        self.assertTrue(ticket["severity_downgrade_blocked"])
+        self.assertFalse(ticket["device"]["counts_as_second_endpoint"])
+        self.assertEqual(ticket["device"]["fixture_label"], "not-the-second-endpoint")
+        self.assertIsNone(ticket["verified_diagnosis"])
+        status, body = self.request(base, "POST", "/api/helpdesk/tickets/recommendation", {
+            "ticket_id": ticket["id"],
+            "recommendation": "Restart later.",
+            "verified_diagnosis": "This must be ignored",
+        })
+        self.assertEqual(status, 200)
+        recommended = json.loads(body)["ticket"]
+        self.assertEqual(recommended["ai_recommendation"], "Restart later.")
+        self.assertIsNone(recommended["verified_diagnosis"])
+        status, body = self.request(base, "POST", "/api/helpdesk/tickets/execute", {"ticket_id": ticket["id"]})
+        blocked = json.loads(body)
+        self.assertEqual(blocked["repair_status"], "approval_required")
+        self.assertFalse(blocked["executed"])
+        self.assertFalse(blocked["changed_device"])
+        status, body = self.request(base, "POST", "/api/helpdesk/tickets/repair", {"ticket_id": ticket["id"]})
+        self.assertEqual(json.loads(body)["ticket"]["status"], "awaiting_approval")
+        status, body = self.request(base, "POST", "/api/helpdesk/tickets/approve", {"ticket_id": ticket["id"]})
+        self.assertEqual(json.loads(body)["ticket"]["status"], "approved")
+        status, body = self.request(base, "POST", "/api/helpdesk/tickets/diagnosis", {
+            "ticket_id": ticket["id"], "diagnosis": "The spooler is stopped.",
+        })
+        verified = json.loads(body)["ticket"]
+        self.assertEqual(verified["verified_diagnosis"], "The spooler is stopped.")
+        self.assertNotEqual(verified["ai_recommendation"], verified["verified_diagnosis"])
+        status, body = self.request(base, "POST", "/api/helpdesk/tickets/execute", {"ticket_id": ticket["id"]})
+        held = json.loads(body)
+        self.assertFalse(held["executed"])
+        self.assertFalse(held["changed_device"])
+        self.assertEqual(held["repair_status"], "approved_not_run")
 
     def test_managed_document_upload_rejects_invalid_collection(self) -> None:
         gateway = FakeGateway()

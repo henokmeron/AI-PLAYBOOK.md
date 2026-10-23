@@ -202,6 +202,7 @@
     if (name === "agent") {
       loadConnectors();
       loadAgentHistory();
+      loadTickets();
     }
     if (name === "repair") loadRepair();
     if (name === "ops") loadOpsCentre();
@@ -835,6 +836,37 @@
       var item = el("li");
       item.appendChild(el("strong", null, documentInfo.filename));
       item.appendChild(el("span", null, documentInfo.extension + " · " + Number(documentInfo.size_bytes).toLocaleString() + " bytes"));
+      item.appendChild(el("span", null,
+        "owner " + (documentInfo.owner || "unspecified")
+        + " · version " + (documentInfo.version == null ? "unknown" : String(documentInfo.version))
+        + " · " + (documentInfo.status || "unknown")));
+      var download = el("button", "secondary", "Download");
+      download.type = "button";
+      download.addEventListener("click", function () {
+        request("/api/documents/content", {
+          method: "POST",
+          body: { collection: collection, filename: documentInfo.filename }
+        }).then(function (body) {
+          var saved = body && body.document ? body.document : null;
+          if (!saved || saved.url || body.url || !saved.content_base64) {
+            throw new Error("Download was refused because the server did not return the file to this signed-in operator.");
+          }
+          var binary = atob(saved.content_base64);
+          var bytes = new Uint8Array(binary.length);
+          for (var index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+          var blob = new Blob([bytes]);
+          var link = el("a");
+          var objectUrl = URL.createObjectURL(blob);
+          link.href = objectUrl;
+          link.download = saved.filename || documentInfo.filename;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(objectUrl);
+          uploadStatus.textContent = "Downloaded " + documentInfo.filename + " for this signed-in operator. No public link was created.";
+        }).catch(function (error) { showError(uploadError, errorMessage(error)); });
+      });
+      item.appendChild(download);
       var remove = el("button", "secondary", "Delete");
       remove.type = "button";
       remove.addEventListener("click", function () {
@@ -919,7 +951,12 @@
       }
       request("/api/documents", {
         method: "POST",
-        body: { collection: collection, filename: file.name, content_base64: dataUrl.slice(comma + 1), overwrite: false }
+        body: {
+          collection: collection,
+          filename: file.name,
+          content_base64: dataUrl.slice(comma + 1),
+          overwrite: document.getElementById("upload-replace").checked === true
+        }
       }).then(function (body) {
         var documentInfo = body && body.document ? body.document : null;
         if (!documentInfo || documentInfo.searchable !== true) {
@@ -1814,6 +1851,101 @@
       request("/api/auth/logout", { method: "POST", body: {} }).catch(function () {}).then(function () {
         showLoginGate(authState);
       });
+    });
+  }
+
+  function loadTickets() {
+    var list = document.getElementById("ticket-list");
+    var empty = document.getElementById("ticket-empty");
+    if (!list) return;
+    request("/api/helpdesk/tickets").then(function (body) {
+      list.textContent = "";
+      var tickets = body.tickets || [];
+      empty.hidden = tickets.length > 0;
+      tickets.forEach(function (ticket) {
+        var item = el("li");
+        var device = ticket.device || {};
+        item.appendChild(el("strong", null, ticket.title + " (" + ticket.id.slice(0, 8) + ")"));
+        item.appendChild(el("span", null, "severity " + ticket.severity + " · status " + ticket.status));
+        if (ticket.severity_downgrade_blocked) {
+          item.appendChild(el("span", null, "A lower severity was requested and was not applied."));
+        }
+        item.appendChild(el("span", null, "device " + (device.device_id || "none") + (device.counts_as_second_endpoint ? " SECOND ENDPOINT" : " · not the second endpoint")));
+        item.appendChild(el("span", null, "evidence " + (ticket.evidence_ref || "none")));
+        item.appendChild(el("span", null, "AI recommendation: " + (ticket.ai_recommendation || "none yet")));
+        item.appendChild(el("span", null, "Verified diagnosis: " + (ticket.verified_diagnosis || "not verified")));
+        var recommend = el("button", "secondary", "Record AI recommendation");
+        recommend.type = "button";
+        recommend.addEventListener("click", function () {
+          var text = window.prompt("AI recommendation");
+          if (!text) return;
+          request("/api/helpdesk/tickets/recommendation", {
+            method: "POST",
+            body: { ticket_id: ticket.id, recommendation: text }
+          }).then(loadTickets).catch(function (error) { showError(agentError, errorMessage(error)); });
+        });
+        var verify = el("button", "secondary", "Record verified diagnosis");
+        verify.type = "button";
+        verify.addEventListener("click", function () {
+          var text = window.prompt("Verified diagnosis");
+          if (!text) return;
+          request("/api/helpdesk/tickets/diagnosis", {
+            method: "POST",
+            body: { ticket_id: ticket.id, diagnosis: text }
+          }).then(loadTickets).catch(function (error) { showError(agentError, errorMessage(error)); });
+        });
+        var propose = el("button", "secondary", "Propose repair");
+        propose.type = "button";
+        propose.addEventListener("click", function () {
+          request("/api/helpdesk/tickets/repair", { method: "POST", body: { ticket_id: ticket.id } })
+            .then(loadTickets).catch(function (error) { showError(agentError, errorMessage(error)); });
+        });
+        var approve = el("button", "secondary", "Approve repair");
+        approve.type = "button";
+        approve.addEventListener("click", function () {
+          request("/api/helpdesk/tickets/approve", { method: "POST", body: { ticket_id: ticket.id } })
+            .then(loadTickets).catch(function (error) { showError(agentError, errorMessage(error)); });
+        });
+        var run = el("button", "secondary", "Run approved repair");
+        run.type = "button";
+        run.addEventListener("click", function () {
+          request("/api/helpdesk/tickets/execute", { method: "POST", body: { ticket_id: ticket.id } })
+            .then(function (result) {
+              if (result.repair_status === "approval_required") {
+                showError(agentError, "Approval is required before a repair can run.");
+              }
+              loadTickets();
+            }).catch(function (error) { showError(agentError, errorMessage(error)); });
+        });
+        item.appendChild(recommend);
+        item.appendChild(verify);
+        item.appendChild(propose);
+        item.appendChild(approve);
+        item.appendChild(run);
+        list.appendChild(item);
+      });
+    }).catch(function (error) {
+      showError(agentError, errorMessage(error));
+    });
+  }
+
+  var ticketForm = document.getElementById("ticket-form");
+  if (ticketForm) {
+    ticketForm.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var body = {
+        title: document.getElementById("ticket-title-input").value,
+        detail: document.getElementById("ticket-detail").value,
+        device_id: document.getElementById("ticket-device").value,
+        evidence_ref: document.getElementById("ticket-evidence").value
+      };
+      var severity = document.getElementById("ticket-severity").value;
+      if (severity) body.requested_severity = severity;
+      if (document.getElementById("ticket-fixture").checked) body.fixture_label = "not-the-second-endpoint";
+      request("/api/helpdesk/tickets", { method: "POST", body: body }).then(function () {
+        ticketForm.reset();
+        loadTickets();
+      }).catch(function (error) { showError(agentError, errorMessage(error)); });
     });
   }
 

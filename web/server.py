@@ -14,6 +14,7 @@ import re
 import socket
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from collections.abc import Mapping
@@ -336,6 +337,7 @@ def call_gateway(
     timeout: float,
     include_key: bool,
     max_request_bytes: int = MAX_BODY_BYTES,
+    max_response_bytes: int = MAX_RESPONSE_BYTES,
 ) -> GatewayResult:
     key = config.resolve_api_key() if include_key else ""
     if include_key and len(key) < 32:
@@ -358,16 +360,16 @@ def call_gateway(
         response = DIRECT_OPENER.open(request, timeout=timeout)
     except urllib.error.HTTPError as exc:
         status = exc.code
-        raw = exc.read(MAX_RESPONSE_BYTES + 1)
+        raw = exc.read(max_response_bytes + 1)
         reachable = True
     except (urllib.error.URLError, TimeoutError, OSError):
         return GatewayResult(False, 0, None)
     else:
         with response:
             status = int(response.getcode())
-            raw = response.read(MAX_RESPONSE_BYTES + 1)
+            raw = response.read(max_response_bytes + 1)
             reachable = True
-    if len(raw) > MAX_RESPONSE_BYTES:
+    if len(raw) > max_response_bytes:
         return GatewayResult(True, 502, {"error": "gateway response was too large"})
     return GatewayResult(reachable, status, parse_object(raw))
 
@@ -566,6 +568,13 @@ class WebServer(ThreadingHTTPServer):
         self.auth = AuthService(record_event=self.ops.record_event)
         from windows_repair.printer_flow import PrinterWorkflow
         self.printer_flow = PrinterWorkflow()
+        ticket_root = os.environ.get("HELPDESK_TICKET_DIR", "").strip()
+        if ticket_root:
+            self.tickets_dir = Path(ticket_root)
+        else:
+            self.tickets_dir = Path(tempfile.mkdtemp(prefix="helpdesk-tickets-"))
+        from windows_repair.tickets import TicketStore
+        self.tickets = TicketStore(self.tickets_dir)
         self.desk = AgentDesk(
             catalog, documents=documents, history_dir=history_dir, ops_centre=self.ops,
         )
@@ -851,6 +860,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/devices":
             self.handle_device_list()
             return
+        if path == "/api/helpdesk/tickets":
+            self.handle_ticket_list()
+            return
         if path == "/api/repair/device":
             self.handle_repair_device_summary()
             return
@@ -893,6 +905,8 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_rag()
         elif path == "/api/documents":
             self.handle_document_upload()
+        elif path == "/api/documents/content":
+            self.handle_document_content()
         elif path == "/api/agent":
             self.handle_agent()
         elif path == "/api/agent/decision":
@@ -953,6 +967,18 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_repair_device_check_in()
         elif path == "/api/repair/device/revoke":
             self.handle_repair_device_revoke()
+        elif path == "/api/helpdesk/tickets":
+            self.handle_ticket_create()
+        elif path == "/api/helpdesk/tickets/recommendation":
+            self.handle_ticket_recommendation()
+        elif path == "/api/helpdesk/tickets/diagnosis":
+            self.handle_ticket_diagnosis()
+        elif path == "/api/helpdesk/tickets/repair":
+            self.handle_ticket_repair()
+        elif path == "/api/helpdesk/tickets/approve":
+            self.handle_ticket_approve()
+        elif path == "/api/helpdesk/tickets/execute":
+            self.handle_ticket_execute()
         else:
             self.send_error_json(404, "not found")
 
@@ -1231,6 +1257,177 @@ class Handler(BaseHTTPRequestHandler):
             "devices": self.server.devices.public_devices(CONSOLE_TENANT),  # type: ignore[attr-defined]
             "remote_control": False,
         })
+
+    def _ticket_device(self, payload: dict[str, Any]) -> dict[str, Any]:
+        from windows_repair.tickets import FIXTURE_LABEL, TicketError
+
+        device_id = payload.get("device_id")
+        if not isinstance(device_id, str) or not device_id:
+            raise TicketError("device id is required")
+        label = payload.get("fixture_label") or ""
+        if label:
+            if label != FIXTURE_LABEL:
+                raise TicketError("the only local fixture label is not-the-second-endpoint")
+            return {
+                "device_id": device_id,
+                "fixture_label": FIXTURE_LABEL,
+                "counts_as_second_endpoint": False,
+            }
+        devices = self.server.devices.public_devices(CONSOLE_TENANT)  # type: ignore[attr-defined]
+        match = next((item for item in devices if item.get("device_id") == device_id), None)
+        if match is None:
+            raise TicketError("device was not found")
+        return {
+            "device_id": match["device_id"],
+            "fixture_label": "",
+            "counts_as_second_endpoint": False,
+        }
+
+    def _ticket_error(self, exc: Exception) -> None:
+        message = getattr(exc, "message", None) or str(exc)
+        status = 404 if message == "ticket not found" else 400
+        self.send_error_json(status, message)
+
+    def handle_ticket_list(self) -> None:
+        if self.require_operator(Permission.AGENT_VIEW, mutating=False) is None:
+            return
+        if self.require_key() is None:
+            return
+        self.send_json(200, {"tickets": self.server.tickets.list_tickets()})  # type: ignore[attr-defined]
+
+    def handle_ticket_create(self) -> None:
+        session = self.require_operator(Permission.AGENT_START, mutating=True)
+        if session is None:
+            return
+        if self.require_key() is None:
+            return
+        from windows_repair.tickets import TicketError
+
+        payload = self.read_json_object(max_bytes=8192)
+        if payload is None:
+            return
+        try:
+            ticket = self.server.tickets.create(  # type: ignore[attr-defined]
+                title=payload.get("title"),
+                detail=payload.get("detail"),
+                actor=session.username,
+                device=self._ticket_device(payload),
+                evidence_ref=payload.get("evidence_ref"),
+                requested_severity=payload.get("requested_severity"),
+            )
+        except TicketError as exc:
+            self._ticket_error(exc)
+            return
+        self.send_json(201, {"ticket": ticket})
+
+    def handle_ticket_recommendation(self) -> None:
+        session = self.require_operator(Permission.AGENT_START, mutating=True)
+        if session is None:
+            return
+        if self.require_key() is None:
+            return
+        from windows_repair.tickets import TicketError
+
+        payload = self.read_json_object(max_bytes=8192)
+        if payload is None:
+            return
+        try:
+            ticket = self.server.tickets.recommend(  # type: ignore[attr-defined]
+                str(payload.get("ticket_id") or ""),
+                "model",
+                payload.get("recommendation"),
+                payload.get("requested_severity"),
+            )
+        except TicketError as exc:
+            self._ticket_error(exc)
+            return
+        self.send_json(200, {"ticket": ticket})
+
+    def handle_ticket_diagnosis(self) -> None:
+        session = self.require_operator(Permission.AGENT_APPROVE, mutating=True)
+        if session is None:
+            return
+        if self.require_key() is None:
+            return
+        from windows_repair.tickets import TicketError
+
+        payload = self.read_json_object(max_bytes=8192)
+        if payload is None:
+            return
+        try:
+            ticket = self.server.tickets.verify_diagnosis(  # type: ignore[attr-defined]
+                str(payload.get("ticket_id") or ""),
+                session.username,
+                payload.get("diagnosis"),
+            )
+        except TicketError as exc:
+            self._ticket_error(exc)
+            return
+        self.send_json(200, {"ticket": ticket})
+
+    def handle_ticket_repair(self) -> None:
+        session = self.require_operator(Permission.AGENT_START, mutating=True)
+        if session is None:
+            return
+        if self.require_key() is None:
+            return
+        from windows_repair.tickets import TicketError
+
+        payload = self.read_json_object(max_bytes=2048)
+        if payload is None:
+            return
+        try:
+            ticket = self.server.tickets.request_repair(  # type: ignore[attr-defined]
+                str(payload.get("ticket_id") or ""),
+                session.username,
+            )
+        except TicketError as exc:
+            self._ticket_error(exc)
+            return
+        self.send_json(200, {"ticket": ticket})
+
+    def handle_ticket_approve(self) -> None:
+        session = self.require_operator(Permission.AGENT_APPROVE, mutating=True)
+        if session is None:
+            return
+        if self.require_key() is None:
+            return
+        from windows_repair.tickets import TicketError
+
+        payload = self.read_json_object(max_bytes=2048)
+        if payload is None:
+            return
+        try:
+            ticket = self.server.tickets.approve(  # type: ignore[attr-defined]
+                str(payload.get("ticket_id") or ""),
+                session.username,
+            )
+        except TicketError as exc:
+            self._ticket_error(exc)
+            return
+        self.send_json(200, {"ticket": ticket})
+
+    def handle_ticket_execute(self) -> None:
+        session = self.require_operator(Permission.AGENT_APPROVE, mutating=True)
+        if session is None:
+            return
+        if self.require_key() is None:
+            return
+        from windows_repair.tickets import TicketError
+
+        payload = self.read_json_object(max_bytes=2048)
+        if payload is None:
+            return
+        try:
+            # No executor: approval is recorded and this console does not change a device.
+            result = self.server.tickets.execute_repair(  # type: ignore[attr-defined]
+                str(payload.get("ticket_id") or ""),
+                session.username,
+            )
+        except TicketError as exc:
+            self._ticket_error(exc)
+            return
+        self.send_json(200, result)
 
     def handle_device_enrolment(self) -> None:
         session = self.require_operator(Permission.CONNECTORS_MANAGE, mutating=True)
@@ -2415,9 +2612,59 @@ class Handler(BaseHTTPRequestHandler):
             return
         result = call_gateway(
             self.config, "POST", "/v1/rag/documents",
-            {"collection": collection, "filename": filename, "content_base64": content_base64, "overwrite": overwrite},
+            {
+                "collection": collection,
+                "filename": filename,
+                "content_base64": content_base64,
+                "overwrite": overwrite,
+                "owner": session.username,
+                "actor": session.username,
+            },
             self.config.upstream_timeout, include_key=True, max_request_bytes=MAX_UPLOAD_BODY_BYTES,
         )
+        self.forward_result(result)
+
+    def handle_document_content(self) -> None:
+        """Authorised download. The operator name comes from the session, not the body."""
+        session = self.require_operator(Permission.DOCS, mutating=True)
+        if session is None:
+            return
+        payload = self.read_json_object(max_bytes=4096)
+        if payload is None:
+            return
+        if not self.require_key():
+            return
+        collection = payload.get("collection")
+        filename = payload.get("filename")
+        version = payload.get("version", None)
+        if not isinstance(collection, str) or not COLLECTION_RE.fullmatch(collection):
+            self.send_error_json(400, "collection must be a lowercase slug")
+            return
+        if not isinstance(filename, str) or not filename or len(filename) > 120 or "/" in filename or "\\" in filename or ":" in filename:
+            self.send_error_json(400, "invalid filename")
+            return
+        if version is not None and (isinstance(version, bool) or not isinstance(version, int)):
+            self.send_error_json(400, "version must be an integer")
+            return
+        body = {
+            "collection": collection,
+            "filename": filename,
+            "actor": session.username,
+        }
+        if version is not None:
+            body["version"] = version
+        result = call_gateway(
+            self.config, "POST", "/v1/rag/documents/content",
+            body,
+            self.config.upstream_timeout,
+            include_key=True,
+            max_response_bytes=MAX_UPLOAD_BODY_BYTES,
+        )
+        if isinstance(result.payload, dict):
+            result.payload.pop("url", None)
+            document = result.payload.get("document")
+            if isinstance(document, dict):
+                document.pop("url", None)
         self.forward_result(result)
 
     def handle_document_delete(self, parsed: Any) -> None:

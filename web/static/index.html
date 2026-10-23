@@ -91,6 +91,7 @@
             <input id="upload-collection" type="text" maxlength="40" pattern="[a-z0-9][a-z0-9_-]{0,39}" value="my-docs" required autocomplete="off">
             <label for="upload-file">Choose a document</label>
             <input id="upload-file" type="file" accept=".txt,.md,.csv,.html,.htm,.docx,.pdf,.xlsx" required>
+            <label for="upload-replace"><input id="upload-replace" type="checkbox"> Replace an existing file and keep the previous version</label>
             <div class="form-row">
               <button type="submit" id="upload-submit">Upload document</button>
               <button type="button" id="list-documents" class="secondary">Refresh list</button>
@@ -168,6 +169,34 @@
           <div class="form-row">
             <button type="button" id="device-enrol" class="secondary">Create an enrolment code</button>
           </div>
+        </section>
+        <section class="composer" aria-labelledby="ticket-title">
+          <h2 id="ticket-title">Helpdesk tickets</h2>
+          <p class="meta">A ticket keeps an AI recommendation separate from a verified diagnosis. Severity follows a fixed rule, so a model cannot silently lower it. A repair stays proposed until a person approves it. A fixture ticket is not the second Windows computer.</p>
+          <form id="ticket-form">
+            <label for="ticket-title-input">Title</label>
+            <input id="ticket-title-input" type="text" maxlength="120" required>
+            <label for="ticket-detail">What happened</label>
+            <textarea id="ticket-detail" rows="2" maxlength="2000" required></textarea>
+            <label for="ticket-device">Device id</label>
+            <input id="ticket-device" type="text" maxlength="64" required placeholder="enrolled device id, or a fixture id">
+            <label for="ticket-fixture"><input id="ticket-fixture" type="checkbox"> This is the local fixture, not the second endpoint</label>
+            <label for="ticket-evidence">Evidence reference</label>
+            <input id="ticket-evidence" type="text" maxlength="160" required placeholder="job: or collection:">
+            <label for="ticket-severity">Suggested severity</label>
+            <select id="ticket-severity">
+              <option value="">Use the fixed rule</option>
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+              <option value="critical">critical</option>
+            </select>
+            <div class="form-row">
+              <button type="submit" id="ticket-create">Open ticket</button>
+            </div>
+          </form>
+          <ul id="ticket-list" class="sources"></ul>
+          <p id="ticket-empty" class="meta">No tickets yet.</p>
         </section>
         <p id="agent-execution" class="meta"></p>
         <div id="agent-record" class="log"></div>
