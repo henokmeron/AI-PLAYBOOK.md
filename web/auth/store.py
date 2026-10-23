@@ -153,6 +153,20 @@ class AuthStore:
             from integrations.state_guard import replace_file
             replace_file(tmp, self.operators_path)
             self._harden_file(self.operators_path)
+            self._mirror_operator_backup()
+
+    def _mirror_operator_backup(self) -> None:
+        """Checksum operator hashes when a volume directory was configured.
+
+        Sessions are not copied. A volume error leaves the local account file
+        in place so sign-in still works.
+        """
+        try:
+            from ops.platform_state import mirror_operators_from_env
+
+            mirror_operators_from_env(self.directory)
+        except Exception:
+            return
 
     def save_sessions(self) -> None:
         with self._lock:

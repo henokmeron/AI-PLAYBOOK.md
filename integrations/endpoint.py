@@ -648,6 +648,22 @@ class DeviceRegistry:
                 restrict_private(self.path)
             except StatePermissionError as exc:
                 raise AuthenticationError("endpoint state file permissions could not be enforced") from exc
+        self._mirror_volume_backup()
+
+    def _mirror_volume_backup(self) -> None:
+        """Checksum the device list when a volume directory was configured.
+
+        A volume error must not undo the local save and must not block enrolment.
+        The Microsoft token and the gateway key are not part of this file.
+        """
+        if self.path is None:
+            return
+        try:
+            from ops.platform_state import mirror_endpoint_from_env
+
+            mirror_endpoint_from_env(self.path)
+        except Exception:
+            return
 
     def _load(self) -> None:
         assert self.path is not None

@@ -12,7 +12,7 @@ Do not open a subject to invent the query. The owner can supply one harmless dis
 
 This development PC does not count, and the Linux pod does not count. A loopback enrolment on this PC was run with the fixture name and `--fixture-label not-the-second-endpoint`. The device record sets `counts_as_second_endpoint` to false. That rehearsal is not evidence for this gate.
 
-The pod keeps the device list in `/tmp/endpoint-devices.json` unless `ENDPOINT_STATE_FILE` is a persistent path, and that `/tmp` file is lost when the pod stops.
+The live device list stays `/tmp/endpoint-devices.json` so the file can be mode 0600. `/tmp` is not chmodded. When `/workspace` is the Global Volume, a checksummed mirror is kept at `/workspace/platform-state/endpoint-backups/<stamp>/` and the next console start restores it onto local disk if the live file is gone. The mirror holds enrolment-code hashes, device-secret hashes, and diagnostic summaries. It is not a private POSIX store. The Microsoft token and the gateway key are not in it. Restoring that file does not pass this gate.
 
 These steps still require a different physical Windows PC:
 

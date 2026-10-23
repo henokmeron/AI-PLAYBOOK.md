@@ -4,9 +4,15 @@ Read this file before starting. Append to the log when you finish. Do not delete
 
 ## CURRENT
 
-Updated: 2026-10-23 22:15 UK
+Updated: 2026-10-23 22:40 UK
 
-A new chat must read `docs/coordination/TRANSFER_TO_NEXT_AGENT.md` first. Work is urgent. Save a replicable copy and push it. Do not promise a few-second GPU start. Qwen pid 6739 stays up. Office PC device `bead5785f3674aaeb92c189f8c1b5b8c` reported again from `C:\Users\kokob\src\AI-PLAYBOOK.md\AI-PLAYBOOK.md-main`. The parent folder has no `integrations` and no `.git`. The startup summary is still only `status=collected` because that download does not contain `e8f9665`. Production stays NO-GO. Do not mark the second-endpoint gate until the acceptance board is updated on purpose. Do not reset the operator password. Do not create a pod, copy weights, or send mail.
+Durable account and device state is in the working tree and is about to be pushed. Live files stay on `/tmp`. Checksummed mirrors are `/workspace/platform-state/operator-backups/` and `/workspace/platform-state/endpoint-backups/`. Sessions, the gateway key, the Microsoft token, and the Microsoft client id are not mirrored. The pod has not loaded this commit yet. Do not restart Qwen pid 6739. Reload the console only after `origin/main` is fast-forwarded on the pod, by copying that process's environment and command line.
+
+The acceptance board was recalculated from `docs/results/acceptance-evidence.json`. It is 3/9 live and 3/8 mandatory. Production stays NO-GO. Passing mandatory gates: live health, inference completion, cited RAG and abstention. Failing: deployment parity, Microsoft mailbox, second endpoint, Blackwell, fresh recovery. The independent weight backup is optional and has no evidence. Do not quote the older 4/9 figure.
+
+The second-endpoint gate was re-read and was not marked. The board passes only on a live `second_endpoint_worker_ok` record. The evidence list is empty. The worker returns `acceptance_role=not-recorded-as-second-endpoint` for a report with no fixture label, and that function says the run is not recorded evidence. `second_endpoint_status` can say REPORTED and its own text says that does not pass the gate. Office PC device `bead5785f3674aaeb92c189f8c1b5b8c` stays a stored diagnostic. The exact commands for a real clone are in `docs/coordination/office-pc-clone.md`. Do not enrol again.
+
+Weight copy and Blackwell were costed in `docs/results/costed-decisions-2026-10-23.md`. Do not buy either. Do not create a pod. Microsoft positive match still needs a phrase from the owner. Do not search for "the". Do not send mail.
 
 Bots follow ASSIGNMENTS below. Do not mark gates passed.
 
@@ -14,14 +20,24 @@ Bots follow ASSIGNMENTS below. Do not mark gates passed.
 
 These jobs are mandatory. Bots must not download random computer-repair tools, driver packs, or third-party agents. The existing endpoint worker is the integration. A library may be added only if it is pinned, tested, and safer than the current code.
 
-- Director: no code. CURRENT now says Office PC has reported. Do not mark the second-endpoint gate passed.
-- Console: on the helpdesk, Office PC should show as enrolled with the eight read-only checks. Do not invent a device. Do not show a repair as completed.
+- Director: no code. The board is 3/9 and 3/8, NO-GO. Do not mark the second-endpoint gate passed.
+- Console: Office PC should show as enrolled with the eight read-only checks. Do not invent a device. Do not show a repair as completed. Do not restart Qwen to pick up the state mirror.
 - Model: do not restart Qwen pid 6739. Offline eval only. No weight copy.
-- Endpoint: Office PC already reported from `C:\Users\kokob\src\AI-PLAYBOOK.md\AI-PLAYBOOK.md-main`. Do not enrol this PC. Do not use the parent folder. A later report includes boot time and memory only after that laptop has commit `e8f9665`. Read-only only.
+- Endpoint: do not enrol this PC. Do not use the parent folder on Office PC. The clone commands are in `docs/coordination/office-pc-clone.md`. Read-only report only, after the owner runs them.
 - Mail: do not send mail or add scopes. Do not search for "the". Positive match still needs a phrase the owner confirms. Power Automate stays NOT TESTED.
 - Liaison: append the log after each bot finishes. Do not implement features.
 
 ## LOG
+
+- 2026-10-23 22:40 UK Cursor on this PC: checksummed volume mirrors for operator hashes and the device list. Local tests exited 0. Board recalculated 3/9 and 3/8, NO-GO. Second-endpoint token was not written. Office PC clone commands and the weight/Blackwell cost note were saved. Qwen was not restarted. The pod had not loaded this commit yet.
+
+### Previous CURRENT (copied 2026-10-23 22:40 UK)
+
+Updated: 2026-10-23 22:15 UK
+
+A new chat must read `docs/coordination/TRANSFER_TO_NEXT_AGENT.md` first. Work is urgent. Save a replicable copy and push it. Do not promise a few-second GPU start. Qwen pid 6739 stays up. Office PC device `bead5785f3674aaeb92c189f8c1b5b8c` reported again from `C:\Users\kokob\src\AI-PLAYBOOK.md\AI-PLAYBOOK.md-main`. The parent folder has no `integrations` and no `.git`. The startup summary is still only `status=collected` because that download does not contain `e8f9665`. Production stays NO-GO. Do not mark the second-endpoint gate until the acceptance board is updated on purpose. Do not reset the operator password. Do not create a pod, copy weights, or send mail.
+
+Bots follow ASSIGNMENTS below. Do not mark gates passed.
 
 - 2026-10-23 22:15 UK Cursor on this PC: wrote `docs/coordination/TRANSFER_TO_NEXT_AGENT.md` for the next chat. Office PC reported again from the inner folder. Startup summary is still thin. Qwen was not restarted. Production stays NO-GO.
 

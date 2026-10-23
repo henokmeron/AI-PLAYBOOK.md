@@ -52,10 +52,15 @@ P8080="$(pids_for 8080)"
 # Live accounts stay on local disk. The volume holds a checksummed hash backup.
 OPERATOR_AUTH_DIR="${OPERATOR_AUTH_DIR:-/tmp/console-operators}"
 OPERATOR_BACKUP_DIR="${OPERATOR_BACKUP_DIR:-/workspace/platform-state/operator-backups}"
+ENDPOINT_STATE_FILE="${ENDPOINT_STATE_FILE:-/tmp/endpoint-devices.json}"
+ENDPOINT_BACKUP_DIR="${ENDPOINT_BACKUP_DIR:-/workspace/platform-state/endpoint-backups}"
 if [[ "$APPROVED" == "yes" ]]; then
   PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m ops.platform_state \
     --live-dir "$OPERATOR_AUTH_DIR" --backup-dir "$OPERATOR_BACKUP_DIR" \
     || fail "operator store is not ready. The console was not stopped."
+  PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -m ops.platform_state \
+    --endpoint-live "$ENDPOINT_STATE_FILE" --endpoint-backup "$ENDPOINT_BACKUP_DIR" \
+    || fail "endpoint store is not a private local file. The console was not stopped."
 fi
 OPS_READY="$(
   python3 "$REPO_ROOT/ops/release/console_deploy.py" \
@@ -112,6 +117,8 @@ nohup env \
   PLATFORM_API_KEY_FILE="$KEY" \
   PLATFORM_MODEL_ID=qwen3.5-27b \
   OPERATOR_AUTH_DIR="$OPERATOR_AUTH_DIR" \
+  OPERATOR_BACKUP_DIR="$OPERATOR_BACKUP_DIR" \
+  ENDPOINT_BACKUP_DIR="$ENDPOINT_BACKUP_DIR" \
   WEB_COOKIE_SECURE="${WEB_COOKIE_SECURE:-false}" \
   MICROSOFT_CLIENT_ID="${MICROSOFT_CLIENT_ID:-}" \
   MICROSOFT_CLIENT_ID_FILE="${MICROSOFT_CLIENT_ID_FILE:-}" \

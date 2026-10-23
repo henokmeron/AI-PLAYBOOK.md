@@ -2,7 +2,11 @@
 
 Read this file before any other work. Then read `docs/coordination/AGENT_HANDOFF.md` and `docs/coordination/BOT_ROSTER.md`. Do not start by exploring at random. The owner is opening a new chat so this session can be continued without losing the path that took all day to reach.
 
-Updated: 2026-10-23 22:15 UK. GitHub `main` at the time of this file: `e8f966534a7f7d5b8409793bbdbede19596a0e78`. Confirm with `git rev-parse HEAD` before trusting that SHA.
+Updated: 2026-10-23 22:40 UK. GitHub `main` at the start of this file was `e8f966534a7f7d5b8409793bbdbede19596a0e78`. This PC's `git rev-parse HEAD` before the durable-state commit was `f14d3bb6dfe62ded38dde103d80369b89689a6cd`, and that commit was `origin/main`. Confirm with `git rev-parse HEAD` before trusting either SHA.
+
+The acceptance board was recalculated. It is 3/9 live and 3/8 mandatory, production NO-GO. Do not repeat the older 4/9 figure. Deployment parity is one of the gates that failed that recalculation.
+
+Operator hashes and the device list now have checksummed volume mirrors in the working tree. The pod does not have that code until `main` is fast-forwarded there and the console is reloaded. Qwen stays up. See `docs/results/durable-console-state-2026-10-23.md`.
 
 ## Urgency and the job
 
@@ -95,7 +99,7 @@ Operator sign-in is username `platform-admin`, not an email. The password file i
 
 Do not raise scores by weakening `ops/acceptance_board.py`. Recalculate from `docs/results/acceptance-evidence.json`. Do not copy an old score into a new claim.
 
-Last honest board before the Office PC report was 4/9 live and 4/8 mandatory, production NO-GO. The Office PC report is real evidence and has not been written into the board. Do not mark `second_endpoint_worker_ok` until the board's written rule is re-read and the record matches it. Mandatory gates still open until proven:
+Last honest board before the Office PC report was described as 4/9 live and 4/8 mandatory. Recalculated from `docs/results/acceptance-evidence.json` on 2026-10-23: 3/9 live and 3/8 mandatory, production NO-GO. Passing mandatory gates were live health, inference completion, and cited RAG plus abstention. Deployment parity failed against the checkout tip. The Office PC report is real evidence and has not been written into the board. Do not mark `second_endpoint_worker_ok`. The board passes that gate only when a record has `evidence_kind` `live` and `result` `second_endpoint_worker_ok` inside 168 hours. The evidence list is empty. `acceptance_role` returns `not-recorded-as-second-endpoint` when the fixture label is empty, and that function says the run is not recorded evidence. `second_endpoint_status` does not pass the gate. `counts_as_second_endpoint` is false and is not evidence. Mandatory gates still open until proven:
 
 - Live health and deployment parity must be rechecked against the pod's current checkout. A push is not a deploy.
 - Inference completion and cited RAG plus abstention were proven on an earlier pod. Reconfirm on this pod before calling them current. Qwen pid 6739 must stay up while you do it.
@@ -109,12 +113,12 @@ Last honest board before the Office PC report was 4/9 live and 4/8 mandatory, pr
 
 Do these as architecture, with tests and a saved commit. Do not restart Qwen for them.
 
-1. Make enrolment, the device list, and operator accounts survive a pod stop. Today they die with `/tmp`. A volume path has to be explicit, private, and absent from git. Design it. Do not dump secrets into the repo while designing it.
-2. Give Office PC a real clone of `main`, so the next report includes the startup summary and the next fix does not require a zip. This PC cannot write that disk. Write the exact PowerShell, for the inner folder or for a new clone, and wait for the owner to run it.
+1. Enrolment, the device list, and operator accounts. The code now mirrors scrypt hashes to `/workspace/platform-state/operator-backups/` and device-list hashes plus diagnostic summaries to `/workspace/platform-state/endpoint-backups/`. Live files stay on `/tmp`. Sessions, the gateway key, the Microsoft token, and the client id are not mirrored. Fast-forward the pod checkout and reload the console only. Do not restart Qwen. Do not invent a volume path for the token or the gateway key.
+2. Give Office PC a real clone of `main`, so the next report includes the startup summary and the next fix does not require a zip. This PC cannot write that disk. The exact PowerShell is in `docs/coordination/office-pc-clone.md`. Wait for the owner to run it.
 3. Re-read the acceptance board and record the Office PC report only if the rule allows it. Say what is still NO-GO.
 4. Recheck deployment parity: pod checkout versus `origin/main`. Reload the console only, by copying that process's environ and command line. Leave the gateway and Qwen running unless the change is in their code.
 5. Microsoft positive match, only after the owner gives the phrase. Record HTTP status, count, and whether the phrase was present. No subject, no body.
-6. Write the costed decision for a weight copy and for Blackwell. Do not buy either.
+6. The costed decision for a weight copy and for Blackwell is `docs/results/costed-decisions-2026-10-23.md`. Do not buy either.
 7. Keep release archives. The last shutdown archive on this PC is `C:\Users\henok\AppData\Local\AI-PLAYBOOK\releases\cf92c292b31698661658abdd5f90341c444f17ba\`. Later commits exist. A new archive is due after the next real commit if the owner is about to stop the pod. Do not stop the pod unless the owner says so.
 
 ## Never

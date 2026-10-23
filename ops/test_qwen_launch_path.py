@@ -34,9 +34,14 @@ class QwenLaunchPathTest(unittest.TestCase):
         self.assertLess(prepare, console)
         self.assertIn("operators-ready", text)
         self.assertIn("There is no default password.", text)
+        self.assertLess(text.index("endpoint_status || fail"), console)
+        self.assertIn('ENDPOINT_BACKUP_DIR="${ENDPOINT_BACKUP_DIR:-}"', text)
+        self.assertIn('OPERATOR_BACKUP_DIR="${OPERATOR_BACKUP_DIR:-}"', text)
         deploy = Path(__file__).resolve().parent / "release" / "deploy-console-only.sh"
         deploy_text = deploy.read_text(encoding="utf-8")
         self.assertLess(deploy_text.index("ops.platform_state"), deploy_text.index('kill "$P8080"'))
+        self.assertLess(deploy_text.index("--endpoint-backup"), deploy_text.index('kill "$P8080"'))
+        self.assertIn('ENDPOINT_BACKUP_DIR="$ENDPOINT_BACKUP_DIR"', deploy_text)
 
 
 if __name__ == "__main__":

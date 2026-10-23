@@ -87,6 +87,35 @@ operator_status() {
   PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$CONSOLE_PYTHON" -m ops.platform_state "${mode[@]}" --live-dir "$OPERATOR_AUTH_DIR" "${backup[@]}"
 }
 
+use_volume_backup_dirs() {
+  if ! findmnt -n -o FSTYPE /workspace 2>/dev/null | grep -qx fuse.geesefs; then
+    return 0
+  fi
+  if [[ -z "${OPERATOR_BACKUP_DIR:-}" ]]; then
+    OPERATOR_BACKUP_DIR=/workspace/platform-state/operator-backups
+  fi
+  if [[ -z "${ENDPOINT_BACKUP_DIR:-}" ]]; then
+    ENDPOINT_BACKUP_DIR=/workspace/platform-state/endpoint-backups
+  fi
+  export OPERATOR_BACKUP_DIR ENDPOINT_BACKUP_DIR
+}
+
+endpoint_status() {
+  # $1 is "--check" or empty. Stdout is one JSON object and contains no secrets.
+  local backup=()
+  local mode=()
+  local live="${ENDPOINT_STATE_FILE:-/tmp/endpoint-devices.json}"
+  if [[ -n "${1:-}" ]]; then
+    mode=("$1")
+  fi
+  if [[ -n "${ENDPOINT_BACKUP_DIR:-}" ]]; then
+    backup=(--endpoint-backup "$ENDPOINT_BACKUP_DIR")
+  elif findmnt -n -o FSTYPE /workspace 2>/dev/null | grep -qx fuse.geesefs; then
+    backup=(--endpoint-backup /workspace/platform-state/endpoint-backups)
+  fi
+  PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$CONSOLE_PYTHON" -m ops.platform_state "${mode[@]}" --endpoint-live "$live" "${backup[@]}"
+}
+
 run_preflight() {
   local need_restore=0 need_qwen_start=0 total used drv free_kb
   [[ -x "$QWEN_ENV/bin/vllm" ]] || need_restore=1
@@ -144,6 +173,11 @@ run_preflight() {
     check "operators-ready" 0 "a private administrator can be loaded or restored. There is no default password."
   else
     check "operators-ready" 1 "operator store is missing or not private. Provision with scripts/provision_console_operator.py into $OPERATOR_AUTH_DIR. There is no default password."
+  fi
+  if endpoint_status --check >/dev/null; then
+    check "endpoint-store" 0 "device list is absent, or a private local file can be mirrored"
+  else
+    check "endpoint-store" 1 "endpoint file is not a private local file. It was not replaced."
   fi
 }
 
@@ -299,9 +333,14 @@ fi
 
 if healthy "$CONSOLE_URL"; then
   log "Reusing healthy console on :$CONSOLE_PORT"
+  use_volume_backup_dirs
+  operator_status >/dev/null || log "WARN: operator mirror was not written. The console was left running."
+  endpoint_status >/dev/null || log "WARN: endpoint mirror was not written. The console was left running."
 else
   log "Preparing the private operator store before the console starts"
+  use_volume_backup_dirs
   operator_status || fail "Operator store is not ready. Qwen and the gateway were not stopped. Provision an administrator with scripts/provision_console_operator.py. There is no default password."
+  endpoint_status || fail "Endpoint store is not a private local file. Qwen and the gateway were not stopped. The live file was not replaced."
   log "Starting console on :$CONSOLE_PORT"
   nohup env \
     WEB_HOST=127.0.0.1 \
@@ -310,6 +349,8 @@ else
     PLATFORM_API_KEY_FILE="$KEY" \
     PLATFORM_MODEL_ID=qwen3.5-27b \
     OPERATOR_AUTH_DIR="$OPERATOR_AUTH_DIR" \
+    OPERATOR_BACKUP_DIR="${OPERATOR_BACKUP_DIR:-}" \
+    ENDPOINT_BACKUP_DIR="${ENDPOINT_BACKUP_DIR:-}" \
     MICROSOFT_CLIENT_ID="${MICROSOFT_CLIENT_ID:-}" \
     MICROSOFT_CLIENT_ID_FILE="${MICROSOFT_CLIENT_ID_FILE:-}" \
     MICROSOFT_TENANT="${MICROSOFT_TENANT:-common}" \

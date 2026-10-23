@@ -39,15 +39,20 @@ Human steps after that:
 | --- | --- | --- | --- |
 | Live operators | `/tmp/console-operators` | No | POSIX 0700/0600 enforced. The console reads this directory. |
 | Operator backup | `/workspace/platform-state/operator-backups/<stamp>/` | Yes, when `/workspace` is `fuse.geesefs` | Checksummed `operators.json` plus `SHA256SUMS`. Scrypt hashes only. The volume may reject `chmod`, so this copy is not treated as a private POSIX file. |
+| Live device list | `/tmp/endpoint-devices.json` | No | POSIX 0600 on the file. `/tmp` itself is not chmodded. The console reads this file. |
+| Device-list backup | `/workspace/platform-state/endpoint-backups/<stamp>/` | Yes, when `/workspace` is `fuse.geesefs` | Checksummed `endpoint-devices.json` plus `SHA256SUMS`. Enrolment-code hashes, device-secret hashes, and diagnostic summaries. Plaintext secrets are refused. Not a private POSIX store. |
 | Sessions | `/tmp/console-operators/sessions.json` | No | Not backed up. People sign in again. |
 | Gateway key | `/tmp/platform-gateway.key` | No | Recreated on start if missing. Not copied to the volume. |
 | Microsoft token | `/tmp/microsoft-365-token.json` | No | Not copied to the volume. Sign-in is required again. |
+| Microsoft client id | `/tmp/microsoft-client-id` | No | Not copied by `ops/platform_state.py`. |
 | Ops events | `/workspace/ops-centre` | Yes | Audit log. A health window does not delete it. |
 | Weights | `/workspace/models/Qwen3.5-27B/...` | Yes | Not part of the source archive. |
 | Runtime archive | `/workspace/runtime-setup/qwen-vllm/` | Yes | Restored into `/tmp/vllm-qwen-env`, never onto the volume. |
 | Source checkout | `/tmp/AI-PLAYBOOK` | No | `START.sh` clones `main` or restores a checksummed snapshot. |
 
-Before a console start, `ops/platform_state.py` backs up a private live administrator file, or restores the newest backup whose checksum matches when the live file is absent. It refuses a symlink, a plaintext password, a file that is not private, and a backup whose checksum does not match. It does not replace an existing live file. Five checksummed backups are kept.
+Before a console start, `ops/platform_state.py` backs up a private live administrator file, or restores the newest backup whose checksum matches when the live file is absent. It does the same for `/tmp/endpoint-devices.json` and `/workspace/platform-state/endpoint-backups/`. A missing device list with no backup is normal: nobody has enrolled yet, and the console still starts. It refuses a symlink, a plaintext secret, a file that is not private, and a backup whose checksum does not match. It does not replace an existing live file. Five checksummed backups are kept for each store. `/tmp` is not chmodded. The Microsoft token and the gateway key are not given a volume path.
+
+While the console is running, a save of `operators.json` or the device list mirrors to those volume directories when `OPERATOR_BACKUP_DIR` and `ENDPOINT_BACKUP_DIR` are set. On a pod, the console sets those to the paths above when `/workspace` is the Global Volume and the variables were not already set. A volume write error does not undo the local file.
 
 ```bash
 PYTHONPATH=/tmp/AI-PLAYBOOK /usr/bin/python3 -m ops.platform_state --check \

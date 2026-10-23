@@ -2870,6 +2870,24 @@ def use_durable_endpoint_state() -> None:
     os.environ["ENDPOINT_STATE_FILE"] = "/tmp/endpoint-devices.json"
 
 
+def use_volume_backups() -> None:
+    """Mirror account and device hashes to the Global Volume when it is mounted.
+
+    An empty OPERATOR_BACKUP_DIR or ENDPOINT_BACKUP_DIR leaves that mirror off.
+    Unset means the volume path is used on a host whose /workspace is the
+    Global Volume. This does not choose a path for the Microsoft token or the
+    gateway key.
+    """
+    from ops.platform_state import VOLUME_BACKUP_DIR, VOLUME_ENDPOINT_BACKUP_DIR, volume_is_global
+
+    if not volume_is_global():
+        return
+    if "OPERATOR_BACKUP_DIR" not in os.environ:
+        os.environ["OPERATOR_BACKUP_DIR"] = str(VOLUME_BACKUP_DIR)
+    if "ENDPOINT_BACKUP_DIR" not in os.environ:
+        os.environ["ENDPOINT_BACKUP_DIR"] = str(VOLUME_ENDPOINT_BACKUP_DIR)
+
+
 def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
@@ -2877,6 +2895,7 @@ def main(argv: list[str] | None = None) -> int:
         print("ERROR: this server does not take arguments; set environment variables instead.", flush=True)
         return 2
     use_durable_endpoint_state()
+    use_volume_backups()
     try:
         config = build_config()
     except ValueError as exc:
