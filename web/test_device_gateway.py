@@ -414,7 +414,7 @@ class TestDeviceGatewayIntegration(unittest.TestCase):
     def test_enrollment_and_heartbeat_happy_path(self) -> None:
         """Happy path: enroll with valid code, then authenticated heartbeat works."""
         if self.cert_path is None:
-            self.skipTest("cryptography not available")
+            self.fail("cryptography package required for this test")
 
         gateway = device_gateway.DeviceGatewayServer(
             "127.0.0.1", 0, str(self.cert_path), str(self.key_path), self.console, 60
@@ -430,55 +430,59 @@ class TestDeviceGatewayIntegration(unittest.TestCase):
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
 
-            # First, create an enrollment code via console
-            console_url = f"http://{self.console_host}:{self.console_port}/api/devices/enrolment"
-            
-            # Need operator session - create one
-            login_url = f"http://{self.console_host}:{self.console_port}/api/auth/login"
-            login_data = json.dumps({"username": "test-admin", "password": "test-admin"}).encode()
-            login_req = urllib.request.Request(login_url, data=login_data, method="POST")
-            login_req.add_header("Content-Type", "application/json")
-            
-            try:
-                login_resp = urllib.request.urlopen(login_req, timeout=2)
-                session_cookie = login_resp.headers.get("Set-Cookie")
-            except Exception:
-                # Auth might not be set up, skip this test
-                self.skipTest("Operator auth not configured")
-                return
+            # Create enrollment code directly via the device registry
+            created = self.console.devices.create_enrolment("local-console")
+            enrolment_code = created["enrolment_code"]
+            self.assertIsNotNone(enrolment_code, "Failed to create enrollment code")
 
-            # Create enrollment code
-            enrol_req = urllib.request.Request(console_url, method="POST")
-            if session_cookie:
-                enrol_req.add_header("Cookie", session_cookie)
-            
-            try:
-                enrol_resp = urllib.request.urlopen(enrol_req, timeout=2)
-                enrol_data = json.loads(enrol_resp.read().decode())
-                enrolment_code = enrol_data.get("enrolment_code")
-                self.assertIsNotNone(enrolment_code)
-            except Exception:
-                self.skipTest("Could not create enrollment code")
-                return
+            # Generate a device secret
+            import secrets as secrets_mod
+            device_secret = secrets_mod.token_urlsafe(32)
 
-            # Now enroll via gateway
+            # Enroll via gateway
             gateway_enroll_url = f"https://{gateway_host}:{gateway_port}/api/devices/enroll"
             enroll_payload = json.dumps({
-                "enrolment_code": enrolment_code,
-                "hostname": "test-laptop",
+                "code": enrolment_code,
+                "display_name": "test-laptop",
+                "device_secret": device_secret,
             }).encode()
             
             enroll_req = urllib.request.Request(gateway_enroll_url, data=enroll_payload, method="POST")
             enroll_req.add_header("Content-Type", "application/json")
             
             enroll_resp = urllib.request.urlopen(enroll_req, context=ssl_context, timeout=2)
+            self.assertEqual(enroll_resp.status, 200, "Enrollment should succeed")
             enroll_result = json.loads(enroll_resp.read().decode())
             
             device_id = enroll_result.get("device_id")
-            self.assertIsNotNone(device_id)
+            self.assertIsNotNone(device_id, "Enrollment should return device_id")
+            self.assertIsInstance(device_id, str, "device_id should be string")
+            self.assertEqual(len(device_id), 32, f"device_id should be 32 chars, got {len(device_id)}: {device_id}")
             
-            # Enrollment succeeded! Now use device_id to authenticate heartbeat
-            # (In real use, the device would have a secret, but this test shows the flow)
+            # Verify device can be authenticated
+            try:
+                auth_id = self.console.devices.authenticated_device_id(device_secret)
+                self.assertEqual(device_id, auth_id, "Auth ID should match enrolled device_id")
+            except Exception as e:
+                self.fail(f"Authentication failed: {e}")
+            
+            # Now send authenticated heartbeat via gateway
+            gateway_heartbeat_url = f"https://{gateway_host}:{gateway_port}/api/remote-work/heartbeat"
+            import time as time_mod
+            heartbeat_payload = json.dumps({
+                "utc": time_mod.strftime("%Y-%m-%dT%H:%M:%SZ", time_mod.gmtime()),
+                "worker_version": "1.0.0-test"
+            }).encode()
+            heartbeat_req = urllib.request.Request(gateway_heartbeat_url, data=heartbeat_payload, method="POST")
+            heartbeat_req.add_header("Authorization", f"Bearer {device_secret}")
+            heartbeat_req.add_header("Content-Type", "application/json")
+            
+            try:
+                heartbeat_resp = urllib.request.urlopen(heartbeat_req, context=ssl_context, timeout=2)
+                self.assertEqual(heartbeat_resp.status, 200, "Authenticated heartbeat should succeed")
+            except urllib.error.HTTPError as e:
+                error_body = e.read().decode()
+                self.fail(f"Heartbeat failed with {e.code}: {error_body}")
             
         finally:
             gateway.shutdown()
@@ -487,10 +491,11 @@ class TestDeviceGatewayIntegration(unittest.TestCase):
     def test_wrong_and_reused_enrollment_code_refused(self) -> None:
         """Wrong and reused enrollment codes are refused over gateway."""
         if self.cert_path is None:
-            self.skipTest("cryptography not available")
+            self.fail("cryptography package required for this test")
 
+        # High rate limit to prevent 429
         gateway = device_gateway.DeviceGatewayServer(
-            "127.0.0.1", 0, str(self.cert_path), str(self.key_path), self.console, 60
+            "127.0.0.1", 0, str(self.cert_path), str(self.key_path), self.console, 1000
         )
         gateway_host, gateway_port = gateway.server_address[:2]
 
@@ -502,12 +507,14 @@ class TestDeviceGatewayIntegration(unittest.TestCase):
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
+            gateway_enroll_url = f"https://{gateway_host}:{gateway_port}/api/devices/enroll"
 
             # Test wrong enrollment code
-            gateway_enroll_url = f"https://{gateway_host}:{gateway_port}/api/devices/enroll"
+            import secrets as secrets_mod
             wrong_payload = json.dumps({
-                "enrolment_code": "wrong-code-12345",
-                "hostname": "test-laptop",
+                "code": "wrong-code-12345",
+                "display_name": "test-laptop",
+                "device_secret": secrets_mod.token_urlsafe(32),
             }).encode()
             
             wrong_req = urllib.request.Request(gateway_enroll_url, data=wrong_payload, method="POST")
@@ -517,13 +524,42 @@ class TestDeviceGatewayIntegration(unittest.TestCase):
                 urllib.request.urlopen(wrong_req, context=ssl_context, timeout=2)
                 self.fail("Wrong enrollment code should be refused")
             except urllib.error.HTTPError as e:
-                # Should be 4xx error (400, 401, or 403)
-                self.assertIn(e.code, [400, 401, 403, 429])
+                # Should be 400, 401, or 403 (not 429 due to high rate limit)
+                self.assertIn(e.code, [400, 401, 403], f"Wrong code should be 400/401/403, got {e.code}")
 
-            # For reused code test, we'd need to actually create and use a code twice
-            # This requires the enrollment system to be fully set up, which may not be
-            # the case in a minimal test. The important part is that the gateway
-            # correctly routes the request to the handler which does the check.
+            # Test reused enrollment code
+            created = self.console.devices.create_enrolment("local-console")
+            valid_code = created["enrolment_code"]
+            
+            # First enrollment should succeed
+            first_payload = json.dumps({
+                "code": valid_code,
+                "display_name": "first-laptop",
+                "device_secret": secrets_mod.token_urlsafe(32),
+            }).encode()
+            
+            first_req = urllib.request.Request(gateway_enroll_url, data=first_payload, method="POST")
+            first_req.add_header("Content-Type", "application/json")
+            
+            first_resp = urllib.request.urlopen(first_req, context=ssl_context, timeout=2)
+            self.assertEqual(first_resp.status, 200, "First enrollment should succeed")
+            
+            # Reuse the same code - should be refused
+            reused_payload = json.dumps({
+                "code": valid_code,
+                "display_name": "second-laptop",
+                "device_secret": secrets_mod.token_urlsafe(32),
+            }).encode()
+            
+            reused_req = urllib.request.Request(gateway_enroll_url, data=reused_payload, method="POST")
+            reused_req.add_header("Content-Type", "application/json")
+            
+            try:
+                urllib.request.urlopen(reused_req, context=ssl_context, timeout=2)
+                self.fail("Reused enrollment code should be refused")
+            except urllib.error.HTTPError as e:
+                # Should be 400, 401, or 403 (not 429 due to high rate limit)
+                self.assertIn(e.code, [400, 401, 403], f"Reused code should be 400/401/403, got {e.code}")
 
         finally:
             gateway.shutdown()

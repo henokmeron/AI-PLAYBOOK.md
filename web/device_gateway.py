@@ -136,6 +136,7 @@ class DeviceGatewayHandler(BaseHTTPRequestHandler):
         handler.client_address = self.client_address
         handler.server = self.server.console_server  # type: ignore[attr-defined]
         handler._is_gateway_request = True  # type: ignore[attr-defined]
+        handler._response_started = False  # Track if response was sent
         
         # Copy request state
         handler.command = self.command
@@ -147,8 +148,12 @@ class DeviceGatewayHandler(BaseHTTPRequestHandler):
         handler.close_connection = True
         handler.requestline = f"{self.command} {self.path} {self.request_version}"
         
-        # Track if a response was sent
-        response_started = False
+        # Wrap send_response to track if a response was started
+        original_send_response = handler.send_response
+        def tracked_send_response(*args, **kwargs):
+            handler._response_started = True
+            return original_send_response(*args, **kwargs)
+        handler.send_response = tracked_send_response
         
         # Dispatch to the appropriate method
         try:
@@ -170,14 +175,13 @@ class DeviceGatewayHandler(BaseHTTPRequestHandler):
                 handler.handle_repair_device_result()
             elif path == "/api/repair/device/check-in":
                 handler.handle_repair_device_check_in()
-            response_started = True
         except Exception as exc:
             # Log exception type without secrets or headers
             exc_type = type(exc).__name__
             print(f"[Gateway] Handler error: {exc_type}", flush=True)
             
-            # Send 500 if no response was started
-            if not response_started:
+            # Send 500 only if no response was started
+            if not handler._response_started:
                 try:
                     self.send_error_json(500, "internal server error")
                 except Exception:
