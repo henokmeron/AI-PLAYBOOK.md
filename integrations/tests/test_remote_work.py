@@ -27,7 +27,7 @@ from integrations.remote_work import (
     service_facts_from_text,
     snapshot,
 )
-from integrations.remote_worker import WORKER_VERSION, main, poll_once
+from integrations.remote_worker import WORKER_VERSION, exchange, main, poll_once
 
 DEVICE = "a" * 32
 OTHER = "b" * 32
@@ -38,6 +38,43 @@ STAGING = r"C:\ProgramData\RemoteIT\staging"
 DEST = r"C:\ProgramData\RemoteIT\staging\package.cab"
 DELETE_OK = r"C:\Users\alice\AppData\Local\Temp\old.tmp"
 UTC = "2026-10-23T23:00:00Z"
+
+
+class StoreTransport:
+    """In-memory stand-in for the laptop's poll, claim, and complete calls."""
+
+    def __init__(self, store: WorkStore) -> None:
+        self.store = store
+        self.events: list[str] = []
+
+    def poll(self, device_id: str) -> list[dict]:
+        self.events.append("poll")
+        return poll_jobs(self.store, device_id)
+
+    def claim(self, device_id: str, order_id: str) -> dict:
+        self.events.append("claim")
+        return claim_job(self.store, device_id, order_id)
+
+    def complete(
+        self,
+        device_id: str,
+        order_id: str,
+        *,
+        outcome: str,
+        error: str | None = None,
+        result: dict | None = None,
+        redact: tuple[str, ...] = (),
+    ) -> dict:
+        self.events.append("complete")
+        return complete_job(
+            self.store,
+            device_id,
+            order_id,
+            outcome=outcome,
+            error=error,
+            result=result,
+            redact=redact,
+        )
 
 
 class RecordingRunner:
@@ -113,14 +150,178 @@ class RemoteWorkTests(unittest.TestCase):
             params={"source": source, "sha256": PIN, "staging_directory": STAGING},
         )
 
-    def test_console_functions_are_the_unwired_http_contract(self) -> None:
+    def test_console_functions_are_wired_behind_existing_auth(self) -> None:
         for name in CONSOLE_FUNCTIONS:
             self.assertTrue(callable(getattr(remote_work, name)))
         server = Path(remote_work.__file__).resolve().parents[1] / "web" / "server.py"
         text = server.read_text(encoding="utf-8")
-        self.assertNotIn("remote_work", text)
-        self.assertNotIn("/api/remote-work", text)
+        for route in (
+            "/api/remote-work/orders",
+            "/api/remote-work/approve",
+            "/api/remote-work/poll",
+            "/api/remote-work/claim",
+            "/api/remote-work/complete",
+            "/api/remote-work/heartbeat",
+        ):
+            self.assertIn(route, text)
+        self.assertIn("require_operator", text)
+        self.assertIn("authenticated_device_id", text)
+        self.assertNotIn("execute_work_order", text)
+        self.assertNotIn("REMOTE_IT_WORK_LIVE", text)
         self.assertEqual(APPROVAL_TTL_SECONDS, 15 * 60)
+
+    def _exchange(self, order: dict, runner: RecordingRunner, handler: dict | None = None) -> tuple[dict, StoreTransport]:
+        if self.store.orders[order["id"]]["state"] == "pending_approval":
+            self._approve(order)
+        transport = StoreTransport(self.store)
+        with mock.patch("subprocess.run", side_effect=AssertionError("shell")), \
+                mock.patch("socket.socket", side_effect=AssertionError("network")), \
+                mock.patch("socket.getaddrinfo", side_effect=AssertionError("dns")):
+            result = exchange(
+                transport,
+                device_id=DEVICE,
+                runner=runner,
+                live=True,
+                handler_input=handler,
+                now=self.clock.moment,
+            )
+        return result, transport
+
+    def test_each_action_succeeds_through_the_fake_runner_when_approval_matches(self) -> None:
+        runner = RecordingRunner()
+        spool = r"C:\Windows\System32\spool\PRINTERS\HP-Lab\job.spl"
+
+        heartbeat = create_work_order(
+            self.store, device_id=DEVICE, action="monitor.heartbeat",
+            target=DEVICE, operator_id=OPERATOR,
+        )
+        beat, transport = self._exchange(heartbeat, runner, {"utc": UTC, "worker_version": WORKER_VERSION})
+        self.assertEqual(beat["state"], "succeeded")
+        self.assertEqual(set(beat["result"]), {"device_id", "utc", "worker_version"})
+        self.assertEqual(set(runner.calls[-1]), {"op", "device_id", "utc", "worker_version"})
+        self.assertEqual(transport.events, ["poll", "claim", "complete"])
+
+        service, _transport = self._exchange(self._service(), runner)
+        self.assertEqual(service["state"], "succeeded")
+        self.assertEqual(runner.calls[-1]["argv"], ["sc.exe", "start", "Spooler"])
+        self.assertEqual(runner.calls[-1]["target"], "Spooler")
+
+        printer, _transport = self._exchange(self._printer(path=spool), runner)
+        self.assertEqual(printer["state"], "succeeded")
+        self.assertEqual(runner.calls[-1]["op"], "delete_spool_file")
+        self.assertEqual(runner.calls[-1]["queue"], "HP-Lab")
+        self.assertTrue(str(runner.calls[-1]["path"]).casefold().endswith(r"hp-lab\job.spl"))
+
+        onboard, _transport = self._exchange(
+            create_work_order(
+                self.store, device_id=DEVICE, action="setup.onboard.local_user",
+                target="alice", operator_id=OPERATOR,
+            ),
+            runner,
+            {"password": SENTINEL},
+        )
+        self.assertEqual(onboard["state"], "succeeded")
+        self.assertEqual(runner.calls[-1]["password"], SENTINEL)
+        self.assertNotIn(SENTINEL, json.dumps(onboard))
+        stored = json.dumps(snapshot(self.store))
+        self.assertNotIn(SENTINEL, stored)
+        self.assertNotIn("password", stored)
+
+        offboard, _transport = self._exchange(
+            self._offboard(params={"mode": "remove", "admin_count": 2}),
+            runner,
+        )
+        self.assertEqual(offboard["state"], "succeeded")
+        self.assertEqual(runner.calls[-1]["argv"], ["net", "user", "alice", "/delete"])
+        self.assertEqual(runner.calls[-1]["username"], "alice")
+
+        download, _transport = self._exchange(self._download(), runner)
+        self.assertEqual(download["state"], "succeeded")
+        handed = runner.calls[-1]
+        self.assertEqual(handed["op"], "download")
+        self.assertEqual(handed["host"], "updates.example.com")
+        self.assertEqual(handed["sha256"], PIN)
+        self.assertFalse(handed["network"])
+        self.assertTrue(str(handed["destination"]).casefold().startswith(STAGING.casefold()))
+        self.assertNotIn("urlopen", Path(remote_work.__file__).read_text(encoding="utf-8"))
+
+        for source in ("windows-update", "pnputil", "staged-file"):
+            installed, _transport = self._exchange(self._install(source=source), runner, {"sha256": PIN})
+            self.assertEqual(installed["state"], "succeeded", source)
+            self.assertEqual(runner.calls[-1]["source"], source)
+            self.assertEqual(runner.calls[-1]["sha256"], PIN)
+            self.assertFalse(runner.calls[-1]["invoke"])
+
+        deleted, _transport = self._exchange(
+            create_work_order(
+                self.store, device_id=DEVICE, action="change.delete",
+                target=DELETE_OK, operator_id=OPERATOR,
+            ),
+            runner,
+        )
+        self.assertEqual(deleted["state"], "succeeded")
+        self.assertEqual(runner.calls[-1]["op"], "delete_file")
+        self.assertEqual(runner.calls[-1]["path"], runner.calls[-1]["target"])
+        self.assertNotIn("*", runner.calls[-1]["path"])
+        self.assertEqual(default_runner_invocations(), 0)
+        succeeded = [item["action"] for item in self.store.orders.values() if item["state"] == "succeeded"]
+        self.assertEqual(len(succeeded), 10)
+
+    def test_each_action_stays_refused_when_approval_does_not_match(self) -> None:
+        runner = RecordingRunner()
+        heartbeat = create_work_order(
+            self.store, device_id=DEVICE, action="monitor.heartbeat",
+            target=DEVICE, operator_id=OPERATOR,
+        )
+        self._approve(heartbeat)
+        self.store.orders[heartbeat["id"]]["approval"]["action"] = "change.delete"
+        hidden, transport = self._exchange(heartbeat, runner)
+        self.assertEqual(hidden["state"], "idle")
+        self.assertNotEqual(self.store.orders[heartbeat["id"]]["state"], "succeeded")
+        self.assertEqual(transport.events, ["poll"])
+
+        self.assertEqual(self._service(target="reboot")["state"], "refused")
+        self.assertEqual(
+            self._printer(path=r"C:\Users\alice\job.spl")["state"], "refused",
+        )
+        self.assertEqual(
+            create_work_order(
+                self.store, device_id=DEVICE, action="setup.onboard.local_user",
+                target="alice", operator_id=OPERATOR, params={"password": SENTINEL},
+            )["state"],
+            "refused",
+        )
+        self.assertNotIn(SENTINEL, json.dumps(snapshot(self.store)))
+        self.assertEqual(self._offboard(params={"mode": "disable", "admin_count": 1})["state"], "refused")
+        self.assertEqual(self._download(url="http://updates.example.com/a.cab")["state"], "refused")
+        self.assertEqual(self._install(source="cmd")["state"], "refused")
+        self.assertEqual(
+            create_work_order(
+                self.store, device_id=DEVICE, action="change.delete",
+                target=r"C:\Windows\System32\cmd.exe", operator_id=OPERATOR,
+            )["state"],
+            "refused",
+        )
+
+        mismatch = self._approve(self._install())
+        wrong, transport = self._exchange(mismatch, runner, {"sha256": "f" * 64})
+        self.assertEqual(wrong["state"], "refused")
+        self.assertEqual(wrong["error"], "staged file sha256 does not match the approved pin")
+        self.assertNotEqual(self.store.orders[mismatch["id"]]["state"], "succeeded")
+        self.assertNotIn("complete", transport.events)
+
+        delete = self._approve(create_work_order(
+            self.store, device_id=DEVICE, action="change.delete",
+            target=DELETE_OK, operator_id=OPERATOR,
+        ))
+        self.store.orders[delete["id"]]["target"] = r"C:\Users\alice\AppData\Local\Temp\other.tmp"
+        moved, transport = self._exchange(delete, runner)
+        self.assertEqual(moved["state"], "idle")
+        self.assertNotEqual(self.store.orders[delete["id"]]["state"], "succeeded")
+        self.assertEqual(transport.events, ["poll"])
+        self.assertEqual(runner.calls, [])
+        self.assertEqual(default_runner_invocations(), 0)
+        self.assertTrue(all(item["state"] != "succeeded" for item in self.store.orders.values()))
 
     def test_creating_an_order_does_not_approve_it(self) -> None:
         order = self._service()
