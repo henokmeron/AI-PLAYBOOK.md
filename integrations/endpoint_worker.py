@@ -4,6 +4,12 @@ Loopback consoles may use http://127.0.0.1 or http://localhost. Any other host
 requires HTTPS. Certificate verification stays on. Redirects are refused.
 The worker runs registered read-only collectors locally and submits the result.
 It does not accept a shell command, and it does not decide that a repair worked.
+
+Secret storage: Windows uses DPAPI (CryptProtectData/CryptUnprotectData) by default.
+Non-Windows and development use private files (mode 0600). Secrets are never logged.
+Migration: Old plaintext token files are migrated to DPAPI automatically on Windows.
+
+Redaction: Before upload, usernames, home paths, tokens, and other PII are redacted.
 """
 from __future__ import annotations
 
@@ -23,12 +29,16 @@ from urllib.parse import urlsplit
 
 from integrations.endpoint import _CHECK_PROCEDURES, assert_safe_state_path, collect_local_diagnostics
 from integrations.errors import InvalidRequest
+from integrations.redaction import redact_report_before_upload
+from integrations.secret_storage import migrate_to_dpapi, read_secret, remove_secret, write_secret
 from integrations.state_guard import StatePermissionError, assert_private, restrict_private
 
 _DIAGNOSTIC_KEYS = (
     "os_family", "os_version", "disk_free_bytes", "disk_total_bytes",
     "memory_total_bytes", "boot_time_unix", "collected_at_unix",
 )
+_AGENT_VERSION = "0.2.0"
+_SCHEMA_VERSION = 1
 
 
 class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
@@ -139,37 +149,12 @@ def _post(
     return parsed
 
 
-def write_secret_file(path: Path, value: str) -> None:
-    safe = assert_safe_state_path(path)
-    safe.parent.mkdir(parents=True, exist_ok=True)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-    descriptor = os.open(safe, flags, 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-        handle.write(value)
-    try:
-        restrict_private(safe)
-    except StatePermissionError as exc:
-        try:
-            safe.unlink()
-        except OSError:
-            pass
-        raise InvalidRequest("device secret file could not be made private") from exc
-
-
-def read_secret_file(path: Path) -> str:
-    safe = assert_safe_state_path(path)
-    try:
-        assert_private(safe)
-    except StatePermissionError as exc:
-        raise InvalidRequest("device secret file is not private") from exc
-    value = safe.read_text(encoding="utf-8").strip()
-    if len(value) < 32:
-        raise InvalidRequest("device secret file is not usable")
-    return value
-
-
 def enrol(origin: str, code: str, display_name: str, secret_path: Path) -> str:
-    """Create a device secret locally and exchange a one-time code for a device id."""
+    """Create a device secret locally and exchange a one-time code for a device id.
+    
+    The secret is stored using DPAPI on Windows, or a private file elsewhere.
+    The secret is never printed after creation.
+    """
     target = console_origin(origin)
     secret = secrets.token_urlsafe(32)
     result = _post(target, "/api/devices/enroll", {
@@ -180,7 +165,13 @@ def enrol(origin: str, code: str, display_name: str, secret_path: Path) -> str:
     device_id = result.get("device_id")
     if not isinstance(device_id, str) or len(device_id) != 32:
         raise InvalidRequest("console did not return a device id")
-    write_secret_file(secret_path, secret)
+    
+    import time
+    write_secret(secret_path, secret, metadata={
+        "device_id": device_id,
+        "enrolled_at": time.time(),
+        "agent_version": _AGENT_VERSION,
+    })
     return device_id
 
 
@@ -239,11 +230,24 @@ def collect_registered_checks(collect=None, clock=None) -> list[dict]:
 
 
 def submit_report(origin: str, secret_path: Path, collect=None) -> dict:
+    """Submit a diagnostic report with registered checks.
+    
+    Automatically migrates old plaintext secrets to DPAPI on Windows.
+    Redacts sensitive information before upload.
+    """
     target = console_origin(origin)
-    secret = read_secret_file(secret_path)
+    
+    migrate_to_dpapi(secret_path)
+    
+    secret, _metadata = read_secret(secret_path)
     diagnostic = collect_local_diagnostics()
     body = {key: diagnostic[key] for key in _DIAGNOSTIC_KEYS}
     body["checks"] = collect_registered_checks(collect, clock=lambda: diagnostic["collected_at_unix"])
+    body["schema_version"] = _SCHEMA_VERSION
+    body["agent_version"] = _AGENT_VERSION
+    
+    body = redact_report_before_upload(body)
+    
     return _post(target, "/api/devices/report", body, {"Authorization": f"Bearer {secret}"})
 
 
@@ -254,11 +258,17 @@ def write_job_credential(path: Path, credential: dict[str, str]) -> None:
         raise InvalidRequest("endpoint credential is not usable")
     if len(credential["device_secret"]) < 32 or len(credential["mac_key"]) != 64:
         raise InvalidRequest("endpoint credential is not usable")
-    write_secret_file(path, json.dumps({name: credential[name] for name in required}, sort_keys=True))
+    
+    credential_json = json.dumps({name: credential[name] for name in required}, sort_keys=True)
+    write_secret(path, credential_json, metadata={
+        "device_id": credential["device_id"],
+        "credential_type": "job_credential",
+    })
 
 
 def read_job_credential(path: Path) -> dict[str, str]:
-    raw = read_secret_file(path)
+    """Read job credential from secure storage."""
+    raw, _metadata = read_secret(path)
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -409,13 +419,6 @@ class _MarkerCollector:
             "status": "collected",
             "procedure_id": procedure_id,
         }
-
-
-def remove_secret(secret_path: Path) -> None:
-    """Delete the local device secret. This does not revoke the server record."""
-    safe = assert_safe_state_path(secret_path)
-    if safe.is_file():
-        safe.unlink()
 
 
 def main(argv: list[str] | None = None) -> int:
