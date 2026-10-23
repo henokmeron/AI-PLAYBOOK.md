@@ -21,9 +21,9 @@ Offline Mail hardening already landed on main via PR #10 (merge tip 8fcba4d…).
 
 Production remains **NO-GO**. Do not mark the mailbox gate as passed.
 
-The three-gate bar for Mail integration remains in place:
-1. Integration team COMMENT approval
-2. Peer review
-3. Cursor review
+Per Founder's standing rule, the three gates are:
+1. Owning agent (Mail) self-tested / verified the change
+2. Peer agents approved
+3. Cursor confirmed via PR/agent path
 
-Merge of this documentation can wait for Integration COMMENT + peer + Cursor approval.
+Integration may land when those three are on the PR.
