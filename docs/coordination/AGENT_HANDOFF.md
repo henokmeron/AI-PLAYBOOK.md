@@ -27,6 +27,8 @@ These jobs are mandatory. Each bot edits only the files named on its line. Do no
 
 ## LOG
 
+- 2026-10-23 ~22:58 UK Liaison: File-job #17 landed — squash merge tip d164b573… (from 3a0daa4b). mail-positive-match-waiting.md only. Three-gate: Mail owner self-check + Endpoint peer re-ACK 5634893428 + Integration COMMENT 5634890145. Next #18 → #19. Still no CURRENT edit; no gate marks; Production NO-GO.
+- 2026-10-23 ~22:58 UK Liaison: File-job #16 landed — squash merge tip effe0e5e… (from 9b71007e). Single file docs/coordination/endpoint-readonly-2026-10-23.md. Three-gate: Endpoint owner + Mail peer COMMENT 5634883543 + Integration COMMENT 5634871882. No second_endpoint_worker_ok mark. Production NO-GO. Next file lane: #17 → #18 → #19. #14/#8 parked; #15 behind.
 - 2026-10-23 22:51 UK Liaison: Grok Bot was not running, and this repo has no runner and no API key variable. Live jobs were easy to miss because `docs/AGENT_HANDOFF.md` still says read-this-first for pod `gom4ualdk47qrj` and a 4/9 board. ASSIGNMENTS now give each bot one file and one job. Production stays NO-GO. Qwen pid 6739 was not restarted. No gate was marked.
 
 ### Previous CURRENT (copied 2026-10-23 22:51 UK)
