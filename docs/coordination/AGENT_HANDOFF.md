@@ -4,9 +4,11 @@ Read this file before starting. Append to the log when you finish. Do not delete
 
 ## CURRENT
 
-Updated: 2026-10-23 22:40 UK
+Updated: 2026-10-23 22:50 UK
 
-Durable account and device state is in the working tree and is about to be pushed. Live files stay on `/tmp`. Checksummed mirrors are `/workspace/platform-state/operator-backups/` and `/workspace/platform-state/endpoint-backups/`. Sessions, the gateway key, the Microsoft token, and the Microsoft client id are not mirrored. The pod has not loaded this commit yet. Do not restart Qwen pid 6739. Reload the console only after `origin/main` is fast-forwarded on the pod, by copying that process's environment and command line.
+Pod `1jyrnyxpb0n93s` checkout is the durable-state commit `cb920b3a703196eb86cfceaf6974367af90ee462` unless a later docs commit has been fast-forwarded. The console was reloaded as pid 34991 from that checkout. Qwen pid 6739 and gateway pid 6497 were not signalled. Health was HTTP 200 on `:8002`, `:8010`, and `:8080`. Operator hashes and the device list were mirrored to `/workspace/platform-state/operator-backups/20261023T213720989628Z` and `/workspace/platform-state/endpoint-backups/20261023T213725366204Z`. A restore drill returned 1 administrator and 1 device. Sessions were not restored. The live files were not replaced.
+
+The acceptance board stays 3/9 live and 3/8 mandatory. Production stays NO-GO. No `deployed_sha_read` or `second_endpoint_worker_ok` record was added. Office PC still needs the clone in `docs/coordination/office-pc-clone.md`. Do not buy a weight copy or a Blackwell pod. Do not restart Qwen. Microsoft positive match still needs a phrase from the owner.
 
 The acceptance board was recalculated from `docs/results/acceptance-evidence.json`. It is 3/9 live and 3/8 mandatory. Production stays NO-GO. Passing mandatory gates: live health, inference completion, cited RAG and abstention. Failing: deployment parity, Microsoft mailbox, second endpoint, Blackwell, fresh recovery. The independent weight backup is optional and has no evidence. Do not quote the older 4/9 figure.
 
@@ -28,6 +30,8 @@ These jobs are mandatory. Bots must not download random computer-repair tools, d
 - Liaison: append the log after each bot finishes. Do not implement features.
 
 ## LOG
+
+- 2026-10-23 22:50 UK Cursor on this PC: pod checkout fast-forwarded to cb920b3. Console pid 32355 was replaced by pid 34991. Qwen pid 6739 and gateway pid 6497 stayed up. Health 200/200/200. Operator and device-list mirrors were written and a restore drill returned 1 admin and 1 device. Sessions were not restored. Board stays 3/9 and 3/8, NO-GO. No parity or second-endpoint evidence record was added.
 
 - 2026-10-23 22:40 UK Cursor on this PC: checksummed volume mirrors for operator hashes and the device list. Local tests exited 0. Board recalculated 3/9 and 3/8, NO-GO. Second-endpoint token was not written. Office PC clone commands and the weight/Blackwell cost note were saved. Qwen was not restarted. The pod had not loaded this commit yet.
 

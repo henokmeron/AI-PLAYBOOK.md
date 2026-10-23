@@ -27,4 +27,22 @@ The second-endpoint gate was re-read and was not marked. See the same date in th
 
 ## Pod
 
-The pod checkout and the console reload are recorded after this file is on `main`. This sentence is not evidence that the running console has loaded this commit.
+Checked on pod `1jyrnyxpb0n93s` after `main` was fast-forwarded. Qwen was not signalled.
+
+| Check | Result |
+| --- | --- |
+| Checkout | `cb920b3a703196eb86cfceaf6974367af90ee462`, equal to `origin/main` at the reload |
+| Volume | `/workspace` is `fuse.geesefs` |
+| Qwen | pid 6739, `:8002/health` HTTP 200 |
+| Gateway | pid 6497, `:8010/health` HTTP 200 |
+| Console | replaced pid 32355 with pid 34991, command `/tmp/AI-PLAYBOOK/web/server.py`, `:8080/api/status` HTTP 200 |
+
+The console environment and command line were copied. The gateway and Qwen were left running.
+
+Operator backup: action `backed_up`, 1 administrator, sessions not restored. Newest stamp `/workspace/platform-state/operator-backups/20261023T213720989628Z`. Device-list backup: action `backed_up`, 1 device, `secrets_copied` false. Stamp `/workspace/platform-state/endpoint-backups/20261023T213725366204Z`.
+
+A restore into temporary directories returned 1 administrator and 1 device. `sessions.json` was not restored. Those temporary directories were removed. The live `/tmp` files were not replaced.
+
+This does not pass deployment parity. No `deployed_sha_read` record was added. The running gateway and Qwen processes were started before this checkout. Production stays NO-GO.
+
+Local release archive of `cb920b3a703196eb86cfceaf6974367af90ee462`: SHA-256 `0cfd5ffcc7cdbb719280ae0d5fc51c03023bcc432762e6530d002a93007ab23c`. It was not copied to the volume.
