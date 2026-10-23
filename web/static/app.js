@@ -1447,15 +1447,16 @@
   function enrolmentInstructions(body) {
     var commands = body.commands || {};
     var token = "\"$env:LOCALAPPDATA\\AI-PLAYBOOK\\device-secret\"";
+    var code = String(body.enrolment_code || "");
     var enrol = commands.enrol;
     var report = commands.report;
     if (!enrol || !report) {
-      var code = String(body.enrolment_code || "");
       enrol = "python -m integrations.endpoint_worker enrol --console http://127.0.0.1:8080 --code=" +
         code + " --name=\"Office PC\" --token-file=" + token;
       report = "python -m integrations.endpoint_worker report --console http://127.0.0.1:8080 --token-file=" + token;
     }
-    return "On the other laptop, run enrol and then report. Both use http://127.0.0.1:8080.\n" +
+    return "Enrolment code\n" + code + "\n" +
+      "On the other laptop, run enrol and then report. Both use http://127.0.0.1:8080.\n" +
       enrol + "\n" + report + "\n" +
       "The code works once, expires in " + body.expires_in_seconds +
       " seconds, and cannot control the computer. It is not shown again.";
@@ -1463,7 +1464,13 @@
 
   document.getElementById("device-enrol").addEventListener("click", function () {
     var node = document.getElementById("device-code");
+    showError(agentError, "");
     request("/api/devices/enrolment", { method: "POST", body: {} }).then(function (body) {
+      if (!body || !body.enrolment_code) {
+        node.textContent = "";
+        showError(agentError, "An enrolment code was not created.");
+        return;
+      }
       node.textContent = enrolmentInstructions(body);
     }).catch(function (error) {
       showError(agentError, errorMessage(error));

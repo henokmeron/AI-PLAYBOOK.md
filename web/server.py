@@ -791,6 +791,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/favicon.ico":
             self.send_bytes(204, b"", "text/plain; charset=utf-8")
             return
+        if path == "/health":
+            self.send_json(200, {"status": "ok"})
+            return
         if path == "/api/status":
             self.handle_status()
             return
@@ -1447,7 +1450,14 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not self.require_key():
             return
-        created = self.server.devices.create_enrolment(CONSOLE_TENANT)  # type: ignore[attr-defined]
+        registry = self.server.devices  # type: ignore[attr-defined]
+        if registry.path is None:
+            self.send_error_json(503, "an enrolment code cannot be stored")
+            return
+        created = registry.create_enrolment(CONSOLE_TENANT)
+        if not isinstance(created.get("enrolment_code"), str) or not created["enrolment_code"]:
+            self.send_error_json(503, "an enrolment code cannot be stored")
+            return
         self.send_json(200, created)
 
     def handle_device_enroll(self) -> None:
@@ -2846,12 +2856,27 @@ class Handler(BaseHTTPRequestHandler):
         )
 
 
+def use_durable_endpoint_state() -> None:
+    """Show a code only when this process can store it.
+
+    A missing ENDPOINT_STATE_FILE used to keep the code in memory and still
+    return it to IT Helpdesk. The page then looked successful while nothing
+    was written. On the pod, the console file is /tmp/endpoint-devices.json.
+    """
+    if os.environ.get("ENDPOINT_STATE_FILE", "").strip():
+        return
+    if os.name != "posix":
+        return
+    os.environ["ENDPOINT_STATE_FILE"] = "/tmp/endpoint-devices.json"
+
+
 def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
     if argv:
         print("ERROR: this server does not take arguments; set environment variables instead.", flush=True)
         return 2
+    use_durable_endpoint_state()
     try:
         config = build_config()
     except ValueError as exc:

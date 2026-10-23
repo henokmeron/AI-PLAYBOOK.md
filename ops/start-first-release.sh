@@ -315,6 +315,7 @@ else
     MICROSOFT_TENANT="${MICROSOFT_TENANT:-common}" \
     MICROSOFT_REDIRECT_URI="${MICROSOFT_REDIRECT_URI:-http://127.0.0.1:18080/api/microsoft/callback}" \
     MICROSOFT_TOKEN_FILE="${MICROSOFT_TOKEN_FILE:-/tmp/microsoft-365-token.json}" \
+    ENDPOINT_STATE_FILE="${ENDPOINT_STATE_FILE:-/tmp/endpoint-devices.json}" \
     RAG_DOCS_DIR="${RAG_DOCS_DIR:-$VOL/rag-demo-docs}" \
     RAG_MANAGED_DOCS_DIR="$RAG_MANAGED" \
     /usr/bin/python3 "$REPO_ROOT/web/server.py" \

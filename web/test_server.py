@@ -355,6 +355,9 @@ class ConsoleTests(unittest.TestCase):
         if gateway is not None:
             self.start(gateway)
             gateway_url = f"http://127.0.0.1:{gateway.server_address[1]}"
+        state_dir = tempfile.TemporaryDirectory(prefix="endpoint-state-")
+        self._auth_dirs.append(state_dir)
+        os.environ["ENDPOINT_STATE_FILE"] = str(Path(state_dir.name) / "devices.json")
         httpd = self.start(server.WebServer(server.Config(
             host="127.0.0.1",
             port=0,
@@ -1398,6 +1401,8 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn(b"Installed software:", script)
         self.assertIn(b"Proposed repairs stay proposals. No repair runs without an approval record.", script)
         self.assertIn(b"--code=", script)
+        self.assertIn(b"Enrolment code", script)
+        self.assertIn(b"An enrolment code was not created.", script)
         self.assertIn(b"endpoint_worker report", script)
         self.assertIn(b"Open a ticket from this report", script)
         status, body = self.request(base, "POST", "/api/devices/enrolment", {})
@@ -1494,6 +1499,41 @@ class ConsoleTests(unittest.TestCase):
             {"Authorization": "Bearer " + secret},
         )
         self.assertEqual(after, 401)
+
+    def test_created_enrolment_code_is_stored_for_a_later_enrol(self) -> None:
+        base = self.web(FakeGateway())
+        health, health_body = self.request(base, "GET", "/health")
+        self.assertEqual(health, 200)
+        self.assertEqual(json.loads(health_body).get("status"), "ok")
+        status, body = self.request(base, "POST", "/api/devices/enrolment", {})
+        self.assertEqual(status, 200)
+        created = json.loads(body)
+        code = created["enrolment_code"]
+        self.assertTrue(str(code).isalnum())
+        self.assertIn(code, created["commands"]["enrol"])
+        registry = self.servers[-1].devices
+        self.assertIsNotNone(registry.path)
+        raw = registry.path.read_text(encoding="utf-8")
+        self.assertNotIn(code, raw)
+        from integrations.endpoint import DeviceRegistry
+
+        secret = "stored-enrolment-device-secret-value"
+        reloaded = DeviceRegistry(registry.path)
+        device_id = reloaded.enrol(code, "Office PC", secret)
+        self.assertEqual(len(device_id), 32)
+        stored = registry.path.read_text(encoding="utf-8")
+        self.assertNotIn(code, stored)
+        self.assertNotIn(secret, stored)
+
+    def test_enrolment_code_is_not_issued_when_it_cannot_be_stored(self) -> None:
+        base = self.web(FakeGateway())
+        self.servers[-1].devices.path = None
+        status, body = self.request(base, "POST", "/api/devices/enrolment", {})
+        self.assertEqual(status, 503)
+        text = body.decode("utf-8")
+        self.assertIn("an enrolment code cannot be stored", text)
+        self.assertNotIn("enrolment_code", text)
+        self.assertNotIn("--code=", text)
 
     def test_ticket_links_a_device_report_and_does_not_run_a_repair(self) -> None:
         base = self.web(FakeGateway())
