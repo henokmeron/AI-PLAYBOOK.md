@@ -51,20 +51,27 @@ class RateLimiter:
         self.rate = rate
         self.window = window
         self.clients: dict[str, list[float]] = defaultdict(list)
+        self.lock = __import__("threading").Lock()
 
     def is_allowed(self, client_ip: str) -> bool:
         """Check if a request from client_ip is allowed."""
         now = time.time()
         cutoff = now - self.window
 
-        # Remove old timestamps
-        self.clients[client_ip] = [ts for ts in self.clients[client_ip] if ts > cutoff]
+        with self.lock:
+            # Remove old timestamps
+            self.clients[client_ip] = [ts for ts in self.clients[client_ip] if ts > cutoff]
 
-        if len(self.clients[client_ip]) >= self.rate:
-            return False
+            if len(self.clients[client_ip]) >= self.rate:
+                return False
 
-        self.clients[client_ip].append(now)
-        return True
+            self.clients[client_ip].append(now)
+            
+            # Cleanup: remove empty entries to prevent unbounded growth
+            if not self.clients[client_ip]:
+                del self.clients[client_ip]
+            
+            return True
 
 
 class DeviceGatewayHandler(BaseHTTPRequestHandler):
@@ -87,7 +94,16 @@ class DeviceGatewayHandler(BaseHTTPRequestHandler):
 
     def _check_body_size(self) -> bool:
         """Check if body size is within gateway limits."""
-        length = int(self.headers.get("Content-Length", "0") or 0)
+        length_str = self.headers.get("Content-Length", "0") or "0"
+        try:
+            length = int(length_str)
+            if length < 0:
+                self.send_error_json(400, "invalid content-length")
+                return False
+        except ValueError:
+            self.send_error_json(400, "invalid content-length")
+            return False
+        
         if length > MAX_GATEWAY_BODY_BYTES:
             self.send_error_json(413, "request body too large")
             return False
@@ -131,6 +147,9 @@ class DeviceGatewayHandler(BaseHTTPRequestHandler):
         handler.close_connection = True
         handler.requestline = f"{self.command} {self.path} {self.request_version}"
         
+        # Track if a response was sent
+        response_started = False
+        
         # Dispatch to the appropriate method
         try:
             if path == "/api/remote-work/poll":
@@ -151,10 +170,19 @@ class DeviceGatewayHandler(BaseHTTPRequestHandler):
                 handler.handle_repair_device_result()
             elif path == "/api/repair/device/check-in":
                 handler.handle_repair_device_check_in()
-        except Exception:
-            # If there was an error and no response was sent, send a generic error
-            # The handler methods usually send their own error responses
-            pass
+            response_started = True
+        except Exception as exc:
+            # Log exception type without secrets or headers
+            exc_type = type(exc).__name__
+            print(f"[Gateway] Handler error: {exc_type}", flush=True)
+            
+            # Send 500 if no response was started
+            if not response_started:
+                try:
+                    self.send_error_json(500, "internal server error")
+                except Exception:
+                    # If we can't even send an error, give up
+                    pass
 
     def do_GET(self) -> None:
         if not self._check_rate_limit():
@@ -221,8 +249,30 @@ class DeviceGatewayServer(ThreadingHTTPServer):
 
         super().__init__((host, port), DeviceGatewayHandler)
 
-        # Wrap the socket with TLS
-        self.socket = context.wrap_socket(self.socket, server_side=True)
+        # Wrap the socket with TLS, but defer handshake to per-request thread
+        self.socket = context.wrap_socket(
+            self.socket, server_side=True, do_handshake_on_connect=False
+        )
+        self.handshake_timeout = 10.0
+
+    def finish_request(self, request: Any, client_address: Any) -> None:
+        """Complete TLS handshake before processing request."""
+        # Set timeout for handshake
+        request.settimeout(self.handshake_timeout)
+        try:
+            # Do TLS handshake in this thread (not the accept thread)
+            request.do_handshake()
+        except Exception as exc:
+            print(f"[Gateway] TLS handshake failed: {type(exc).__name__}", flush=True)
+            try:
+                request.close()
+            except Exception:
+                pass
+            return
+        
+        # Clear timeout and proceed with normal request handling
+        request.settimeout(None)
+        super().finish_request(request, client_address)
 
 
 def validate_gateway_config() -> tuple[str, int, str, str, int]:

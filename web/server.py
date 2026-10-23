@@ -597,6 +597,7 @@ class WebServer(ThreadingHTTPServer):
 class Handler(BaseHTTPRequestHandler):
     server_version = "LocalPlatformWeb/0.1"
     protocol_version = "HTTP/1.1"
+    _is_gateway_request = False
 
     def log_message(self, format_string: str, *args: Any) -> None:
         print(f"{self.client_address[0]} - {redact_request_log(format_string % args)}", flush=True)
