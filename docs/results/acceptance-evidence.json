@@ -83,6 +83,16 @@
           "evidence_kind": "live",
           "detail": "200/200/200. Console pid 97009. Qwen pid 1826 and gateway pid 87842 were not signalled.",
           "citation": "docs/IMPLEMENTATION_STATUS.md, 2026-10-23 console reload of cbf52ec"
+        },
+        {
+          "source_sha": "70e731a54218afc4fa8d05792af473a1a9523c9c",
+          "deployed_sha": "70e731a54218afc4fa8d05792af473a1a9523c9c",
+          "command": "curl -s -o /dev/null -w %{http_code} http://127.0.0.1:8002/health; http://127.0.0.1:8010/health; http://127.0.0.1:8080/api/status after restarting the gateway and console onto 70e731a on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-23T01:03:36Z",
+          "result": "http_200",
+          "evidence_kind": "live",
+          "detail": "200/200/200. Gateway pid 109608 and console pid 109642. Qwen pid 1826 was not signalled.",
+          "citation": "docs/IMPLEMENTATION_STATUS.md, 2026-10-23 gateway and console reload of 70e731a"
         }
       ]
     },
@@ -167,6 +177,16 @@
           "evidence_kind": "live",
           "detail": "Pod HEAD cbf52ec5405056734302a05db2970f7362c57c0e. Console pid 97009 started 2026-10-22T23:36:42Z. GET /api/acceptance returned the content-match gate and Microsoft NOT CONFIGURED. acceptance_board.py mtime is 118 ms after the process start tick; the response text is the new gate, so the import read that file. Qwen pid 1826 and gateway pid 87842 were not signalled. This commit does not change api/local_gateway.py.",
           "citation": "docs/IMPLEMENTATION_STATUS.md, 2026-10-23 console reload of cbf52ec"
+        },
+        {
+          "source_sha": "70e731a54218afc4fa8d05792af473a1a9523c9c",
+          "deployed_sha": "70e731a54218afc4fa8d05792af473a1a9523c9c",
+          "command": "SOURCE_UPDATE_APPROVED=yes bash ops/release/update-source-only.sh; restart api/local_gateway.py and web/server.py from their own /proc environ; compare /proc start with file mtime on A100 gom4ualdk47qrj",
+          "timestamp_utc": "2026-10-23T01:03:36Z",
+          "result": "deployed_sha_read",
+          "evidence_kind": "live",
+          "detail": "Pod HEAD 70e731a54218afc4fa8d05792af473a1a9523c9c, 0 tracked edits. Gateway pid 109608 start epoch 1792717413.570 is after api/local_gateway.py mtime 1792717008.966. Console pid 109642 start epoch 1792717414.400 is after web/server.py mtime 1792717008.968 and web/static/app.js mtime 1792717413.587. Qwen pid 1826 start epoch 1792682589.560 was not signalled. Saved environ files were removed after the start.",
+          "citation": "docs/IMPLEMENTATION_STATUS.md, 2026-10-23 gateway and console reload of 70e731a"
         }
       ]
     },
