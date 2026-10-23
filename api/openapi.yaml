@@ -266,6 +266,9 @@ paths:
                         filename: { type: string }
                         size_bytes: { type: integer }
                         extension: { type: string }
+                        owner: { type: string }
+                        version: { type: integer }
+                        status: { type: string }
         "400": { description: Invalid or missing collection }
         "401": { description: Authentication required }
         "429": { description: Rate limit exceeded }
@@ -290,6 +293,9 @@ paths:
                 filename: { type: string, maxLength: 120 }
                 content_base64: { type: string, format: byte }
                 overwrite: { type: boolean, default: false }
+                owner:
+                  type: string
+                  description: Recorded owner. The console sets this from the signed-in operator and ignores a browser-supplied name.
       responses:
         "201": { description: Document stored after content validation and is searchable }
         "400": { description: Invalid upload or unsupported/malformed document }
@@ -315,6 +321,32 @@ paths:
         "400": { description: Invalid collection or filename }
         "401": { description: Authentication required }
         "404": { description: Document not found }
+        "429": { description: Rate limit exceeded }
+  /v1/rag/documents/content:
+    post:
+      summary: Download one authorised document
+      description: >
+        Returns the file bytes to an actor who is the owner. There is no public
+        URL. A different actor receives 403 and no bytes. A retained version
+        number returns that earlier copy after a safe replace.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [collection, filename, actor]
+              properties:
+                collection: { type: string }
+                filename: { type: string }
+                actor: { type: string }
+                version: { type: integer }
+      responses:
+        "200": { description: File bytes for the authorised actor, with no url field }
+        "400": { description: Invalid collection, filename, or version }
+        "401": { description: Authentication required }
+        "403": { description: Actor is not allowed to download this document }
+        "404": { description: Document or version not found }
         "429": { description: Rate limit exceeded }
 components:
   securitySchemes:

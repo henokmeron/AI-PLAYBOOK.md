@@ -516,6 +516,31 @@ class GatewayReliabilityTests(unittest.TestCase):
         status, body, _ = self.ask("ZETA expense receipts business days?", collection="life")
         self.assertEqual(body["status"], "abstained")
 
+    def test_authorised_download_is_not_a_public_url(self) -> None:
+        status, body, _ = self.upload("owned", "notes.md", b"Owner only text.", owner="alice", actor="alice")
+        self.assertEqual(status, 201)
+        self.assertEqual(body["document"]["owner"], "alice")
+        self.assertNotIn("url", body["document"])
+        status, listed, _ = self.call("GET", "/v1/rag/documents?collection=owned")
+        self.assertEqual(status, 200)
+        self.assertEqual(listed["documents"][0]["status"], "active")
+        self.assertNotIn("Owner only text", json.dumps(listed))
+        status, denied, _ = self.call("POST", "/v1/rag/documents/content", {
+            "collection": "owned", "filename": "notes.md", "actor": "bob",
+        })
+        self.assertEqual(status, 403)
+        self.assertNotIn("content_base64", denied)
+        self.assertNotIn("Owner only text", json.dumps(denied))
+        status, missing, _ = self.call("GET", "/v1/rag/documents/content?collection=owned&filename=notes.md")
+        self.assertEqual(status, 404)
+        status, allowed, _ = self.call("POST", "/v1/rag/documents/content", {
+            "collection": "owned", "filename": "notes.md", "actor": "alice",
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(base64.b64decode(allowed["document"]["content_base64"]), b"Owner only text.")
+        self.assertNotIn("url", allowed["document"])
+        self.assertNotIn("url", allowed)
+
     def test_malformed_upload_is_rejected_and_collection_keeps_working(self) -> None:
         self.upload("malformed", "ok.txt", b"Hotel cap in London is 180 pounds.")
         for name, data in (("bad.docx", b"not a zip"), ("bad.csv", b"\xff\xfe\x00"), ("bad.exe", b"MZ")):

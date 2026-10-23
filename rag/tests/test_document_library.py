@@ -11,9 +11,12 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from document_library import (
+    DocumentAccessError,
     DocumentLibraryError,
+    MAX_UPLOAD_BYTES,
     delete_document,
     list_documents,
+    read_authorised_document,
     sanitize_history_for_collection,
     store_document,
     validate_collection_name,
@@ -217,6 +220,56 @@ class DocumentLibraryTests(unittest.TestCase):
         )
         self.assertIn("omitted because it cited document", quoted[0]["content"].casefold())
         self.assertNotIn("99.498", quoted[0]["content"])
+
+    def test_empty_oversized_duplicate_and_unauthorised_download(self) -> None:
+        with self.assertRaisesRegex(DocumentLibraryError, "empty"):
+            store_document(self.root, "finance", "blank.md", "")
+        oversized = base64.b64encode(b"a" * (MAX_UPLOAD_BYTES + 1)).decode("ascii")
+        with self.assertRaisesRegex(DocumentLibraryError, "exceeds"):
+            store_document(self.root, "finance", "big.md", oversized)
+        store_document(self.root, "finance", "budget.md", self.encoded("One."), owner="alice")
+        with self.assertRaises(FileExistsError):
+            store_document(self.root, "finance", "budget.md", self.encoded("Two."), owner="alice")
+        self.assertEqual((self.root / "finance" / "budget.md").read_text(encoding="utf-8"), "One.")
+        with self.assertRaises(DocumentAccessError):
+            read_authorised_document(self.root, "finance", "budget.md", "bob")
+        with self.assertRaises(DocumentAccessError):
+            read_authorised_document(self.root, "finance", "budget.md", "")
+        allowed = read_authorised_document(self.root, "finance", "budget.md", "alice")
+        self.assertEqual(base64.b64decode(allowed["content_base64"]), b"One.")
+        self.assertNotIn("url", allowed)
+        self.assertEqual(allowed["owner"], "alice")
+        self.assertEqual(allowed["version"], 1)
+        self.assertEqual(allowed["status"], "active")
+
+    def test_replace_keeps_the_previous_version_out_of_the_index(self) -> None:
+        store_document(self.root, "finance", "fees.md", self.encoded("OLD_ONLY_TOKEN fee 10"), owner="alice")
+        replaced = store_document(
+            self.root, "finance", "fees.md", self.encoded("NEW_ONLY_TOKEN fee 20"),
+            overwrite=True, owner="intruder", actor="alice",
+        )
+        self.assertEqual(replaced["version"], 2)
+        self.assertEqual(replaced["owner"], "alice")
+        self.assertEqual(replaced["retained_versions"], 1)
+        self.assertEqual((self.root / "finance" / "fees.md").read_text(encoding="utf-8"), "NEW_ONLY_TOKEN fee 20")
+        previous = read_authorised_document(self.root, "finance", "fees.md", "alice", version=1)
+        self.assertEqual(base64.b64decode(previous["content_base64"]), b"OLD_ONLY_TOKEN fee 10")
+        self.assertEqual(previous["status"], "retained")
+        self.assertFalse((self.root / "finance" / ".library-meta").exists())
+        indexed = "\n".join(chunk.text for chunk in load_chunks(self.root / "finance"))
+        self.assertIn("NEW_ONLY_TOKEN", indexed)
+        self.assertNotIn("OLD_ONLY_TOKEN", indexed)
+        with self.assertRaises(DocumentAccessError):
+            store_document(
+                self.root, "finance", "fees.md", self.encoded("STOLEN fee 30"),
+                overwrite=True, actor="bob",
+            )
+        self.assertEqual((self.root / "finance" / "fees.md").read_text(encoding="utf-8"), "NEW_ONLY_TOKEN fee 20")
+        with self.assertRaisesRegex(DocumentLibraryError, "previous version was kept"):
+            store_document(
+                self.root, "finance", "fees.md", self.encoded("NEW_ONLY_TOKEN fee 20"),
+                overwrite=True, actor="alice",
+            )
 
 
 if __name__ == "__main__":

@@ -22,11 +22,13 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from document_library import (
+    DocumentAccessError,
     DocumentLibraryError,
     delete_document,
     find_duplicate_content,
     get_collection_dir,
     list_documents,
+    read_authorised_document,
     sanitize_history_for_collection,
     store_document,
     validate_collection_name,
@@ -96,7 +98,7 @@ request_times: dict[str, list[float]] = {}
 RAG_STORE = FileBackedBm25Store()
 KNOWN_ROUTES = {
     "/health", "/livez", "/readyz", "/v1/platform/models", "/v1/rag/documents",
-    "/v1/chat/completions", "/v1/rag/ask",
+    "/v1/rag/documents/content", "/v1/chat/completions", "/v1/rag/ask",
 }
 
 
@@ -1028,7 +1030,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _route_post(self) -> None:
         parsed_path = urlsplit(self.path).path
-        allowed = {"/v1/chat/completions", "/v1/rag/ask", "/v1/rag/documents"}
+        allowed = {
+            "/v1/chat/completions", "/v1/rag/ask", "/v1/rag/documents",
+            "/v1/rag/documents/content",
+        }
         if parsed_path not in allowed or urlsplit(self.path).query:
             self.send_json(404, {"error": "not found"})
             return
@@ -1065,6 +1070,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed_path == "/v1/rag/ask":
             self.handle_rag_ask(payload)
+        elif parsed_path == "/v1/rag/documents/content":
+            self.handle_document_content(payload)
         elif parsed_path == "/v1/rag/documents":
             self.handle_document_upload(payload)
         else:
@@ -1103,6 +1110,8 @@ class Handler(BaseHTTPRequestHandler):
                 payload.get("filename"),
                 payload.get("content_base64"),
                 payload.get("overwrite", False),
+                owner=payload.get("owner"),
+                actor=payload.get("actor"),
             )
             RAG_STORE.invalidate(get_collection_dir(RAG_MANAGED_DOCS_DIR, outcome["collection"]))
             duplicates = find_duplicate_content(
@@ -1118,13 +1127,41 @@ class Handler(BaseHTTPRequestHandler):
         except FileExistsError:
             self.send_json(409, {"error": "document already exists; set overwrite=true to replace it"})
             return
+        except DocumentAccessError as exc:
+            self.send_json(403, {"error": str(exc)})
+            return
         except DocumentLibraryError as exc:
             message = str(exc)
             status = 413 if "exceeds" in message.casefold() and "bytes" in message.casefold() else 400
             self.send_json(status, {"error": message})
             return
         outcome.update(verification)
+        outcome.pop("url", None)
         self.send_json(201, {"status": "stored", "document": outcome})
+
+    def handle_document_content(self, payload: dict[str, Any]) -> None:
+        """Return file bytes only to an authorised actor. No public file URL."""
+        try:
+            document = read_authorised_document(
+                RAG_MANAGED_DOCS_DIR,
+                payload.get("collection"),
+                payload.get("filename"),
+                payload.get("actor"),
+                payload.get("version"),
+            )
+        except DocumentAccessError as exc:
+            self.send_json(403, {"error": str(exc)})
+            return
+        except FileNotFoundError:
+            self.send_json(404, {"error": "document not found"})
+            return
+        except DocumentLibraryError as exc:
+            message = str(exc)
+            status = 413 if "exceeds" in message.casefold() and "bytes" in message.casefold() else 400
+            self.send_json(status, {"error": message})
+            return
+        document.pop("url", None)
+        self.send_json(200, {"document": document})
 
     def handle_chat(self, payload: dict[str, Any]) -> None:
         if not isinstance(payload.get("messages"), list):
