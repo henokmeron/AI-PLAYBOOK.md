@@ -16,4 +16,5 @@ Next safe work: finish bringing up this pod's console, then continue product wor
 
 ## LOG
 
+- 2026-10-23T16:56Z New pod 1jyrnyxpb0n93s: the first Qwen process (pid 3237) was SIGKILLed during shard 1/11. The container OOM counter stayed 0 and dmesg was not permitted. A prefetch relaunch failed with ENOMEM while reading the FUSE checkpoint and was replaced. The default launch, pid 6739, loaded all 11 shards in 1h16m with no extra flag. 8002 /health 200, 8010 /health 200, 8080 /api/status 200. http://127.0.0.1:18080/ returned 200, title Business AI. Weights were not changed.
 - 2026-10-23T16:15Z Liaison file created. No product code in this commit. Cursor was starting the new pod. The local page was down because no tunnel was listening; a tunnel to port 18080 was opened from the owner's PC.
