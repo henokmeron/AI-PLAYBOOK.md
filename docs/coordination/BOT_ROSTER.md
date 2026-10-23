@@ -1,6 +1,6 @@
 # Bot roster
 
-Six bots. Each bot reads docs/coordination/AGENT_HANDOFF.md before starting work. After a job, append a log entry. Do not delete log entries. Only the Director replaces the CURRENT section, and only after copying the old CURRENT text into the log.
+Six bots. Each bot reads docs/coordination/AGENT_HANDOFF.md before starting work, then follows the ASSIGNMENTS section in that file. After a job, append a log entry. Do not delete log entries. Only the Director replaces the CURRENT section, and only after copying the old CURRENT text into the log.
 
 Repo: https://github.com/henokmeron/AI-PLAYBOOK.md
 Local path on the owner's Windows PC: C:\Users\henok\src\AI-PLAYBOOK.md
@@ -16,6 +16,7 @@ Shared rules for every bot:
 - This development PC is BANYA-FAMILY-PL. It is not the second Windows endpoint.
 - Production stays NO-GO until the acceptance board's mandatory gates pass. Do not weaken the board.
 - Cursor desktop is a separate session. Leave notes in AGENT_HANDOFF.md. Do not assume Cursor has read the group chat.
+- Do not download random computer-repair tools, driver packs, or third-party agents. The existing endpoint worker is the integration. A library may be added only if it is pinned, tested, and safer than the current code.
 
 ## 1. Director
 Name: Director
