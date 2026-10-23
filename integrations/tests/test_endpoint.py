@@ -251,7 +251,21 @@ class EndpointTests(unittest.TestCase):
         checks = collect_registered_checks(collect=_collect, clock=lambda: 200)
         from integrations.endpoint import _CHECK_PROCEDURES
         self.assertEqual([item["procedure_id"] for item in checks], list(_CHECK_PROCEDURES))
-        self.assertEqual(len(checks), 9)
+        self.assertEqual(len(checks), len(_CHECK_PROCEDURES))
+        self.assertEqual(
+            [item["procedure_id"] for item in checks[:9]],
+            [
+                "win.storage.space",
+                "win.services.inspect",
+                "win.update.inspect",
+                "hw.devices.inventory",
+                "print.diagnose",
+                "net.diagnose",
+                "win.events.recurring",
+                "win.startup.inspect",
+                "hw.identity.inspect",
+            ],
+        )
         self.assertTrue(all(item["evidence_source"] == "live_windows" and item["ok"] for item in checks))
         identity = next(item for item in checks if item["procedure_id"] == "hw.identity.inspect")
         self.assertIn("manufacturer=Example OEM", identity["summary"])
@@ -434,6 +448,38 @@ class EndpointTests(unittest.TestCase):
             self.assertNotEqual(expired["state"], "HEALTHY")
             self.assertEqual(expired["state"], "DEGRADED")
             self.assertIn("evidence_stale=true", expired["evidence"])
+
+    def test_read_only_health_checks_join_the_existing_nine(self) -> None:
+        from windows_repair.health_checks import HEALTH_PROCEDURE_IDS
+
+        from integrations.endpoint import _CHECK_PROCEDURES
+
+        for procedure_id in HEALTH_PROCEDURE_IDS:
+            self.assertIn(procedure_id, _CHECK_PROCEDURES)
+        self.assertIn("win.events.recurring", _CHECK_PROCEDURES)
+        self.assertIn("win.events.recent", _CHECK_PROCEDURES)
+        stored = normalise_report(_report(
+            device_id="a" * 32,
+            display_name="Office PC",
+            checks=[self._check(procedure_id="win.reboot.pending", summary="pending=false")],
+        ))
+        self.assertEqual(stored["checks"][0]["procedure_id"], "win.reboot.pending")
+        self.assertTrue(stored["checks"][0]["ok"])
+        sections = diagnostic_sections(stored)
+        self.assertEqual(sections["read_only_health"]["win.reboot.pending"]["summary"], "pending=false")
+        self.assertEqual(sections["read_only_health"]["win.services.failed"]["status"], "not_reported")
+        self.assertEqual(sections["network"]["status"], "not_reported")
+        with self.assertRaises(InvalidRequest):
+            normalise_report(_report(
+                device_id="b" * 32,
+                display_name="Office PC",
+                checks=[self._check(
+                    procedure_id="win.storage.health",
+                    ok=True,
+                    evidence_source="unavailable",
+                    summary="status=unavailable",
+                )],
+            ))
 
 
 class WorkerSecretFileTests(unittest.TestCase):
@@ -803,7 +849,7 @@ class SecondPcEnrolmentTests(unittest.TestCase):
             server.server_close()
 
     def test_safe_code_commands_and_structured_report_exclude_the_fixture(self) -> None:
-        from integrations.endpoint import _CHECK_PROCEDURES
+        from integrations.endpoint import CHECK_SUMMARY_LIMIT, _CHECK_PROCEDURES
         from integrations.endpoint_worker import CONSOLE_REPORT_LIMIT, build_report_body
 
         registry = DeviceRegistry(clock=lambda: 1_000.0)
@@ -866,7 +912,7 @@ class SecondPcEnrolmentTests(unittest.TestCase):
                 "evidence_source": "live_windows",
                 "ok": True,
                 "collected_at_unix": 1_700_000_000,
-                "summary": "x" * 240,
+                "summary": "x" * CHECK_SUMMARY_LIMIT,
             })
         hardware = {
             "status": "collected",

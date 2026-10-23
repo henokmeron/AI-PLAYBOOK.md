@@ -3,6 +3,8 @@
 A device the operator enrolled can submit one fixed diagnostic: operating
 system, disk space, memory, boot time, and the registered read-only checks.
 Hardware identity is manufacturer, model, BIOS, CPU, and available memory.
+Further read-only checks report pending reboot, failed automatic services,
+printer queue depth, storage health, problem devices, and a recent error count.
 This module does not accept a command, a path, a screen capture, or a
 credential. The server stores a hash of the device secret and cannot use
 that hash to drive the computer.
@@ -27,6 +29,8 @@ from typing import Any, Callable
 
 from agents.schema import ValidationError, validate
 
+from windows_repair.health_checks import HEALTH_PROCEDURE_IDS
+
 from .catalog import Catalog, ConnectorSpec, Effect, OperationSpec
 from .errors import AuthenticationError, InvalidRequest, RateLimited
 from .state_guard import StatePermissionError, assert_private, restrict_private
@@ -40,6 +44,9 @@ _MIN_REPORT_GAP = 15.0
 _ENROL_WINDOW_SECONDS = 15 * 60
 _ENROL_MAX_FAILURES = 20
 _FAMILIES = ("windows", "linux", "darwin", "other")
+# Fifteen checks at this summary length, plus hardware identity, stay inside
+# the 4096-byte console body. Keep equal to windows_repair.health_checks.HEALTH_SUMMARY_LIMIT.
+CHECK_SUMMARY_LIMIT = 100
 _CHECK_PROCEDURES = (
     "win.storage.space",
     "win.services.inspect",
@@ -50,6 +57,7 @@ _CHECK_PROCEDURES = (
     "win.events.recurring",
     "win.startup.inspect",
     "hw.identity.inspect",
+    *HEALTH_PROCEDURE_IDS,
 )
 _CHECK_SOURCES = ("live_windows", "unavailable")
 _MAX_CHECKS = len(_CHECK_PROCEDURES)
@@ -213,7 +221,7 @@ def _check_by_id(report: dict[str, Any] | None, procedure_id: str) -> dict[str, 
 
 
 def diagnostic_sections(report: dict[str, Any] | None) -> dict[str, Any]:
-    """OS, disk, network, hardware identity, and installed software. A repair is not executed from here."""
+    """OS, disk, network, hardware identity, installed software, and the extra read-only checks."""
     software = _check_by_id(report, "app.browser.inspect")
     if software["status"] == "not_reported":
         software = {
@@ -226,6 +234,10 @@ def diagnostic_sections(report: dict[str, Any] | None) -> dict[str, Any]:
         "network": _check_by_id(report, "net.diagnose"),
         "installed_software": software,
         "hardware": _check_by_id(report, "hw.identity.inspect"),
+        "read_only_health": {
+            procedure_id: _check_by_id(report, procedure_id)
+            for procedure_id in HEALTH_PROCEDURE_IDS
+        },
         "repair_authority": False,
         "execution": "proposal_only",
     }
@@ -379,7 +391,7 @@ def normalise_checks(checks: Any, collected_at: int) -> list[dict[str, Any]]:
             raise InvalidRequest("diagnostic check time is not valid") from exc
         if abs(stamp - collected_at) > _CHECK_SKEW_SECONDS:
             raise InvalidRequest("diagnostic check time does not match the report")
-        summary = _plain(str(item.get("summary", "")), 240)
+        summary = _plain(str(item.get("summary", "")), CHECK_SUMMARY_LIMIT)
         if not summary:
             raise InvalidRequest("diagnostic check summary is missing")
         seen.add(procedure_id)

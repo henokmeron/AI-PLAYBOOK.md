@@ -24,11 +24,13 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from integrations.endpoint import (
+    CHECK_SUMMARY_LIMIT,
     FIXTURE_LABEL,
     _CHECK_PROCEDURES,
     assert_safe_state_path,
     collect_local_diagnostics,
 )
+from windows_repair.health_checks import HEALTH_PROCEDURE_IDS
 from integrations.errors import InvalidRequest
 from integrations.state_guard import StatePermissionError, assert_private, restrict_private
 
@@ -326,12 +328,12 @@ def _identity_summary(raw: dict) -> str:
         parts.append("fixture=synthetic")
     if status == "collected":
         parts.append(f"manufacturer={_clip(raw.get('manufacturer'), 32)}")
+        parts.append(f"ram_available={_clip(raw.get('memory_available_bytes'), 20)}")
+        parts.append(f"ram_total={_clip(raw.get('memory_total_bytes'), 20)}")
         parts.append(f"model={_clip(raw.get('model'), 32)}")
         parts.append(f"bios={_clip(raw.get('bios_version') or raw.get('bios'), 24)}")
         parts.append(f"cpu={_clip(raw.get('cpu'), 32)}")
-        parts.append(f"ram_available={_clip(raw.get('memory_available_bytes'), 20)}")
-        parts.append(f"ram_total={_clip(raw.get('memory_total_bytes'), 20)}")
-    return _clip("; ".join(parts), 240)
+    return _clip("; ".join(parts), CHECK_SUMMARY_LIMIT)
 
 
 def _identity_is_complete(raw: dict) -> bool:
@@ -371,10 +373,26 @@ def summarise_live_check(procedure_id: str, raw: dict, collected_at: int) -> dic
             "collected_at_unix": collected_at,
             "summary": summary,
         }
+    if procedure_id in HEALTH_PROCEDURE_IDS:
+        supplied = raw.get("summary")
+        if isinstance(supplied, str) and supplied.strip():
+            summary = _clip(supplied, CHECK_SUMMARY_LIMIT)
+        else:
+            summary = _clip(f"status={status or 'unavailable'}", CHECK_SUMMARY_LIMIT)
+        if not summary:
+            summary = "status=unavailable"
+        return {
+            "procedure_id": procedure_id,
+            "evidence_source": source,
+            "ok": ok,
+            "collected_at_unix": collected_at,
+            "summary": summary,
+        }
     parts = [procedure_id]
     for key in (
-        "spooler", "present_count", "gateway_ok", "dns_localhost_ok", "detail", "status",
-        "last_boot", "free_memory_kb", "total_memory_kb", "cpu_load_percent",
+        "spooler", "present_count", "gateway_ok", "dns_localhost_ok",
+        "last_boot", "free_memory_kb", "cpu_load_percent", "total_memory_kb",
+        "detail", "status",
     ):
         if key in raw and raw[key] not in (None, ""):
             parts.append(f"{key}={_clip(raw[key], 40)}")
@@ -387,7 +405,7 @@ def summarise_live_check(procedure_id: str, raw: dict, collected_at: int) -> dic
         "evidence_source": source,
         "ok": ok,
         "collected_at_unix": collected_at,
-        "summary": _clip("; ".join(parts), 240),
+        "summary": _clip("; ".join(parts), CHECK_SUMMARY_LIMIT),
     }
 
 
@@ -397,9 +415,10 @@ def collect_registered_checks(collect=None, clock=None) -> list[dict]:
 
     now = int((clock or time)())
     if collect is None and os.name == "nt":
-        from windows_repair.providers import LiveWindowsProvider
+        hardware_box: dict[str, dict] = {}
 
-        collector = LiveWindowsProvider().collect
+        def collector(procedure_id: str) -> dict:
+            return _default_collector(procedure_id, hardware_box)
     else:
         collector = collect
     checks = []
@@ -424,6 +443,33 @@ def _default_collector(procedure_id: str, hardware_box: dict[str, dict]) -> dict
 
         reading = collect_hardware_identity()
         hardware_box["reading"] = reading
+        return reading
+    if procedure_id in HEALTH_PROCEDURE_IDS:
+        if "health_bundle" not in hardware_box:
+            try:
+                from windows_repair.health_checks import collect_health_bundle
+
+                hardware_box["health_bundle"] = collect_health_bundle()
+            except Exception as exc:  # noqa: BLE001 — one failed bundle must not hide the other checks
+                hardware_box["health_bundle"] = {
+                    item: {
+                        "ok": False,
+                        "evidence_source": "unavailable",
+                        "status": "unavailable",
+                        "summary": "status=unavailable",
+                        "detail": type(exc).__name__,
+                    }
+                    for item in HEALTH_PROCEDURE_IDS
+                }
+        reading = hardware_box["health_bundle"].get(procedure_id)
+        if not isinstance(reading, dict):
+            return {
+                "ok": False,
+                "evidence_source": "unavailable",
+                "status": "unavailable",
+                "summary": "status=unavailable",
+                "detail": "unavailable",
+            }
         return reading
     if os.name != "nt":
         return {
