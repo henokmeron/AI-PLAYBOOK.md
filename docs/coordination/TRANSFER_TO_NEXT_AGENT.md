@@ -99,7 +99,7 @@ Last honest board before the Office PC report was 4/9 live and 4/8 mandatory, pr
 
 - Live health and deployment parity must be rechecked against the pod's current checkout. A push is not a deploy.
 - Inference completion and cited RAG plus abstention were proven on an earlier pod. Reconfirm on this pod before calling them current. Qwen pid 6739 must stay up while you do it.
-- Microsoft mailbox content match is not proven. A list was HTTP 200 with count 9. Searches for "the" were HTTP 200 with count 0. Do not search for "the" again. Do not send mail. Do not add scopes. Do not create an Entra app. Power Automate stays NOT TESTED until a real flow succeeds. The owner must supply one harmless phrase that is already in the mailbox.
+- Microsoft mailbox content match is not proven. A list was HTTP 200 with count 9. Searches for "the" were HTTP 200 with count 0. Do not search for "the" again. Do not send mail. Do not add scopes. Do not create an Entra app. Power Automate stays NOT TESTED until a real flow succeeds. The owner must supply one harmless phrase that is already in the mailbox. Mail hardening from pull request 10 is on `main` (`docs/coordination/mail-agent-completion-2026-10-23.md`). Its own report says live mailbox is blocked until a browser sign-in. That merge is not `mailbox_content_match_ok`.
 - Second Windows endpoint: Office PC has reported. The gate is not marked.
 - Blackwell: blocked until the owner names the GPU and accepts the hourly charge and the load time.
 - Fresh recovery: a 41/41 run on this same PC does not pass. The gate needs a fresh machine or a new pod.
