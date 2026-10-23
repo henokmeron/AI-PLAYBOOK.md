@@ -369,3 +369,72 @@ Exit code: 0
 - ❌ Real automation flow still NOT TESTED (no webhook URL)
 
 **Production Status:** Still NO-GO until live mailbox verification completes.
+
+---
+
+## Update 2026-10-23T20:30Z: Rebase Complete + All Tests Passing
+
+### Rebase Status
+
+**Before Rebase:**
+- Base: 30164f9 (old main)
+- Head: 2bc0ade
+
+**After Rebase:**
+- Base: e8f9665 ("Keep boot time and memory in the startup check summary.")
+- Head: 863faf8
+
+**Result:** Clean rebase, no conflicts
+
+### Resilience Tests Fixed
+
+**Issue:** Tests were failing (5/10 exit 1) due to mock transport bugs:
+1. Pagination mock didn't handle URL-encoded parameters (`%24skiptoken` vs `$skiptoken`)
+2. Transient error mock used global attempt counter for ALL calls (token, /me, /me/messages), causing incorrect behavior
+
+**Fix:**
+- Handle both encoded and unencoded URL parameters in pagination mock
+- Add `messages_attempt` counter to track /me/messages calls separately
+- Transient error retry now works correctly
+
+**Result:** ✅ All 10/10 resilience tests PASSING (exit 0)
+
+### Final Test Results (After Rebase)
+
+**Commands Run:**
+```bash
+python3 -m unittest integrations.tests.test_microsoft_oauth -v
+python3 -m unittest integrations.tests.test_automation -v
+python3 -m unittest integrations.tests.test_mail_verification -v
+python3 -m unittest integrations.tests.test_microsoft_resilience -v
+python3 -m integrations.verify_mailbox --synthetic
+```
+
+| Test Suite | Result | Exit Code |
+|------------|--------|-----------|
+| OAuth | 18/18 | 0 ✅ |
+| Automation | 6/6 | 0 ✅ |
+| Mail Verification | 11/11 | 0 ✅ |
+| **Resilience** | **10/10** | **0 ✅** |
+| CLI Synthetic | 2/2 | 0 ✅ |
+
+**Total:** ✅ **45/45 tests PASSING**
+
+### Commit After Rebase
+
+**New Commit:**
+- 863faf8 - "Fix resilience tests to exit 0 (10/10 passing)"
+
+**Files Modified:**
+- `integrations/tests/test_microsoft_resilience.py` (+12 lines, -4 lines)
+
+### Live Testing Status
+
+❌ **Still BLOCKED** - No change from previous status
+
+**Why:**
+- MICROSOFT_CLIENT_ID present but no browser sign-in completed
+- No owner-supplied distinctive phrases
+- Cannot claim live success without actual mailbox verification
+
+**Production Status:** Still NO-GO until live verification
