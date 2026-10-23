@@ -892,6 +892,96 @@ class DeviceStore:
         if missing_mac or raw.get("version") != 2 or "key" in raw or not sidecar.is_file():
             self._save()
 
+    def propose_repair(
+        self,
+        *,
+        tenant_id: str,
+        device_id: str,
+        procedure_id: str,
+        parameters: dict[str, Any],
+        diagnostic_evidence: str,
+        customer_approval: str,
+        risk_classification: str,
+        rollback_plan: str,
+        grant: OperatorGrant,
+    ) -> dict[str, Any]:
+        """Propose a repair action with full audit trail (proposal only, NOT executed).
+        
+        repair_authority=false for all devices. Execution NOT implemented.
+        """
+        with self._exclusive():
+            return self._propose_repair(
+                tenant_id=tenant_id,
+                device_id=device_id,
+                procedure_id=procedure_id,
+                parameters=parameters,
+                diagnostic_evidence=diagnostic_evidence,
+                customer_approval=customer_approval,
+                risk_classification=risk_classification,
+                rollback_plan=rollback_plan,
+                grant=grant,
+            )
+
+    def _propose_repair(
+        self,
+        *,
+        tenant_id: str,
+        device_id: str,
+        procedure_id: str,
+        parameters: dict[str, Any],
+        diagnostic_evidence: str,
+        customer_approval: str,
+        risk_classification: str,
+        rollback_plan: str,
+        grant: OperatorGrant,
+    ) -> dict[str, Any]:
+        """Internal proposal creation with audit logging."""
+        if not isinstance(grant, OperatorGrant):
+            raise RepairDenied("operator session is required")
+        if grant.tenant_id != tenant_id:
+            raise RepairDenied("operator is not authorised for this organisation")
+        
+        device = self._device(tenant_id, device_id)
+        
+        if risk_classification not in {"LOW", "MEDIUM", "HIGH"}:
+            raise RepairDenied("risk_classification must be LOW, MEDIUM, or HIGH")
+        if not rollback_plan or len(rollback_plan.strip()) < 10:
+            raise RepairDenied("rollback_plan is required and must be detailed")
+        if not customer_approval or len(customer_approval.strip()) < 5:
+            raise RepairDenied("customer_approval is required")
+        if not procedure_id or not diagnostic_evidence:
+            raise RepairDenied("procedure_id and diagnostic_evidence are required")
+        
+        now = self._clock()
+        proposal_id = uuid.uuid4().hex
+        proposal = {
+            "proposal_id": proposal_id,
+            "device_id": device_id,
+            "tenant_id": tenant_id,
+            "procedure_id": procedure_id,
+            "parameters": dict(parameters) if parameters else {},
+            "diagnostic_evidence": diagnostic_evidence[:500],
+            "customer_approval": customer_approval[:200],
+            "risk_classification": risk_classification,
+            "rollback_plan": rollback_plan[:1000],
+            "proposed_by": grant.operator_id,
+            "proposed_at": now,
+            "expires_at": now + 3600,
+            "state": "proposed",
+            "repair_authority": False,
+        }
+        
+        self._audit(
+            "propose_repair",
+            tenant_id,
+            device_id,
+            f"proposed:{procedure_id}",
+            grant.username,
+            job_id=proposal_id,
+        )
+        
+        return proposal
+
 
 def dev_self_test(path: Path) -> dict[str, Any]:
     """Enrol a throwaway device and run one live read-only job. Does not install a service."""
