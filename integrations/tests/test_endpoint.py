@@ -235,6 +235,18 @@ class EndpointTests(unittest.TestCase):
         )
         self.assertEqual(len(checks), 8)
         self.assertTrue(all(item["evidence_source"] == "live_windows" and item["ok"] for item in checks))
+        startup = summarise_live_check("win.startup.inspect", {
+            "evidence_source": "live_windows",
+            "ok": True,
+            "status": "collected",
+            "last_boot": "2026-10-22T10:00:00",
+            "free_memory_kb": 1000,
+            "total_memory_kb": 8000,
+            "cpu_load_percent": 3,
+        }, 200)
+        self.assertIn("last_boot=2026-10-22T10:00:00", startup["summary"])
+        self.assertIn("free_memory_kb=1000", startup["summary"])
+        self.assertIn("cpu_load_percent=3", startup["summary"])
 
     def test_director_does_not_call_a_basic_or_stale_check_in_healthy(self) -> None:
         from ops_centre.director import _endpoint_fleet

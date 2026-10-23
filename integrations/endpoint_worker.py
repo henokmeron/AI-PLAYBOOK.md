@@ -312,7 +312,10 @@ def summarise_live_check(procedure_id: str, raw: dict, collected_at: int) -> dic
     if not ok:
         source = "unavailable"
     parts = [procedure_id]
-    for key in ("spooler", "present_count", "gateway_ok", "dns_localhost_ok", "detail", "status"):
+    for key in (
+        "spooler", "present_count", "gateway_ok", "dns_localhost_ok", "detail", "status",
+        "last_boot", "free_memory_kb", "total_memory_kb", "cpu_load_percent",
+    ):
         if key in raw and raw[key] not in (None, ""):
             parts.append(f"{key}={_clip(raw[key], 40)}")
     for key in ("disks", "services", "events", "problems", "printers", "addresses"):
