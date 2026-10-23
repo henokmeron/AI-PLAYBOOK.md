@@ -22,9 +22,11 @@ These steps still require a different physical Windows PC:
 4. On the second computer:
 
 ```powershell
-python -m integrations.endpoint_worker enrol --console http://127.0.0.1:8080 --code "<one-time-code>" --name "Office PC 2" --token-file "$env:LOCALAPPDATA\AI-PLAYBOOK\device-secret"
-python -m integrations.endpoint_worker report --console http://127.0.0.1:8080 --token-file "$env:LOCALAPPDATA\AI-PLAYBOOK\device-secret"
+python -m integrations.endpoint_worker enrol --console http://127.0.0.1:8080 --code=<one-time-code> --name="Office PC 2" --token-file="$env:LOCALAPPDATA\AI-PLAYBOOK\device-secret"
+python -m integrations.endpoint_worker report --console http://127.0.0.1:8080 --token-file="$env:LOCALAPPDATA\AI-PLAYBOOK\device-secret"
 ```
+
+Keep the `=` after `--code`. A value that starts with `-` is dropped by the command parser when it is a separate argument, so the console never receives the code. Do not run `enrol` on BANYA-FAMILY-PL. That PC refuses it unless the fixture label is set, and the fixture does not count.
 
 The device secret is written to that file and is not printed. Do not paste the secret or the one-time code into chat, docs, or git.
 

@@ -15,6 +15,7 @@ import re
 import secrets
 import shutil
 import stat
+import string
 import threading
 import time
 import uuid
@@ -52,6 +53,9 @@ _MAX_CHECKS = len(_CHECK_PROCEDURES)
 _STALE_SECONDS = 86400
 _FUTURE_SKEW_SECONDS = 120
 _CHECK_SKEW_SECONDS = 300
+FIXTURE_LABEL = "not-the-second-endpoint"
+_DEV_ENDPOINT_NAME = "banya-family-pl"
+_CODE_ALPHABET = string.ascii_letters + string.digits
 
 _NONE = {
     "type": "object",
@@ -146,6 +150,93 @@ def _plain(value: str, limit: int) -> str:
     text = _CONTROL.sub(" ", value).strip()
     text = " ".join(text.split())
     return text[:limit]
+
+
+def _new_enrolment_code() -> str:
+    """24 letters or digits. A leading hyphen is parsed as a command flag."""
+    return "".join(secrets.choice(_CODE_ALPHABET) for _ in range(24))
+
+
+def endpoint_label(display_name: str) -> str:
+    """Label a fixture or this development PC so it cannot be the second endpoint."""
+    folded = " ".join(str(display_name).split()).casefold().rstrip(".")
+    if (
+        folded == FIXTURE_LABEL
+        or folded == _DEV_ENDPOINT_NAME
+        or folded.startswith(_DEV_ENDPOINT_NAME + ".")
+    ):
+        return FIXTURE_LABEL
+    return ""
+
+
+def _check_by_id(report: dict[str, Any] | None, procedure_id: str) -> dict[str, Any]:
+    if not isinstance(report, dict):
+        return {"status": "not_reported", "summary": ""}
+    checks = report.get("checks")
+    if not isinstance(checks, list):
+        return {"status": "not_reported", "summary": ""}
+    for item in checks:
+        if isinstance(item, dict) and item.get("procedure_id") == procedure_id:
+            source = item.get("evidence_source")
+            summary = item.get("summary") if isinstance(item.get("summary"), str) else ""
+            return {
+                "status": "reported" if source == "live_windows" else "unavailable",
+                "summary": summary,
+                "ok": bool(item.get("ok")),
+            }
+    return {"status": "not_reported", "summary": ""}
+
+
+def diagnostic_sections(report: dict[str, Any] | None) -> dict[str, Any]:
+    """OS, disk, network, and installed software. A repair is not executed from here."""
+    software = _check_by_id(report, "app.browser.inspect")
+    if software["status"] == "not_reported":
+        software = {
+            "status": "not_collected",
+            "summary": "Installed software is not part of this check-in.",
+        }
+    sections: dict[str, Any] = {
+        "os": None,
+        "disk": None,
+        "network": _check_by_id(report, "net.diagnose"),
+        "installed_software": software,
+        "repair_authority": False,
+        "execution": "proposal_only",
+    }
+    if isinstance(report, dict) and report.get("status") == "ok":
+        sections["os"] = {
+            "family": report.get("os_family"),
+            "version": report.get("os_version"),
+        }
+        sections["disk"] = {
+            "free_bytes": report.get("disk_free_bytes"),
+            "total_bytes": report.get("disk_total_bytes"),
+            "volumes": _check_by_id(report, "win.storage.space"),
+        }
+    return sections
+
+
+def second_endpoint_status(devices: list[dict[str, Any]]) -> str:
+    """Say NOT ENROLLED until a non-fixture device has stored a report.
+
+    A fixture label, the name not-the-second-endpoint, and BANYA-FAMILY-PL are
+    skipped. A counts_as_second_endpoint flag is not evidence. This does not
+    pass the acceptance gate.
+    """
+    reported = 0
+    for device in devices:
+        if not isinstance(device, dict):
+            continue
+        name = str(device.get("display_name") or "")
+        if device.get("fixture_label") == FIXTURE_LABEL or endpoint_label(name) == FIXTURE_LABEL:
+            continue
+        report = device.get("report")
+        if not isinstance(report, dict) or report.get("status") != "ok":
+            continue
+        reported += 1
+    if reported == 0:
+        return "NOT ENROLLED"
+    return f"REPORTED {reported}"
 
 
 def _check_report_values(report: dict[str, Any]) -> None:
@@ -313,6 +404,7 @@ class _Device:
     created_at: float
     last_report_at: float = 0.0
     report: dict[str, Any] | None = None
+    fixture_label: str = ""
 
 
 class DeviceRegistry:
@@ -353,11 +445,18 @@ class DeviceRegistry:
         self._enrol_failures.append(now)
 
     def create_enrolment(self, tenant_id: str) -> dict[str, Any]:
-        code = secrets.token_urlsafe(18)
+        code = _new_enrolment_code()
         with self._lock:
             self._codes.append(_Code(tenant_id, _digest(code), self._clock() + _CODE_TTL))
             self._save()
-        return {"enrolment_code": code, "expires_in_seconds": _CODE_TTL, "remote_control": False}
+        from integrations.endpoint_worker import operator_commands
+
+        return {
+            "enrolment_code": code,
+            "expires_in_seconds": _CODE_TTL,
+            "remote_control": False,
+            **operator_commands(code),
+        }
 
     def enrol(self, code: str, display_name: str, device_secret: str) -> str:
         if not isinstance(code, str) or len(code) < 16 or len(code) > 80:
@@ -392,6 +491,7 @@ class DeviceRegistry:
                 secret_hash=_digest(device_secret),
                 status="enrolled",
                 created_at=now,
+                fixture_label=endpoint_label(name),
             )
             self._save()
         return device_id
@@ -527,6 +627,7 @@ class DeviceRegistry:
                     "created_at": item.created_at,
                     "last_report_at": item.last_report_at,
                     "report": item.report,
+                    "fixture_label": item.fixture_label,
                 }
                 for item in self._devices.values()
             ],
@@ -583,15 +684,23 @@ class DeviceRegistry:
                     report = normalise_report(report)
                 except InvalidRequest as exc:
                     raise AuthenticationError("endpoint state file is not usable") from exc
+            display_name = str(item["display_name"])
+            label = str(item.get("fixture_label") or "")
+            if label != FIXTURE_LABEL:
+                label = ""
+            forced = endpoint_label(display_name)
+            if forced:
+                label = forced
             device = _Device(
                 tenant_id=str(item["tenant_id"]),
                 device_id=str(item["device_id"]),
-                display_name=str(item["display_name"]),
+                display_name=display_name,
                 secret_hash=str(item["secret_hash"]),
                 status=str(item.get("status", "revoked")),
                 created_at=float(item.get("created_at", 0)),
                 last_report_at=float(item.get("last_report_at", 0)),
                 report=report,
+                fixture_label=label,
             )
             if device.status not in {"enrolled", "revoked"}:
                 device.status = "revoked"
@@ -642,6 +751,8 @@ def _public_device(item: _Device, now: float) -> dict[str, Any]:
         "last_report_at": item.last_report_at,
         "diagnostic_coverage": coverage,
         "counts_as_second_endpoint": False,
+        "fixture_label": item.fixture_label,
+        "diagnostics": diagnostic_sections(item.report),
         **timing,
         "report": report,
     }

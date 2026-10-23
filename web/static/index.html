@@ -163,7 +163,7 @@
         </section>
         <section class="composer" aria-labelledby="device-title">
           <h2 id="device-title">Enrolled computers</h2>
-          <p class="meta">A computer you enrol sends its operating system, disk space, memory, and boot time. It does not send files, passwords, or the screen, and this console cannot control it. No computer is connected until a check-in is stored.</p>
+          <p class="meta">After you sign in on the other laptop, create a one-time code here. On that laptop run <code>python -m integrations.endpoint_worker enrol</code> and then <code>python -m integrations.endpoint_worker report</code>, both against http://127.0.0.1:8080. This development PC is not that computer. A labelled fixture cannot count as the second endpoint. The computer sends its operating system, disk space, memory, and boot time. It does not send files, passwords, or the screen, and this console cannot control it. No computer is connected until a check-in is stored. Proposed repairs stay proposals.</p>
           <ul id="device-list" class="sources"></ul>
           <p id="device-code" class="meta" role="status"></p>
           <div class="form-row">
@@ -282,7 +282,7 @@
             <button type="button" id="repair-device-issue" class="secondary">Issue read-only disk job</button>
             <button type="button" id="repair-device-revoke" class="secondary">Revoke enrolled device</button>
           </div>
-          <p class="meta">The secret and MAC key are shown once. The endpoint worker on that computer collects the evidence. This page does not run the collector and does not restart a service.</p>
+          <p class="meta">The second laptop uses IT Helpdesk: create a one-time code, then python -m integrations.endpoint_worker enrol and python -m integrations.endpoint_worker report against http://127.0.0.1:8080. Enrol an endpoint on this page is a different credential for signed jobs. It does not run a repair. The secret and MAC key are shown once. The endpoint worker on that computer collects the evidence. This page does not run the collector and does not restart a service.</p>
         </section>
         <form id="repair-form" class="composer">
           <label for="repair-symptom">Customer symptom</label>

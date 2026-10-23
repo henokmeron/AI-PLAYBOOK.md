@@ -12,6 +12,8 @@ import hashlib
 import hmac
 import json
 import os
+import platform
+import re
 import secrets
 import ssl
 import sys
@@ -21,7 +23,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from integrations.endpoint import _CHECK_PROCEDURES, assert_safe_state_path, collect_local_diagnostics
+from integrations.endpoint import (
+    FIXTURE_LABEL,
+    _CHECK_PROCEDURES,
+    assert_safe_state_path,
+    collect_local_diagnostics,
+)
 from integrations.errors import InvalidRequest
 from integrations.state_guard import StatePermissionError, assert_private, restrict_private
 
@@ -38,7 +45,12 @@ class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
 
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost"})
 _MAX_RESPONSE_BYTES = 65536
-FIXTURE_LABEL = "not-the-second-endpoint"
+# The console rejects a check-in body larger than this. Stay inside it.
+CONSOLE_REPORT_LIMIT = 4096
+_CONSOLE_ORIGIN = "http://127.0.0.1:8080"
+_TOKEN_FILE = '"$env:LOCALAPPDATA\\AI-PLAYBOOK\\device-secret"'
+_SAFE_CODE = re.compile(r"[A-Za-z0-9_-]{16,80}\Z")
+_DEV_PC = "banya-family-pl"
 
 
 def acceptance_role(fixture_label: str = "") -> str:
@@ -54,6 +66,87 @@ def acceptance_role(fixture_label: str = "") -> str:
     if label != FIXTURE_LABEL:
         raise InvalidRequest("the only local fixture label is not-the-second-endpoint")
     return FIXTURE_LABEL
+
+
+def local_hostname() -> str:
+    return platform.node()
+
+
+def dev_pc_enrol_blocked(hostname: str, fixture_label: str) -> bool:
+    """This development PC can rehearse only with the fixture label."""
+    folded = " ".join(str(hostname).split()).casefold().rstrip(".")
+    if folded != _DEV_PC and not folded.startswith(_DEV_PC + "."):
+        return False
+    label = " ".join(str(fixture_label).split()).casefold()
+    return label != FIXTURE_LABEL
+
+
+def normalize_argv(argv: list[str]) -> list[str]:
+    """Keep a one-time code that starts with '-' attached to --code.
+
+    ``--code -abc`` is rejected by argparse before the console sees it.
+    ``--code=-abc`` is one argument and is accepted.
+    """
+    fixed: list[str] = []
+    index = 0
+    while index < len(argv):
+        item = argv[index]
+        if item == "--code" and index + 1 < len(argv):
+            fixed.append("--code=" + argv[index + 1])
+            index += 2
+            continue
+        fixed.append(item)
+        index += 1
+    return fixed
+
+
+def operator_commands(code: str) -> dict[str, Any]:
+    """The two commands for the other laptop. The code is attached with '='."""
+    if not isinstance(code, str) or not _SAFE_CODE.fullmatch(code):
+        raise InvalidRequest("enrolment code cannot be shown safely")
+    enrol = (
+        "python -m integrations.endpoint_worker enrol "
+        f"--console {_CONSOLE_ORIGIN} --code={code} --name=\"Office PC\" "
+        f"--token-file={_TOKEN_FILE}"
+    )
+    report = (
+        "python -m integrations.endpoint_worker report "
+        f"--console {_CONSOLE_ORIGIN} --token-file={_TOKEN_FILE}"
+    )
+    return {"commands": {"enrol": enrol, "report": report}}
+
+
+def _json_bytes(payload: dict) -> bytes:
+    return json.dumps(payload, separators=(",", ":")).encode("utf-8")
+
+
+def build_report_body(diagnostic: dict, checks: list[dict]) -> dict:
+    """The check-in body. It must fit the console limit or the report is not stored."""
+    body = {key: diagnostic[key] for key in _DIAGNOSTIC_KEYS}
+    body["checks"] = checks
+    if len(_json_bytes(body)) > CONSOLE_REPORT_LIMIT:
+        raise InvalidRequest("the diagnostic report is too large for the console")
+    return body
+
+
+def _safe_error_detail(raw: bytes) -> str:
+    """A short console message. Do not repeat a secret, token, or code."""
+    try:
+        parsed = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return ""
+    if not isinstance(parsed, dict):
+        return ""
+    message = parsed.get("error")
+    if not isinstance(message, str):
+        return ""
+    text = " ".join(message.split())
+    if not text or len(text) > 180:
+        return ""
+    lowered = text.casefold()
+    if any(word in lowered for word in ("secret", "token", "bearer", "password", "mac_key")):
+        return ""
+    return text
 
 
 def console_origin(value: str) -> str:
@@ -106,7 +199,7 @@ def _post(
     timeout: float = 10,
     limit: int = _MAX_RESPONSE_BYTES,
 ) -> dict:
-    body = json.dumps(payload).encode("utf-8")
+    body = _json_bytes(payload)
     if len(body) > limit:
         raise InvalidRequest("the request is too large")
     request = urllib.request.Request(
@@ -119,8 +212,11 @@ def _post(
         with _opener().open(request, timeout=timeout) as response:
             raw = response.read(limit + 1)
     except urllib.error.HTTPError as exc:
-        exc.read(500)
-        raise InvalidRequest(f"console refused the check-in ({exc.code})") from exc
+        detail = _safe_error_detail(exc.read(500))
+        message = f"console refused the check-in ({exc.code})"
+        if detail:
+            message = f"{message}: {detail}"
+        raise InvalidRequest(message) from exc
     except ssl.SSLError as exc:
         raise InvalidRequest("the console certificate was rejected") from exc
     except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
@@ -168,19 +264,39 @@ def read_secret_file(path: Path) -> str:
     return value
 
 
+def _discard_secret(path: Path) -> None:
+    try:
+        remove_secret(path)
+    except OSError:
+        return
+
+
 def enrol(origin: str, code: str, display_name: str, secret_path: Path) -> str:
-    """Create a device secret locally and exchange a one-time code for a device id."""
+    """Write the device secret, then exchange a one-time code for a device id.
+
+    The code is not sent until the secret file can be stored. A refused
+    enrolment deletes that file so the code can be used again only if the
+    console did not accept it. An existing secret file is left unchanged.
+    """
     target = console_origin(origin)
+    safe = assert_safe_state_path(secret_path)
+    if safe.exists():
+        raise InvalidRequest("device secret file already exists; remove it before enrolling again")
     secret = secrets.token_urlsafe(32)
-    result = _post(target, "/api/devices/enroll", {
-        "code": code,
-        "display_name": display_name,
-        "device_secret": secret,
-    })
+    write_secret_file(safe, secret)
+    try:
+        result = _post(target, "/api/devices/enroll", {
+            "code": code,
+            "display_name": display_name,
+            "device_secret": secret,
+        })
+    except Exception:
+        _discard_secret(safe)
+        raise
     device_id = result.get("device_id")
     if not isinstance(device_id, str) or len(device_id) != 32:
+        _discard_secret(safe)
         raise InvalidRequest("console did not return a device id")
-    write_secret_file(secret_path, secret)
     return device_id
 
 
@@ -242,8 +358,8 @@ def submit_report(origin: str, secret_path: Path, collect=None) -> dict:
     target = console_origin(origin)
     secret = read_secret_file(secret_path)
     diagnostic = collect_local_diagnostics()
-    body = {key: diagnostic[key] for key in _DIAGNOSTIC_KEYS}
-    body["checks"] = collect_registered_checks(collect, clock=lambda: diagnostic["collected_at_unix"])
+    checks = collect_registered_checks(collect, clock=lambda: diagnostic["collected_at_unix"])
+    body = build_report_body(diagnostic, checks)
     return _post(target, "/api/devices/report", body, {"Authorization": f"Bearer {secret}"})
 
 
@@ -427,7 +543,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--code", default="")
     parser.add_argument("--name", default="Office PC")
     parser.add_argument("--fixture-label", default="")
-    args = parser.parse_args(argv)
+    args = parser.parse_args(normalize_argv(list(argv) if argv is not None else sys.argv[1:]))
     from windows_repair.engine import RepairDenied
     try:
         if args.action == "jobs":
@@ -445,6 +561,14 @@ def main(argv: list[str] | None = None) -> int:
             print("ERROR: a labelled fixture must use the name not-the-second-endpoint", file=sys.stderr)
             return 2
         if args.action == "enrol":
+            if dev_pc_enrol_blocked(local_hostname(), args.fixture_label):
+                print(
+                    "ERROR: BANYA-FAMILY-PL is this development PC. Enrolment here is not the second "
+                    "Windows computer. On the other laptop, create a one-time code in IT Helpdesk, then run "
+                    "python -m integrations.endpoint_worker enrol and report against http://127.0.0.1:8080.",
+                    file=sys.stderr,
+                )
+                return 2
             if not args.console:
                 print("ERROR: --console is required", file=sys.stderr)
                 return 2

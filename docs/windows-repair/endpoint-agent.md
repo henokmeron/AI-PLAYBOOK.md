@@ -28,10 +28,11 @@ The console stores a short summary, the evidence source, and whether the check s
 Create an enrolment code in the signed-in console (`POST /api/devices/enrolment`). Then, on the endpoint:
 
 ```powershell
-$secret = "$env:LOCALAPPDATA\AI-PLAYBOOK\device-secret"
-python -m integrations.endpoint_worker enrol --console http://127.0.0.1:8080 --code "<one-time-code>" --name "Office PC" --token-file $secret
-python -m integrations.endpoint_worker report --console http://127.0.0.1:8080 --token-file $secret
+python -m integrations.endpoint_worker enrol --console http://127.0.0.1:8080 --code=<one-time-code> --name="Office PC" --token-file="$env:LOCALAPPDATA\AI-PLAYBOOK\device-secret"
+python -m integrations.endpoint_worker report --console http://127.0.0.1:8080 --token-file="$env:LOCALAPPDATA\AI-PLAYBOOK\device-secret"
 ```
+
+Use `--code=<one-time-code>` with the equals sign. A code that starts with `-` is otherwise read as a flag and the console never sees it. This development PC, BANYA-FAMILY-PL, refuses `enrol` unless `--fixture-label not-the-second-endpoint` is also set, and that fixture does not count as the second computer. The secret file is written before the code is sent. If the console refuses the code, the new secret file is deleted and an existing secret file is not replaced.
 
 The device secret is written to the token file and is not printed. Do not commit that file. Repeat `report` when you want a new check-in. The console keeps the latest report and the last-seen time.
 

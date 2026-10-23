@@ -11,15 +11,20 @@ from pathlib import Path
 from integrations.catalog import Catalog
 from integrations.endpoint import (
     ENDPOINT,
+    FIXTURE_LABEL,
     DeviceRegistry,
     EndpointService,
     collect_local_diagnostics,
+    diagnostic_sections,
     normalise_report,
     permissions_are_private,
+    second_endpoint_status,
 )
 from integrations.endpoint_worker import (
     collect_registered_checks,
     console_origin,
+    dev_pc_enrol_blocked,
+    normalize_argv,
     read_secret_file,
     summarise_live_check,
     write_secret_file,
@@ -395,6 +400,9 @@ class WorkerTransportTests(unittest.TestCase):
 
         class Redirect(BaseHTTPRequestHandler):
             def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                if length:
+                    self.rfile.read(length)
                 self.send_response(302)
                 self.send_header("Location", "http://127.0.0.1/elsewhere")
                 self.end_headers()
@@ -405,6 +413,9 @@ class WorkerTransportTests(unittest.TestCase):
         class Slow(BaseHTTPRequestHandler):
             def do_POST(self) -> None:
                 import time
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                if length:
+                    self.rfile.read(length)
                 time.sleep(1.5)
                 self.send_response(200)
                 self.end_headers()
@@ -423,7 +434,7 @@ class WorkerTransportTests(unittest.TestCase):
         try:
             redirect_origin = f"http://127.0.0.1:{redirect_server.server_address[1]}"
             message = ""
-            for _attempt in range(2):
+            for _attempt in range(5):
                 with self.assertRaises(InvalidRequest) as redirected:
                     _post(redirect_origin, "/api/repair/device/check-in", {})
                 message = str(redirected.exception)
@@ -589,9 +600,219 @@ class WorkerTransportTests(unittest.TestCase):
                 self.assertFalse(stored["counts_as_second_endpoint"])
                 self.assertEqual(stored["diagnostic_coverage"], "registered")
                 self.assertEqual(stored["display_name"], FIXTURE_LABEL)
+                self.assertEqual(stored["fixture_label"], FIXTURE_LABEL)
+                self.assertEqual(second_endpoint_status(registry.public_devices("local-console")), "NOT ENROLLED")
+                self.assertEqual(stored["diagnostics"]["execution"], "proposal_only")
+                self.assertFalse(stored["diagnostics"]["repair_authority"])
         finally:
             server.shutdown()
             server.server_close()
+
+
+class SecondPcEnrolmentTests(unittest.TestCase):
+    """A labelled fixture and this development PC cannot count as the second endpoint."""
+
+    def test_argv_keeps_a_code_that_starts_with_a_dash(self) -> None:
+        code = "-office-code-value1"
+        argv = normalize_argv([
+            "enrol", "--console", "http://127.0.0.1:8080", "--code", code, "--name", "Office PC",
+        ])
+        self.assertIn("--code=" + code, argv)
+        self.assertNotIn(code, argv)
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("action")
+        parser.add_argument("--console", default="")
+        parser.add_argument("--code", default="")
+        parser.add_argument("--name", default="")
+        parsed = parser.parse_args(argv)
+        self.assertEqual(parsed.code, code)
+
+    def test_development_pc_does_not_enrol(self) -> None:
+        from contextlib import redirect_stderr
+        from io import StringIO
+        from unittest.mock import patch
+        from integrations.endpoint_worker import main
+
+        self.assertTrue(dev_pc_enrol_blocked("BANYA-FAMILY-PL", ""))
+        self.assertTrue(dev_pc_enrol_blocked("banya-family-pl.local", ""))
+        self.assertFalse(dev_pc_enrol_blocked("BANYA-FAMILY-PL", FIXTURE_LABEL))
+        self.assertFalse(dev_pc_enrol_blocked("OFFICE-LAPTOP", ""))
+        with tempfile.TemporaryDirectory() as tmp:
+            token = Path(tmp) / "device-secret"
+            stderr = StringIO()
+            with patch("integrations.endpoint_worker.local_hostname", return_value="BANYA-FAMILY-PL"):
+                with redirect_stderr(stderr):
+                    result = main([
+                        "enrol",
+                        "--console", "http://127.0.0.1:9",
+                        "--code", "A" * 24,
+                        "--name", "Office PC",
+                        "--token-file", str(token),
+                    ])
+            self.assertEqual(result, 2)
+            self.assertIn("BANYA-FAMILY-PL", stderr.getvalue())
+            self.assertIn("http://127.0.0.1:8080", stderr.getvalue())
+            self.assertFalse(token.exists())
+
+    def test_a_bad_secret_path_does_not_contact_the_console(self) -> None:
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        from integrations.endpoint_worker import enrol
+
+        hits = {"n": 0}
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802
+                hits["n"] += 1
+                self.send_response(500)
+                self.end_headers()
+
+            def log_message(self, format_string: str, *args: object) -> None:
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            origin = f"http://127.0.0.1:{server.server_address[1]}"
+            with self.assertRaises(InvalidRequest):
+                enrol(origin, "A" * 24, "Office PC", Path(__file__).resolve())
+            self.assertEqual(hits["n"], 0)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_refused_enrol_deletes_the_secret_and_keeps_an_existing_file(self) -> None:
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        from integrations.endpoint_worker import enrol
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                if length:
+                    self.rfile.read(length)
+                body = b'{"error":"enrolment code is not valid"}'
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format_string: str, *args: object) -> None:
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            origin = f"http://127.0.0.1:{server.server_address[1]}"
+            with tempfile.TemporaryDirectory() as tmp:
+                token = Path(tmp) / "device-secret"
+                refused_error: InvalidRequest | None = None
+                for _attempt in range(4):
+                    try:
+                        enrol(origin, "A" * 24, "Office PC", token)
+                    except InvalidRequest as exc:
+                        refused_error = exc
+                        if "could not be reached" in str(exc):
+                            continue
+                        break
+                    self.fail("enrolment was accepted")
+                self.assertIsNotNone(refused_error)
+                self.assertIn("enrolment code is not valid", str(refused_error))
+                self.assertFalse(token.exists())
+                kept = Path(tmp) / "kept-secret"
+                write_secret_file(kept, "z" * 40)
+                before = kept.read_text(encoding="utf-8")
+                with self.assertRaises(InvalidRequest) as blocked:
+                    enrol(origin, "B" * 24, "Office PC", kept)
+                self.assertIn("already exists", str(blocked.exception))
+                self.assertEqual(kept.read_text(encoding="utf-8"), before)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_safe_code_commands_and_structured_report_exclude_the_fixture(self) -> None:
+        from integrations.endpoint import _CHECK_PROCEDURES
+        from integrations.endpoint_worker import CONSOLE_REPORT_LIMIT, build_report_body
+
+        registry = DeviceRegistry(clock=lambda: 1_000.0)
+        for _ in range(20):
+            created = registry.create_enrolment("local-console")
+            code = created["enrolment_code"]
+            self.assertTrue(code.isalnum())
+            self.assertNotIn("-", code)
+            self.assertIn(f"--code={code}", created["commands"]["enrol"])
+            self.assertIn("python -m integrations.endpoint_worker report", created["commands"]["report"])
+            self.assertIn("http://127.0.0.1:8080", created["commands"]["enrol"])
+            self.assertNotIn(code, json.dumps({"saved": True}))
+        secret = "m" * 32
+        created = registry.create_enrolment("local-console")
+        self.assertNotIn(created["enrolment_code"], json.dumps({"unused": True}))
+        fixture = registry.enrol(created["enrolment_code"], FIXTURE_LABEL, secret)
+        registry.submit(secret, _report(os_family="windows", checks=[
+            {
+                "procedure_id": "net.diagnose",
+                "evidence_source": "live_windows",
+                "ok": True,
+                "collected_at_unix": 200,
+                "summary": "gateway_ok=true; dns_localhost_ok=true; addresses=1",
+            },
+            {
+                "procedure_id": "win.storage.space",
+                "evidence_source": "live_windows",
+                "ok": True,
+                "collected_at_unix": 200,
+                "summary": "disks=1",
+            },
+        ]))
+        visible = registry.public_devices("local-console")
+        self.assertEqual(visible[0]["fixture_label"], FIXTURE_LABEL)
+        self.assertFalse(visible[0]["counts_as_second_endpoint"])
+        sections = visible[0]["diagnostics"]
+        self.assertEqual(sections["os"]["family"], "windows")
+        self.assertEqual(sections["disk"]["free_bytes"], 10)
+        self.assertEqual(sections["disk"]["volumes"]["summary"], "disks=1")
+        self.assertEqual(sections["network"]["summary"], "gateway_ok=true; dns_localhost_ok=true; addresses=1")
+        self.assertEqual(sections["installed_software"]["status"], "not_collected")
+        self.assertEqual(sections["execution"], "proposal_only")
+        self.assertFalse(sections["repair_authority"])
+        self.assertEqual(diagnostic_sections(None)["os"], None)
+        self.assertEqual(second_endpoint_status(visible), "NOT ENROLLED")
+        dev = registry.create_enrolment("local-console")
+        registry.enrol(dev["enrolment_code"], "BANYA-FAMILY-PL", "n" * 32)
+        registry.submit("n" * 32, _report(os_family="windows"))
+        self.assertEqual(second_endpoint_status(registry.public_devices("local-console")), "NOT ENROLLED")
+        office_code = registry.create_enrolment("local-console")
+        registry.enrol(office_code["enrolment_code"], "Office PC", "p" * 32)
+        self.assertEqual(second_endpoint_status(registry.public_devices("local-console")), "NOT ENROLLED")
+        registry.submit("p" * 32, _report(os_family="windows", collected_at_unix=400))
+        self.assertEqual(second_endpoint_status(registry.public_devices("local-console")), "REPORTED 1")
+        self.assertNotEqual(fixture, "")
+        checks = []
+        for procedure_id in _CHECK_PROCEDURES:
+            checks.append({
+                "procedure_id": procedure_id,
+                "evidence_source": "live_windows",
+                "ok": True,
+                "collected_at_unix": 1_700_000_000,
+                "summary": "x" * 240,
+            })
+        body = build_report_body({
+            "os_family": "windows",
+            "os_version": "v" * 80,
+            "disk_free_bytes": 10**15,
+            "disk_total_bytes": 10**15,
+            "memory_total_bytes": 10**15,
+            "boot_time_unix": 1_700_000_000,
+            "collected_at_unix": 1_700_000_000,
+        }, checks)
+        import json as _json
+        encoded = _json.dumps(body, separators=(",", ":")).encode("utf-8")
+        self.assertLessEqual(len(encoded), CONSOLE_REPORT_LIMIT)
+        self.assertLessEqual(len(encoded), 4096)
 
 
 if __name__ == "__main__":

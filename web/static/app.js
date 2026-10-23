@@ -1330,6 +1330,67 @@
     });
   }
 
+  function checkSection(report, procedureId) {
+    var checks = report && Array.isArray(report.checks) ? report.checks : [];
+    for (var i = 0; i < checks.length; i++) {
+      if (checks[i] && checks[i].procedure_id === procedureId) {
+        return {
+          status: checks[i].evidence_source === "live_windows" ? "reported" : "unavailable",
+          summary: checks[i].summary || ""
+        };
+      }
+    }
+    return { status: "not_reported", summary: "" };
+  }
+
+  function diagnosticsFromReport(report) {
+    if (!report || report.status !== "ok") {
+      return null;
+    }
+    var software = checkSection(report, "app.browser.inspect");
+    if (software.status === "not_reported") {
+      software = {
+        status: "not_collected",
+        summary: "Installed software is not part of this check-in."
+      };
+    }
+    return {
+      os: { family: report.os_family, version: report.os_version },
+      disk: {
+        free_bytes: report.disk_free_bytes,
+        total_bytes: report.disk_total_bytes,
+        volumes: checkSection(report, "win.storage.space")
+      },
+      network: checkSection(report, "net.diagnose"),
+      installed_software: software,
+      repair_authority: false,
+      execution: "proposal_only"
+    };
+  }
+
+  function renderDiagnostics(item, device) {
+    var diagnostics = device.diagnostics || diagnosticsFromReport(device.report);
+    if (!diagnostics || !diagnostics.os) {
+      item.appendChild(el("span", null, "OS: no diagnostic has arrived"));
+      item.appendChild(el("span", null, "Disk: no diagnostic has arrived"));
+      item.appendChild(el("span", null, "Network: not reported"));
+    } else {
+      item.appendChild(el("span", null, "OS: " + diagnostics.os.family + " " + (diagnostics.os.version || "")));
+      var disk = diagnostics.disk || {};
+      var volumes = disk.volumes && disk.volumes.summary ? " " + disk.volumes.summary : "";
+      item.appendChild(el("span", null, "Disk: " + disk.free_bytes + " bytes free of " + disk.total_bytes + "." + volumes));
+      var network = diagnostics.network || {};
+      item.appendChild(el("span", null, "Network: " + (network.summary || network.status || "not reported")));
+    }
+    var software = diagnostics && diagnostics.installed_software;
+    var softwareText = software && software.summary
+      ? software.summary
+      : "Installed software is not part of this check-in.";
+    item.appendChild(el("span", null, "Installed software: " + softwareText));
+    item.appendChild(el("span", null, "Proposed repairs stay proposals. No repair runs without an approval record."));
+    item.appendChild(el("span", null, "Remote control is off."));
+  }
+
   function loadDevices() {
     var list = document.getElementById("device-list");
     request("/api/devices").then(function (body) {
@@ -1340,15 +1401,14 @@
         return;
       }
       devices.forEach(function (device) {
-        var text = device.display_name + " — " + device.status;
-        if (device.report && device.report.status === "ok") {
-          text += ". " + device.report.os_family + ", " + device.report.disk_free_bytes + " bytes free. Remote control is off.";
-        } else {
-          text += ". No diagnostic has arrived. Remote control is off.";
-        }
-        text += " This enrolment does not count as the second Windows computer.";
         var item = el("li");
-        item.appendChild(document.createTextNode(text + " "));
+        var fixture = device.fixture_label === "not-the-second-endpoint"
+          || String(device.display_name || "").toLowerCase() === "not-the-second-endpoint";
+        item.appendChild(el("strong", null, device.display_name + " — " + device.status));
+        renderDiagnostics(item, device);
+        item.appendChild(el("span", null, fixture
+          ? "Local fixture not-the-second-endpoint. This enrolment does not count as the second Windows computer."
+          : "This enrolment does not count as the second Windows computer."));
         if (device.status === "enrolled") {
           var button = el("button", "secondary", "Revoke");
           button.type = "button";
@@ -1369,13 +1429,27 @@
     });
   }
 
+  function enrolmentInstructions(body) {
+    var commands = body.commands || {};
+    var token = "\"$env:LOCALAPPDATA\\AI-PLAYBOOK\\device-secret\"";
+    var enrol = commands.enrol;
+    var report = commands.report;
+    if (!enrol || !report) {
+      var code = String(body.enrolment_code || "");
+      enrol = "python -m integrations.endpoint_worker enrol --console http://127.0.0.1:8080 --code=" +
+        code + " --name=\"Office PC\" --token-file=" + token;
+      report = "python -m integrations.endpoint_worker report --console http://127.0.0.1:8080 --token-file=" + token;
+    }
+    return "On the other laptop, run enrol and then report. Both use http://127.0.0.1:8080.\n" +
+      enrol + "\n" + report + "\n" +
+      "The code works once, expires in " + body.expires_in_seconds +
+      " seconds, and cannot control the computer. It is not shown again.";
+  }
+
   document.getElementById("device-enrol").addEventListener("click", function () {
     var node = document.getElementById("device-code");
     request("/api/devices/enrolment", { method: "POST", body: {} }).then(function (body) {
-      node.textContent = "On that computer run python -m integrations.endpoint_worker enrol --code " +
-        body.enrolment_code + " --name \"Office PC\" --console http://127.0.0.1:8080 --token-file <private-file>. " +
-        "The code works once, expires in " + body.expires_in_seconds +
-        " seconds, and cannot control the computer. It is not shown again.";
+      node.textContent = enrolmentInstructions(body);
     }).catch(function (error) {
       showError(agentError, errorMessage(error));
     });
