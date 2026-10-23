@@ -36,6 +36,10 @@ def _pids(value: str) -> list[int]:
 
 def operators_provisioned(path: Path) -> bool:
     """True only when the file has an enabled operator. Hashes are not returned."""
+    repo = Path(__file__).resolve().parents[2]
+    root = str(repo)
+    if root not in sys.path:
+        sys.path.insert(0, root)
     from ops.preflight import active_operator_count
 
     count = active_operator_count(path)
