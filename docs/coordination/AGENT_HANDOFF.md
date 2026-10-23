@@ -27,6 +27,7 @@ These jobs are mandatory. Each bot edits only the files named on its line. Do no
 
 ## LOG
 
+- 2026-10-23 22:55 UK Liaison: Endpoint finished ASSIGNMENTS slice — PR #16 tip 9b71007e adds only docs/coordination/endpoint-readonly-2026-10-23.md (+31). Integration COMMENT https://github.com/henokmeron/AI-PLAYBOOK.md/pull/16#pullrequestreview-5634871882 (scope clean, base tip main 2e956c45, mergeable). No integrations/ or windows_repair/ edits. No second_endpoint_worker_ok mark. Waiting Founder office-pc-clone.md on Office PC. #8 still not ready. Queue #8→#14→#15 holds; #14 web/ held under CURRENT 22:51. Production NO-GO.
 - 2026-10-23 22:51 UK Liaison: Grok Bot was not running, and this repo has no runner and no API key variable. Live jobs were easy to miss because `docs/AGENT_HANDOFF.md` still says read-this-first for pod `gom4ualdk47qrj` and a 4/9 board. ASSIGNMENTS now give each bot one file and one job. Production stays NO-GO. Qwen pid 6739 was not restarted. No gate was marked.
 
 ### Previous CURRENT (copied 2026-10-23 22:51 UK)
