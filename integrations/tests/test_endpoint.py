@@ -20,10 +20,9 @@ from integrations.endpoint import (
 from integrations.endpoint_worker import (
     collect_registered_checks,
     console_origin,
-    read_secret_file,
     summarise_live_check,
-    write_secret_file,
 )
+from integrations.secret_storage import read_secret, write_secret
 from integrations.state_guard import assert_private
 from integrations.errors import AuthenticationError, InvalidRequest, RateLimited
 from integrations.tenancy import TenantContext
@@ -370,13 +369,14 @@ class WorkerSecretFileTests(unittest.TestCase):
         secret = "device-secret-value-which-is-long-enough"
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "device.secret"
-            write_secret_file(path, secret)
+            write_secret(path, secret)
             assert_private(path)
-            self.assertEqual(read_secret_file(path), secret)
+            read_back, _metadata = read_secret(path)
+            self.assertEqual(read_back, secret)
             open_path = Path(tmp) / "open.secret"
             open_path.write_text(secret, encoding="utf-8")
             with self.assertRaises(InvalidRequest) as refused:
-                read_secret_file(open_path)
+                read_secret(open_path)
             self.assertIn("not private", str(refused.exception))
 
 
@@ -549,8 +549,8 @@ class WorkerTransportTests(unittest.TestCase):
                     ])
                 text = stdout.getvalue()
                 self.assertEqual(enrolled, 0, text)
-                secret = read_secret_file(token)
-                self.assertNotIn(secret, text)
+                read_back, _metadata = read_secret(token)
+                self.assertNotIn(read_back, text)
                 self.assertIn("acceptance_role=not-the-second-endpoint", text)
                 self.assertIn("local fixture", text)
                 visible = registry.public_devices("local-console")[0]
@@ -583,7 +583,7 @@ class WorkerTransportTests(unittest.TestCase):
                         ])
                 report_text = stdout_report.getvalue()
                 self.assertEqual(reported, 0, report_text)
-                self.assertNotIn(secret, report_text)
+                self.assertNotIn(read_back, report_text)
                 self.assertIn("acceptance_role=not-the-second-endpoint", report_text)
                 stored = registry.public_devices("local-console")[0]
                 self.assertFalse(stored["counts_as_second_endpoint"])
