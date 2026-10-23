@@ -580,7 +580,8 @@ class WebServer(ThreadingHTTPServer):
         self.auth = AuthService(record_event=self.ops.record_event)
         from windows_repair.printer_flow import PrinterWorkflow
         self.printer_flow = PrinterWorkflow()
-        self.remote_work_store = WorkStore()
+        work_path = os.environ.get("REMOTE_WORK_STATE", "").strip()
+        self.remote_work_store = WorkStore(path=work_path if work_path else None)
         ticket_root = os.environ.get("HELPDESK_TICKET_DIR", "").strip()
         if ticket_root:
             self.tickets_dir = Path(ticket_root)
@@ -1814,7 +1815,8 @@ class Handler(BaseHTTPRequestHandler):
     def _remote_work(self) -> WorkStore:
         store = getattr(self.server, "remote_work_store", None)
         if store is None:
-            store = WorkStore()
+            work_path = os.environ.get("REMOTE_WORK_STATE", "").strip()
+            store = WorkStore(path=work_path if work_path else None)
             self.server.remote_work_store = store  # type: ignore[attr-defined]
         return store
 
