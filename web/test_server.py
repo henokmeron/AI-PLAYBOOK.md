@@ -597,6 +597,15 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("syncCollectionFields", script_text)
         self.assertIn("removed_from_index", script_text)
         self.assertIn("searchable !== true", script_text)
+        self.assertIn("diagnostic_coverage", script_text)
+        self.assertIn("evidence_age_seconds", script_text)
+        self.assertIn("evidence_stale", script_text)
+        self.assertIn("schema_version", script_text)
+        self.assertIn("agent_version", script_text)
+        self.assertIn("COPY THIS NOW", script_text)
+        self.assertIn("cleared from the page", script_text)
+        self.assertIn("APPROVAL REQUIRED", script_text)
+        self.assertIn("Repair authority is OFF", script_text)
         self.assertIn('value="my-docs"', text)
         self.assertIn('id="rag-question" rows="6" maxlength="8000"', text)
         self.assertIn("upload-form", text)
@@ -1383,6 +1392,76 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn("Microsoft sign-in state expired", script_text)
         self.assertIn("Microsoft rejected the token", script_text)
         self.assertIn("hasOwnProperty.call(MICROSOFT_FAILURES, reason)", script_text)
+
+    def test_device_list_shows_diagnostic_coverage_and_evidence_timing(self) -> None:
+        """Test that device list shows coverage and evidence timing fields."""
+        base = self.web(FakeGateway())
+        status, body = self.request(base, "POST", "/api/devices/enrolment", {})
+        created = json.loads(body)
+        self.assertEqual(status, 200)
+        code = created["enrolment_code"]
+        secret = "unit-test-device-secret-coverage"
+        
+        enrolled, enrolled_body = self.request(base, "POST", "/api/devices/enroll", {
+            "code": code,
+            "display_name": "Test PC",
+            "device_secret": secret,
+        })
+        self.assertEqual(enrolled, 200)
+        device_id = json.loads(enrolled_body)["device_id"]
+        
+        report_status, _ = self.request(
+            base, "POST", "/api/devices/report",
+            {
+                "os_family": "windows",
+                "os_version": "11",
+                "disk_free_bytes": 100000000000,
+                "disk_total_bytes": 500000000000,
+                "memory_total_bytes": 16000000000,
+                "boot_time_unix": 1000000,
+                "collected_at_unix": 1700000000,
+            },
+            {"Authorization": "Bearer " + secret},
+        )
+        self.assertEqual(report_status, 200)
+        
+        listed_status, listed = self.request(base, "GET", "/api/devices")
+        self.assertEqual(listed_status, 200)
+        devices = json.loads(listed)["devices"]
+        device = next((d for d in devices if d["device_id"] == device_id), None)
+        self.assertIsNotNone(device)
+        self.assertEqual(device["diagnostic_coverage"], "basic")
+        self.assertIsNotNone(device["evidence_age_seconds"])
+        self.assertIn("evidence_stale", device)
+        self.assertIsInstance(device["evidence_stale"], bool)
+        self.assertNotIn(secret, listed.decode("utf-8"))
+        self.assertNotIn(code, listed.decode("utf-8"))
+    
+    def test_device_list_requires_authentication(self) -> None:
+        """Test device list returns 401 when not authenticated."""
+        base = self.web(FakeGateway(), provision_admin=True, auto_login=False)
+        
+        unauthorized_status, _, _ = self.request_raw(base, "GET", "/api/devices", auth=False)
+        self.assertEqual(unauthorized_status, 401)
+        
+        self.login(base)
+        authorized_status, authorized_body = self.request(base, "GET", "/api/devices")
+        self.assertEqual(authorized_status, 200)
+        devices = json.loads(authorized_body)["devices"]
+        self.assertIsInstance(devices, list)
+    
+    def test_device_list_shows_empty_state_correctly(self) -> None:
+        """Test that device list handles empty state (no devices enrolled)."""
+        base = self.web(FakeGateway())
+        listed_status, listed = self.request(base, "GET", "/api/devices")
+        self.assertEqual(listed_status, 200)
+        devices = json.loads(listed)["devices"]
+        self.assertEqual(len(devices), 0)
+        
+        status, script = self.request(base, "GET", "/static/app.js")
+        script_text = script.decode("utf-8")
+        self.assertEqual(status, 200)
+        self.assertIn("No computer is enrolled", script_text)
 
     def test_device_check_in_is_read_only_and_hides_the_secret(self) -> None:
         base = self.web(FakeGateway())
