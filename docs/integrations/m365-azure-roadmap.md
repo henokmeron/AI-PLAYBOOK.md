@@ -23,6 +23,6 @@ If `MICROSOFT_CLIENT_ID` is unset, the connector reports that sign-in is not con
 3. **Approved writes.** One operation at a time (for example create a draft). Show a preview, require a human approval, write an audit event, then call Graph. Do not send mail in tests.
 4. **Azure inventory.** Read-only resource list with a separate app registration and `Reader` role on a named subscription. No changes.
 5. **Approved Azure changes.** Dry-run, permission check, confirmation, audit. Not part of the Director.
-6. **Power Automate.** Only if a supported API and a least-privilege connection exist. Not implemented.
+6. **Power Automate.** The boundary is in `integrations/automation.py` and `docs/integrations/power-automate.md`. Live Power Automate is **NOT TESTED**. No webhook is configured and no flow was called.
 
 Prompt text inside a retrieved mail or document must be treated as data, not as instructions to the agent.
