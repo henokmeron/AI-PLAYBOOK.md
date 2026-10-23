@@ -4,11 +4,9 @@ Read this file before starting. Append to the log when you finish. Do not delete
 
 ## CURRENT
 
-Updated: 2026-10-23 21:25 UK
+Updated: 2026-10-23 22:15 UK
 
-Office PC is enrolled and has sent a live read-only report. Device id `bead5785f3674aaeb92c189f8c1b5b8c`. Fixture label is empty. Windows 10.0.26200. Eight checks were ok: disk, services, Windows Update events, device inventory (164 present, 0 problems), printers (spooler running, 3 printers), network (gateway and local DNS ok), recurring events (8), and startup. The startup line only said `status=collected` because boot time, memory, and CPU were collected and then left out of the stored summary. That summary gap is fixed in the worker for the next report. The report is one-way: the laptop sends it to the pod. The pod does not open a path back into that laptop. This PC cannot open folders on Kokob-laptop. Model pid 6739 stays up. Production stays NO-GO. Do not mark `second_endpoint_worker_ok` until the acceptance board is updated from this evidence on purpose.
-
-The other laptop must run `python -m integrations.endpoint_worker` from the folder that contains the `integrations` directory. Not from `C:\WINDOWS\System32` and not from the parent of that folder.
+A new chat must read `docs/coordination/TRANSFER_TO_NEXT_AGENT.md` first. Work is urgent. Save a replicable copy and push it. Do not promise a few-second GPU start. Qwen pid 6739 stays up. Office PC device `bead5785f3674aaeb92c189f8c1b5b8c` reported again from `C:\Users\kokob\src\AI-PLAYBOOK.md\AI-PLAYBOOK.md-main`. The parent folder has no `integrations` and no `.git`. The startup summary is still only `status=collected` because that download does not contain `e8f9665`. Production stays NO-GO. Do not mark the second-endpoint gate until the acceptance board is updated on purpose. Do not reset the operator password. Do not create a pod, copy weights, or send mail.
 
 Bots follow ASSIGNMENTS below. Do not mark gates passed.
 
@@ -19,11 +17,23 @@ These jobs are mandatory. Bots must not download random computer-repair tools, d
 - Director: no code. CURRENT now says Office PC has reported. Do not mark the second-endpoint gate passed.
 - Console: on the helpdesk, Office PC should show as enrolled with the eight read-only checks. Do not invent a device. Do not show a repair as completed.
 - Model: do not restart Qwen pid 6739. Offline eval only. No weight copy.
-- Endpoint: the enrol and the first report already succeeded. Do not enrol this PC. A later report from the other laptop, run inside the folder that contains `integrations`, will include boot time and memory in the startup line. Read-only only.
+- Endpoint: Office PC already reported from `C:\Users\kokob\src\AI-PLAYBOOK.md\AI-PLAYBOOK.md-main`. Do not enrol this PC. Do not use the parent folder. A later report includes boot time and memory only after that laptop has commit `e8f9665`. Read-only only.
 - Mail: do not send mail or add scopes. Do not search for "the". Positive match still needs a phrase the owner confirms. Power Automate stays NOT TESTED.
 - Liaison: append the log after each bot finishes. Do not implement features.
 
 ## LOG
+
+- 2026-10-23 22:15 UK Cursor on this PC: wrote `docs/coordination/TRANSFER_TO_NEXT_AGENT.md` for the next chat. Office PC reported again from the inner folder. Startup summary is still thin. Qwen was not restarted. Production stays NO-GO.
+
+### Previous CURRENT (copied 2026-10-23 22:15 UK)
+
+Updated: 2026-10-23 21:25 UK
+
+Office PC is enrolled and has sent a live read-only report. Device id `bead5785f3674aaeb92c189f8c1b5b8c`. Fixture label is empty. Windows 10.0.26200. Eight checks were ok: disk, services, Windows Update events, device inventory (164 present, 0 problems), printers (spooler running, 3 printers), network (gateway and local DNS ok), recurring events (8), and startup. The startup line only said `status=collected` because boot time, memory, and CPU were collected and then left out of the stored summary. That summary gap is fixed in the worker for the next report. The report is one-way: the laptop sends it to the pod. The pod does not open a path back into that laptop. This PC cannot open folders on Kokob-laptop. Model pid 6739 stays up. Production stays NO-GO. Do not mark `second_endpoint_worker_ok` until the acceptance board is updated from this evidence on purpose.
+
+The other laptop must run `python -m integrations.endpoint_worker` from the folder that contains the `integrations` directory. Not from `C:\WINDOWS\System32` and not from the parent of that folder.
+
+Bots follow ASSIGNMENTS below. Do not mark gates passed.
 
 - 2026-10-23 21:25 UK Cursor on this PC: Office PC device bead5785f3674aaeb92c189f8c1b5b8c reported eight live checks, all ok. Startup summary omitted boot, memory, and CPU. The worker summary now keeps those fields. The other laptop's Cursor is not pushing. Kokob-laptop still does not answer a file share. Qwen was not restarted. Production stays NO-GO.
 

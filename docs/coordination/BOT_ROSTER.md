@@ -1,6 +1,6 @@
 # Bot roster
 
-Six bots. Each bot reads docs/coordination/AGENT_HANDOFF.md before starting work, then follows the ASSIGNMENTS section in that file. After a job, append a log entry. Do not delete log entries. Only the Director replaces the CURRENT section, and only after copying the old CURRENT text into the log.
+Six bots. A new Cursor chat reads docs/coordination/TRANSFER_TO_NEXT_AGENT.md first. Each bot then reads docs/coordination/AGENT_HANDOFF.md before starting work, and follows the ASSIGNMENTS section in that file. After a job, append a log entry. Do not delete log entries. Only the Director replaces the CURRENT section, and only after copying the old CURRENT text into the log.
 
 Repo: https://github.com/henokmeron/AI-PLAYBOOK.md
 Local path on the owner's Windows PC: C:\Users\henok\src\AI-PLAYBOOK.md
