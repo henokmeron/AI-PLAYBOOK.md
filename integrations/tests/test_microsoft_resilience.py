@@ -23,10 +23,15 @@ class ResilienceTransport:
         self.calls: list[tuple[str, str]] = []
         self.scenario = scenario
         self.attempt = 0
+        self.messages_attempt = 0  # Track attempts for /me/messages specifically
     
     def __call__(self, method: str, url: str, headers: dict, body: bytes | None):
         self.calls.append((method, url))
         self.attempt += 1
+        
+        # Track /me/messages attempts separately for transient error scenarios
+        if "/me/messages" in url:
+            self.messages_attempt += 1
         
         if url.endswith("/token"):
             return 200, {
@@ -49,7 +54,7 @@ class ResilienceTransport:
                 }
             
             elif self.scenario == "throttled_then_success":
-                if self.attempt <= 2:
+                if self.messages_attempt <= 2:
                     return 429, {
                         "error": {
                             "code": "TooManyRequests",
@@ -59,7 +64,7 @@ class ResilienceTransport:
                 return 200, {"value": [{"id": "msg-1", "subject": "Test"}]}
             
             elif self.scenario == "transient_then_success":
-                if self.attempt == 1:
+                if self.messages_attempt == 1:
                     return 503, {
                         "error": {
                             "code": "ServiceUnavailable",
@@ -69,7 +74,10 @@ class ResilienceTransport:
                 return 200, {"value": [{"id": "msg-1"}]}
             
             elif self.scenario == "paginated":
-                if "$skiptoken=" not in url:
+                # Check for skiptoken in URL (handles both encoded and unencoded)
+                has_skiptoken = "$skiptoken=" in url or "%24skiptoken=" in url
+                
+                if not has_skiptoken:
                     # First page
                     return 200, {
                         "value": [
@@ -94,7 +102,7 @@ class ResilienceTransport:
                         ),
                     }
                 else:
-                    # Last page
+                    # Last page (page3)
                     return 200, {
                         "value": [{"id": "msg-5", "subject": "Page 3"}],
                     }
