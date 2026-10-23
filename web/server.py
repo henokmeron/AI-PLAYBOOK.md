@@ -1273,10 +1273,19 @@ class Handler(BaseHTTPRequestHandler):
                 "fixture_label": FIXTURE_LABEL,
                 "counts_as_second_endpoint": False,
             }
+        from integrations.endpoint import endpoint_label
+
         devices = self.server.devices.public_devices(CONSOLE_TENANT)  # type: ignore[attr-defined]
         match = next((item for item in devices if item.get("device_id") == device_id), None)
         if match is None:
             raise TicketError("device was not found")
+        stored_label = match.get("fixture_label") or ""
+        if stored_label == FIXTURE_LABEL or endpoint_label(str(match.get("display_name") or "")) == FIXTURE_LABEL:
+            return {
+                "device_id": match["device_id"],
+                "fixture_label": FIXTURE_LABEL,
+                "counts_as_second_endpoint": False,
+            }
         return {
             "device_id": match["device_id"],
             "fixture_label": "",

@@ -1399,6 +1399,7 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn(b"Proposed repairs stay proposals. No repair runs without an approval record.", script)
         self.assertIn(b"--code=", script)
         self.assertIn(b"endpoint_worker report", script)
+        self.assertIn(b"Open a ticket from this report", script)
         status, body = self.request(base, "POST", "/api/devices/enrolment", {})
         created = json.loads(body)
         self.assertEqual(status, 200)
@@ -1493,6 +1494,82 @@ class ConsoleTests(unittest.TestCase):
             {"Authorization": "Bearer " + secret},
         )
         self.assertEqual(after, 401)
+
+    def test_ticket_links_a_device_report_and_does_not_run_a_repair(self) -> None:
+        base = self.web(FakeGateway())
+        status, body = self.request(base, "POST", "/api/devices/enrolment", {})
+        self.assertEqual(status, 200)
+        created = json.loads(body)
+        secret = "ticket-link-device-secret-value-not-mail"
+        enrolled, enrolled_body = self.request(base, "POST", "/api/devices/enroll", {
+            "code": created["enrolment_code"],
+            "display_name": "Office PC",
+            "device_secret": secret,
+        })
+        self.assertEqual(enrolled, 200)
+        device_id = json.loads(enrolled_body)["device_id"]
+        reported, _reported_body = self.request(
+            base, "POST", "/api/devices/report",
+            {
+                "os_family": "windows",
+                "os_version": "10.0.26200",
+                "disk_free_bytes": 10,
+                "disk_total_bytes": 20,
+                "memory_total_bytes": 30,
+                "boot_time_unix": 100,
+                "collected_at_unix": 200,
+                "checks": [{
+                    "procedure_id": "net.diagnose",
+                    "evidence_source": "live_windows",
+                    "ok": True,
+                    "collected_at_unix": 200,
+                    "summary": "gateway_ok=true; addresses=1",
+                }],
+            },
+            {"Authorization": "Bearer " + secret},
+        )
+        self.assertEqual(reported, 200)
+        evidence = "collection:" + device_id
+        status, body = self.request(base, "POST", "/api/helpdesk/tickets", {
+            "title": "Disk space on the other laptop",
+            "detail": "The check-in reported low free space.",
+            "device_id": device_id,
+            "evidence_ref": evidence,
+            "counts_as_second_endpoint": True,
+        })
+        self.assertEqual(status, 201, body.decode("utf-8", errors="replace"))
+        ticket = json.loads(body)["ticket"]
+        self.assertEqual(ticket["device"]["device_id"], device_id)
+        self.assertEqual(ticket["device"]["fixture_label"], "")
+        self.assertFalse(ticket["device"]["counts_as_second_endpoint"])
+        self.assertEqual(ticket["evidence_ref"], evidence)
+        self.assertNotEqual(ticket["status"], "completed")
+        status, body = self.request(base, "POST", "/api/helpdesk/tickets/execute", {"ticket_id": ticket["id"]})
+        blocked = json.loads(body)
+        self.assertEqual(blocked["repair_status"], "approval_required")
+        self.assertFalse(blocked["executed"])
+        self.assertFalse(blocked["changed_device"])
+        fixture_status, fixture_body = self.request(base, "POST", "/api/devices/enrolment", {})
+        self.assertEqual(fixture_status, 200)
+        fixture_created = json.loads(fixture_body)
+        fixture_secret = "fixture-link-device-secret-value-not-mail"
+        fixture_enrolled, fixture_enrolled_body = self.request(base, "POST", "/api/devices/enroll", {
+            "code": fixture_created["enrolment_code"],
+            "display_name": "not-the-second-endpoint",
+            "device_secret": fixture_secret,
+        })
+        self.assertEqual(fixture_enrolled, 200)
+        fixture_id = json.loads(fixture_enrolled_body)["device_id"]
+        status, body = self.request(base, "POST", "/api/helpdesk/tickets", {
+            "title": "Fixture check-in",
+            "detail": "This rehearsal must stay labelled.",
+            "device_id": fixture_id,
+            "evidence_ref": "collection:" + fixture_id,
+        })
+        self.assertEqual(status, 201, body.decode("utf-8", errors="replace"))
+        labelled = json.loads(body)["ticket"]
+        self.assertEqual(labelled["device"]["fixture_label"], "not-the-second-endpoint")
+        self.assertFalse(labelled["device"]["counts_as_second_endpoint"])
 
     def test_repair_device_job_uses_the_session_and_a_live_read(self) -> None:
         """The console issues a job. A separate worker process collects it."""

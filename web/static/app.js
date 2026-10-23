@@ -1409,6 +1409,21 @@
         item.appendChild(el("span", null, fixture
           ? "Local fixture not-the-second-endpoint. This enrolment does not count as the second Windows computer."
           : "This enrolment does not count as the second Windows computer."));
+        if (device.report && device.report.status === "ok" && device.device_id) {
+          var link = el("button", "secondary", "Open a ticket from this report");
+          link.type = "button";
+          link.addEventListener("click", function () {
+            var deviceField = document.getElementById("ticket-device");
+            var fixtureField = document.getElementById("ticket-fixture");
+            var evidenceField = document.getElementById("ticket-evidence");
+            if (deviceField) deviceField.value = device.device_id;
+            if (fixtureField) fixtureField.checked = fixture;
+            if (evidenceField) evidenceField.value = "collection:" + device.device_id;
+            var title = document.getElementById("ticket-title-input");
+            if (title) title.focus();
+          });
+          item.appendChild(link);
+        }
         if (device.status === "enrolled") {
           var button = el("button", "secondary", "Revoke");
           button.type = "button";
