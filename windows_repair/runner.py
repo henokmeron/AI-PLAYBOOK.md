@@ -224,6 +224,73 @@ $readable = @($rows | Where-Object { $_.access -eq 'readable' }).Count
 $summary = if ($denied -gt 0) { 'denied' } elseif ($readable -eq $rows.Count) { 'readable' } else { 'partial' }
 @{ path = (($rows | ForEach-Object { $_.label }) -join ','); access = $summary; checks = $rows } | ConvertTo-Json -Compress -Depth 4
 """,
+    "hardware_identity": r"""
+$ErrorActionPreference = 'Continue'
+function Clip([string]$value, [int]$limit) {
+  if (-not $value) { return '' }
+  $chars = foreach ($ch in $value.ToCharArray()) {
+    $code = [int][char]$ch
+    if ($code -lt 32 -or $code -eq 127) { ' ' } else { $ch }
+  }
+  $clean = ((-join $chars) -replace '\s+', ' ').Trim()
+  if ($clean.Length -gt $limit) { $clean = $clean.Substring(0, $limit) }
+  return $clean
+}
+function Classify([string]$message) {
+  $text = [string]$message
+  if ($text -match '(?i)access is denied|unauthorized|0x80041003|privilege') { return 'permission-denied' }
+  if ($text -match '(?i)invalid class|not supported|not recognized') { return 'unsupported' }
+  return 'unavailable'
+}
+$status = 'collected'
+$manufacturer = ''
+$model = ''
+$biosVendor = ''
+$biosVersion = ''
+$cpu = ''
+$available = $null
+$total = $null
+try {
+  $cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop | Select-Object -First 1 Manufacturer, Model
+  if ($cs) {
+    $manufacturer = Clip ([string]$cs.Manufacturer) 48
+    $model = Clip ([string]$cs.Model) 48
+  }
+} catch {
+  $kind = Classify $_.Exception.Message
+  if ($status -eq 'collected' -or $kind -eq 'permission-denied') { $status = $kind }
+}
+try {
+  $bios = Get-CimInstance -ClassName Win32_BIOS -ErrorAction Stop | Select-Object -First 1 Manufacturer, SMBIOSBIOSVersion
+  if ($bios) {
+    $biosVendor = Clip ([string]$bios.Manufacturer) 40
+    $biosVersion = Clip ([string]$bios.SMBIOSBIOSVersion) 40
+  }
+} catch {
+  $kind = Classify $_.Exception.Message
+  if ($status -eq 'collected' -or $kind -eq 'permission-denied') { $status = $kind }
+}
+try {
+  $proc = Get-CimInstance -ClassName Win32_Processor -ErrorAction Stop | Select-Object -First 1 Name
+  if ($proc) { $cpu = Clip ([string]$proc.Name) 64 }
+} catch {
+  $kind = Classify $_.Exception.Message
+  if ($status -eq 'collected' -or $kind -eq 'permission-denied') { $status = $kind }
+}
+try {
+  $osInfo = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop | Select-Object -First 1 FreePhysicalMemory, TotalVisibleMemorySize
+  if ($osInfo) {
+    $freeKb = [int64]$osInfo.FreePhysicalMemory
+    $totalKb = [int64]$osInfo.TotalVisibleMemorySize
+    if ($freeKb -ge 0) { $available = $freeKb * 1024 }
+    if ($totalKb -ge 1) { $total = $totalKb * 1024 }
+  }
+} catch {
+  $kind = Classify $_.Exception.Message
+  if ($status -eq 'collected' -or $kind -eq 'permission-denied') { $status = $kind }
+}
+@{ status = $status; manufacturer = $manufacturer; model = $model; bios_vendor = $biosVendor; bios_version = $biosVersion; cpu = $cpu; memory_available_bytes = $available; memory_total_bytes = $total } | ConvertTo-Json -Compress
+""",
     "crashes": r"""
 $ErrorActionPreference = 'Continue'
 $rows = @(Get-WinEvent -FilterHashtable @{LogName='Application'; Level=2; StartTime=(Get-Date).AddDays(-7)} -MaxEvents 8 -ErrorAction SilentlyContinue | Select-Object TimeCreated, Id, ProviderName, LevelDisplayName)

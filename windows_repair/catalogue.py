@@ -139,6 +139,23 @@ PROCEDURES: dict[str, Procedure] = {
             limitations="Does not download drivers.",
         ),
         _p(
+            procedure_id="hw.identity.inspect",
+            name="Hardware identity",
+            category="hardware",
+            symptoms=("hardware identity", "bios version", "computer model"),
+            risk="READ_ONLY",
+            requires_admin=False,
+            requires_approval=False,
+            evidence_required=("manufacturer", "model", "bios", "cpu"),
+            documented_commands=(
+                "Registered script hardware_identity reads Win32_ComputerSystem, Win32_BIOS, Win32_Processor, and Win32_OperatingSystem. Serial numbers are not collected.",
+            ),
+            runner="interpret_hardware",
+            verification="A complete identity is a label for the computer, not a health verdict.",
+            rollback="No change is made.",
+            limitations="Missing manufacturer, model, BIOS, CPU, or memory is unavailable, unsupported, or permission-denied. It is not reported as healthy. No driver is installed.",
+        ),
+        _p(
             procedure_id="hw.driver.install",
             name="Driver install",
             category="hardware",

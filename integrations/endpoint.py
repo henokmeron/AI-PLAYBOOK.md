@@ -1,9 +1,11 @@
 """Authorised, outbound-only computer check-in.
 
 A device the operator enrolled can submit one fixed diagnostic: operating
-system, disk space, memory, and boot time. This module does not accept a
-command, a path, a screen capture, or a credential. The server stores a hash
-of the device secret and cannot use that hash to drive the computer.
+system, disk space, memory, boot time, and the registered read-only checks.
+Hardware identity is manufacturer, model, BIOS, CPU, and available memory.
+This module does not accept a command, a path, a screen capture, or a
+credential. The server stores a hash of the device secret and cannot use
+that hash to drive the computer.
 """
 from __future__ import annotations
 
@@ -47,6 +49,7 @@ _CHECK_PROCEDURES = (
     "net.diagnose",
     "win.events.recurring",
     "win.startup.inspect",
+    "hw.identity.inspect",
 )
 _CHECK_SOURCES = ("live_windows", "unavailable")
 _MAX_CHECKS = len(_CHECK_PROCEDURES)
@@ -64,6 +67,27 @@ _NONE = {
     "properties": {
         "status": {"type": "string", "const": "none"},
         "detail": {"type": "string", "maxLength": 300},
+    },
+}
+_HARDWARE_FIELDS = (
+    "status", "manufacturer", "model", "bios", "cpu",
+    "memory_available_bytes", "memory_total_bytes",
+)
+_HARDWARE = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": list(_HARDWARE_FIELDS),
+    "properties": {
+        "status": {
+            "type": "string",
+            "enum": ["collected", "unavailable", "unsupported", "permission-denied"],
+        },
+        "manufacturer": {"type": "string", "maxLength": 48},
+        "model": {"type": "string", "maxLength": 48},
+        "bios": {"type": "string", "maxLength": 48},
+        "cpu": {"type": "string", "maxLength": 64},
+        "memory_available_bytes": {"type": ["integer", "null"], "minimum": 0, "maximum": _MAX_BYTES},
+        "memory_total_bytes": {"type": ["integer", "null"], "minimum": 0, "maximum": _MAX_BYTES},
     },
 }
 _REPORT = {
@@ -85,6 +109,7 @@ _REPORT = {
         "memory_total_bytes": {"type": "integer", "minimum": 1, "maximum": _MAX_BYTES},
         "boot_time_unix": {"type": "integer", "minimum": 0, "maximum": _MAX_BYTES},
         "collected_at_unix": {"type": "integer", "minimum": 0, "maximum": _MAX_BYTES},
+        "hardware": _HARDWARE,
     },
 }
 _READ_INPUT = {
@@ -188,7 +213,7 @@ def _check_by_id(report: dict[str, Any] | None, procedure_id: str) -> dict[str, 
 
 
 def diagnostic_sections(report: dict[str, Any] | None) -> dict[str, Any]:
-    """OS, disk, network, and installed software. A repair is not executed from here."""
+    """OS, disk, network, hardware identity, and installed software. A repair is not executed from here."""
     software = _check_by_id(report, "app.browser.inspect")
     if software["status"] == "not_reported":
         software = {
@@ -200,6 +225,7 @@ def diagnostic_sections(report: dict[str, Any] | None) -> dict[str, Any]:
         "disk": None,
         "network": _check_by_id(report, "net.diagnose"),
         "installed_software": software,
+        "hardware": _check_by_id(report, "hw.identity.inspect"),
         "repair_authority": False,
         "execution": "proposal_only",
     }
@@ -246,6 +272,51 @@ def _check_report_values(report: dict[str, Any]) -> None:
         raise InvalidRequest("boot time is after the report was collected")
 
 
+def _hardware_text(value: Any, limit: int) -> str:
+    if not isinstance(value, str):
+        return ""
+    return _plain(value, limit)
+
+
+def _clean_hardware(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        raise InvalidRequest("diagnostic does not match the allowed report")
+    if set(raw) - set(_HARDWARE_FIELDS):
+        raise InvalidRequest("diagnostic contains a field this connector does not accept")
+    return {
+        "status": raw.get("status"),
+        "manufacturer": _hardware_text(raw.get("manufacturer"), 48),
+        "model": _hardware_text(raw.get("model"), 48),
+        "bios": _hardware_text(raw.get("bios"), 48),
+        "cpu": _hardware_text(raw.get("cpu"), 64),
+        "memory_available_bytes": raw.get("memory_available_bytes"),
+        "memory_total_bytes": raw.get("memory_total_bytes"),
+    }
+
+
+def _agree_hardware(hardware: dict[str, Any] | None, checks: list[dict[str, Any]] | None) -> None:
+    """A collected identity is complete and live. Any other reading is not ok."""
+    identity = None
+    for item in checks or []:
+        if item.get("procedure_id") == "hw.identity.inspect":
+            identity = item
+    if hardware and hardware.get("status") == "collected":
+        if any(not str(hardware.get(key) or "").strip() for key in ("manufacturer", "model", "bios", "cpu")):
+            raise InvalidRequest("hardware identity is incomplete")
+        available = hardware.get("memory_available_bytes")
+        total = hardware.get("memory_total_bytes")
+        if isinstance(available, bool) or not isinstance(available, int):
+            raise InvalidRequest("hardware memory is missing")
+        if isinstance(total, bool) or not isinstance(total, int) or total < 1:
+            raise InvalidRequest("hardware memory is missing")
+        if available < 0 or available > total:
+            raise InvalidRequest("available memory cannot exceed installed memory")
+        if identity is None or not identity.get("ok") or identity.get("evidence_source") != "live_windows":
+            raise InvalidRequest("complete hardware identity was not reported as a live check")
+    if identity and identity.get("ok") and (not hardware or hardware.get("status") != "collected"):
+        raise InvalidRequest("a successful hardware check needs a complete identity")
+
+
 def normalise_report(payload: dict[str, Any]) -> dict[str, Any]:
     """Keep only the fixed diagnostic fields. Anything else is rejected."""
     if not isinstance(payload, dict):
@@ -262,6 +333,8 @@ def normalise_report(payload: dict[str, Any]) -> dict[str, Any]:
         "boot_time_unix": payload.get("boot_time_unix"),
         "collected_at_unix": payload.get("collected_at_unix"),
     }
+    if "hardware" in payload:
+        cleaned["hardware"] = _clean_hardware(payload.get("hardware"))
     allowed = set(_REPORT["properties"])
     checks = payload.get("checks", None)
     extra = set(payload) - allowed - {"status", "checks"}
@@ -274,6 +347,7 @@ def normalise_report(payload: dict[str, Any]) -> dict[str, Any]:
     _check_report_values(cleaned)
     if checks is not None:
         cleaned["checks"] = normalise_checks(checks, int(cleaned["collected_at_unix"]))
+    _agree_hardware(cleaned.get("hardware"), cleaned.get("checks"))
     return cleaned
 
 
@@ -591,7 +665,7 @@ class DeviceRegistry:
             "repair_authority": False,
             "check_count": len(checks),
             "failed_checks": failed,
-            "failed_procedures": failed_procedures[:8],
+            "failed_procedures": failed_procedures[:_MAX_CHECKS],
             "coverage": coverage,
             **timing,
         }

@@ -120,10 +120,24 @@ def _json_bytes(payload: dict) -> bytes:
     return json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
 
-def build_report_body(diagnostic: dict, checks: list[dict]) -> dict:
+def _hardware_matches(checks: list[dict], hardware: dict | None) -> None:
+    identity = next(
+        (item for item in checks if isinstance(item, dict) and item.get("procedure_id") == "hw.identity.inspect"),
+        None,
+    )
+    if hardware and hardware.get("status") == "collected" and (not identity or not identity.get("ok")):
+        raise InvalidRequest("complete hardware identity was not reported as a live check")
+    if identity and identity.get("ok") and (not hardware or hardware.get("status") != "collected"):
+        raise InvalidRequest("a successful hardware check needs a complete identity")
+
+
+def build_report_body(diagnostic: dict, checks: list[dict], hardware: dict | None = None) -> dict:
     """The check-in body. It must fit the console limit or the report is not stored."""
     body = {key: diagnostic[key] for key in _DIAGNOSTIC_KEYS}
     body["checks"] = checks
+    if hardware is not None:
+        body["hardware"] = hardware
+    _hardware_matches(checks, hardware)
     if len(_json_bytes(body)) > CONSOLE_REPORT_LIMIT:
         raise InvalidRequest("the diagnostic report is too large for the console")
     return body
@@ -305,12 +319,58 @@ def _clip(value: object, limit: int = 80) -> str:
     return text[:limit]
 
 
+def _identity_summary(raw: dict) -> str:
+    status = _clip(raw.get("status") or "unavailable", 20)
+    parts = [f"status={status}"]
+    if " ".join(str(raw.get("fixture") or "").split()).casefold() == "synthetic":
+        parts.append("fixture=synthetic")
+    if status == "collected":
+        parts.append(f"manufacturer={_clip(raw.get('manufacturer'), 32)}")
+        parts.append(f"model={_clip(raw.get('model'), 32)}")
+        parts.append(f"bios={_clip(raw.get('bios_version') or raw.get('bios'), 24)}")
+        parts.append(f"cpu={_clip(raw.get('cpu'), 32)}")
+        parts.append(f"ram_available={_clip(raw.get('memory_available_bytes'), 20)}")
+        parts.append(f"ram_total={_clip(raw.get('memory_total_bytes'), 20)}")
+    return _clip("; ".join(parts), 240)
+
+
+def _identity_is_complete(raw: dict) -> bool:
+    if str(raw.get("status") or "").strip().casefold() != "collected":
+        return False
+    for key in ("manufacturer", "model", "bios_vendor", "bios_version", "cpu"):
+        if not str(raw.get(key) or "").strip():
+            return False
+    available = raw.get("memory_available_bytes")
+    total = raw.get("memory_total_bytes")
+    if isinstance(available, bool) or isinstance(total, bool):
+        return False
+    if not isinstance(available, int) or not isinstance(total, int):
+        return False
+    return total >= 1 and 0 <= available <= total
+
+
 def summarise_live_check(procedure_id: str, raw: dict, collected_at: int) -> dict:
     """Turn one collector result into the fields the console will store."""
     source = raw.get("evidence_source")
-    ok = bool(raw.get("ok")) and source == "live_windows"
+    fixture = " ".join(str(raw.get("fixture") or "").split()).casefold()
+    status = str(raw.get("status") or "").strip().casefold()
+    blocked = bool(fixture) or status in {"unavailable", "unsupported", "permission-denied"}
+    ok = bool(raw.get("ok")) and source == "live_windows" and not blocked
+    if procedure_id == "hw.identity.inspect" and (fixture == "synthetic" or not _identity_is_complete(raw)):
+        ok = False
     if not ok:
         source = "unavailable"
+    if procedure_id == "hw.identity.inspect":
+        summary = _identity_summary(raw)
+        if not summary:
+            summary = "status=unavailable"
+        return {
+            "procedure_id": procedure_id,
+            "evidence_source": source,
+            "ok": ok,
+            "collected_at_unix": collected_at,
+            "summary": summary,
+        }
     parts = [procedure_id]
     for key in (
         "spooler", "present_count", "gateway_ok", "dns_localhost_ok", "detail", "status",
@@ -357,12 +417,41 @@ def collect_registered_checks(collect=None, clock=None) -> list[dict]:
     return checks
 
 
+def _default_collector(procedure_id: str, hardware_box: dict[str, dict]) -> dict:
+    """Registered collectors only. The procedure id is not a shell command."""
+    if procedure_id == "hw.identity.inspect":
+        from windows_repair.hardware_inventory import collect_hardware_identity
+
+        reading = collect_hardware_identity()
+        hardware_box["reading"] = reading
+        return reading
+    if os.name != "nt":
+        return {
+            "ok": False,
+            "evidence_source": "unavailable",
+            "detail": "no live collector on this operating system",
+        }
+    from windows_repair.providers import LiveWindowsProvider
+
+    return LiveWindowsProvider().collect(procedure_id)
+
+
 def submit_report(origin: str, secret_path: Path, collect=None) -> dict:
     target = console_origin(origin)
     secret = read_secret_file(secret_path)
     diagnostic = collect_local_diagnostics()
-    checks = collect_registered_checks(collect, clock=lambda: diagnostic["collected_at_unix"])
-    body = build_report_body(diagnostic, checks)
+    hardware_box: dict[str, dict] = {}
+
+    def _collect(procedure_id: str) -> dict:
+        return _default_collector(procedure_id, hardware_box)
+
+    checks = collect_registered_checks(collect or _collect, clock=lambda: diagnostic["collected_at_unix"])
+    hardware = None
+    if "reading" in hardware_box:
+        from windows_repair.hardware_inventory import stored_hardware
+
+        hardware = stored_hardware(hardware_box["reading"])
+    body = build_report_body(diagnostic, checks, hardware)
     return _post(target, "/api/devices/report", body, {"Authorization": f"Bearer {secret}"})
 
 

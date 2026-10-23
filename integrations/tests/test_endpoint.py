@@ -229,12 +229,68 @@ class EndpointTests(unittest.TestCase):
         }, 200)
         self.assertEqual(summarised["evidence_source"], "unavailable")
         self.assertFalse(summarised["ok"])
-        checks = collect_registered_checks(
-            collect=lambda procedure_id: {"evidence_source": "live_windows", "ok": True, "detail": procedure_id},
-            clock=lambda: 200,
-        )
-        self.assertEqual(len(checks), 8)
+        def _collect(procedure_id: str) -> dict:
+            raw = {
+                "evidence_source": "live_windows",
+                "ok": True,
+                "status": "collected",
+                "detail": procedure_id,
+            }
+            if procedure_id == "hw.identity.inspect":
+                raw.update({
+                    "manufacturer": "Example OEM",
+                    "model": "Example Model",
+                    "bios_vendor": "Example BIOS",
+                    "bios_version": "1.0",
+                    "cpu": "Example CPU",
+                    "memory_available_bytes": 1024,
+                    "memory_total_bytes": 2048,
+                })
+            return raw
+
+        checks = collect_registered_checks(collect=_collect, clock=lambda: 200)
+        from integrations.endpoint import _CHECK_PROCEDURES
+        self.assertEqual([item["procedure_id"] for item in checks], list(_CHECK_PROCEDURES))
+        self.assertEqual(len(checks), 9)
         self.assertTrue(all(item["evidence_source"] == "live_windows" and item["ok"] for item in checks))
+        identity = next(item for item in checks if item["procedure_id"] == "hw.identity.inspect")
+        self.assertIn("manufacturer=Example OEM", identity["summary"])
+        self.assertIn("ram_available=1024", identity["summary"])
+        self.assertIn("ram_total=2048", identity["summary"])
+        denied = summarise_live_check("hw.identity.inspect", {
+            "evidence_source": "live_windows",
+            "ok": True,
+            "status": "permission-denied",
+            "fixture": "synthetic",
+            "manufacturer": "Synthetic OEM",
+            "model": "Synthetic Model",
+            "bios_vendor": "Synthetic BIOS",
+            "bios_version": "S1.0",
+            "cpu": "Synthetic CPU",
+            "memory_available_bytes": 1024,
+            "memory_total_bytes": 2048,
+        }, 200)
+        self.assertFalse(denied["ok"])
+        self.assertEqual(denied["evidence_source"], "unavailable")
+        self.assertIn("status=permission-denied", denied["summary"])
+        self.assertIn("fixture=synthetic", denied["summary"])
+        unsupported = summarise_live_check("hw.identity.inspect", {
+            "evidence_source": "live_windows",
+            "ok": True,
+            "status": "unsupported",
+            "fixture": "synthetic",
+        }, 200)
+        self.assertFalse(unsupported["ok"])
+        self.assertIn("status=unsupported", unsupported["summary"])
+        missing = summarise_live_check("hw.identity.inspect", {
+            "evidence_source": "live_windows",
+            "ok": True,
+            "status": "collected",
+            "fixture": "synthetic",
+            "manufacturer": "Synthetic OEM",
+        }, 200)
+        self.assertFalse(missing["ok"])
+        self.assertEqual(missing["evidence_source"], "unavailable")
         startup = summarise_live_check("win.startup.inspect", {
             "evidence_source": "live_windows",
             "ok": True,
@@ -812,6 +868,15 @@ class SecondPcEnrolmentTests(unittest.TestCase):
                 "collected_at_unix": 1_700_000_000,
                 "summary": "x" * 240,
             })
+        hardware = {
+            "status": "collected",
+            "manufacturer": "M" * 48,
+            "model": "D" * 48,
+            "bios": "B" * 48,
+            "cpu": "C" * 64,
+            "memory_available_bytes": 1 << 60,
+            "memory_total_bytes": 1 << 60,
+        }
         body = build_report_body({
             "os_family": "windows",
             "os_version": "v" * 80,
@@ -820,11 +885,82 @@ class SecondPcEnrolmentTests(unittest.TestCase):
             "memory_total_bytes": 10**15,
             "boot_time_unix": 1_700_000_000,
             "collected_at_unix": 1_700_000_000,
-        }, checks)
+        }, checks, hardware)
         import json as _json
         encoded = _json.dumps(body, separators=(",", ":")).encode("utf-8")
         self.assertLessEqual(len(encoded), CONSOLE_REPORT_LIMIT)
         self.assertLessEqual(len(encoded), 4096)
+        stored = normalise_report({
+            "device_id": "a" * 32,
+            "display_name": "Office PC",
+            **body,
+        })
+        self.assertEqual(stored["hardware"]["status"], "collected")
+        self.assertEqual(stored["hardware"]["memory_available_bytes"], 1 << 60)
+        self.assertTrue(stored["checks"][-1]["ok"])
+        denied_hardware = {
+            "status": "permission-denied",
+            "manufacturer": "",
+            "model": "",
+            "bios": "",
+            "cpu": "",
+            "memory_available_bytes": None,
+            "memory_total_bytes": None,
+        }
+        def _identity(**overrides):
+            payload = {
+                "procedure_id": "hw.identity.inspect",
+                "evidence_source": "live_windows",
+                "ok": True,
+                "collected_at_unix": 200,
+                "summary": "status=collected",
+            }
+            payload.update(overrides)
+            return payload
+
+        with self.assertRaises(InvalidRequest):
+            normalise_report(_report(
+                device_id="b" * 32,
+                display_name="Office PC",
+                hardware=denied_hardware,
+                checks=[_identity(summary="status=permission-denied; fixture=synthetic")],
+            ))
+        with self.assertRaises(InvalidRequest):
+            normalise_report(_report(
+                device_id="c" * 32,
+                display_name="Office PC",
+                hardware={**hardware, "serial": "SECRET"},
+                checks=[_identity(summary="manufacturer=M; ram_total=1")],
+            ))
+        with self.assertRaises(InvalidRequest):
+            normalise_report(_report(
+                device_id="d" * 32,
+                display_name="Office PC",
+                hardware={
+                    "status": "collected",
+                    "manufacturer": "Example OEM",
+                    "model": "Example Model",
+                    "bios": "1.0",
+                    "cpu": "Example CPU",
+                    "memory_available_bytes": 50,
+                    "memory_total_bytes": 40,
+                },
+                checks=[_identity(summary="ram_available=50; ram_total=40")],
+            ))
+        kept = normalise_report(_report(
+            device_id="e" * 32,
+            display_name="Office PC",
+            hardware=denied_hardware,
+            checks=[_identity(
+                evidence_source="unavailable",
+                ok=False,
+                summary="status=permission-denied; fixture=synthetic",
+            )],
+        ))
+        self.assertEqual(kept["hardware"]["status"], "permission-denied")
+        self.assertFalse(kept["checks"][0]["ok"])
+        self.assertEqual(diagnostic_sections(kept)["hardware"]["status"], "unavailable")
+        self.assertFalse(diagnostic_sections(kept)["hardware"]["ok"])
 
 
 if __name__ == "__main__":

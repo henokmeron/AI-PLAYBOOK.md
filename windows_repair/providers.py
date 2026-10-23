@@ -30,6 +30,7 @@ LIVE_PROCEDURES = {
     "app.browser.inspect": "browser",
     "app.permissions.inspect": "permissions",
     "app.crash.evidence": "crashes",
+    "hw.identity.inspect": "hardware_identity",
 }
 
 _KEY_SHAPE = re.compile(r"(?i)\b[A-Z0-9]{5}(?:-[A-Z0-9]{5}){4}\b")
@@ -228,6 +229,12 @@ def normalise_live(procedure_id: str, payload: Any) -> dict[str, Any]:
         base["event_count"] = _count(body.get("event_count"))
         base["events"] = events[:8]
         return base
+    if procedure_id == "hw.identity.inspect":
+        from .hardware_inventory import assess_hardware_identity
+
+        reading = assess_hardware_identity(body)
+        base.update(reading)
+        return base
     raise KeyError(procedure_id)
 
 
@@ -265,6 +272,10 @@ class LiveWindowsProvider:
                 "detail": "This procedure has no live read-only collector.",
             }
         raw = run_script(script_id, timeout=timeout)
+        if procedure_id == "hw.identity.inspect":
+            from .hardware_inventory import reading_from_script_result
+
+            return reading_from_script_result(raw, collected_at)
         if not raw.get("ok"):
             return {
                 "procedure_id": procedure_id,
