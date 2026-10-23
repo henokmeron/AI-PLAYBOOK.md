@@ -31,8 +31,13 @@ import os
 import sys
 from pathlib import Path
 
-from .mail_verification import MailboxVerificationHarness
-from .microsoft_oauth import MicrosoftOAuth, client_id_source
+# Support both direct execution and module execution
+if __package__:
+    from .mail_verification import MailboxVerificationHarness
+    from .microsoft_oauth import MicrosoftOAuth, client_id_source
+else:
+    from mail_verification import MailboxVerificationHarness
+    from microsoft_oauth import MicrosoftOAuth, client_id_source
 
 
 def main() -> int:
