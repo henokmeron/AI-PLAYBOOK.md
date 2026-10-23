@@ -65,7 +65,7 @@ with `-C C:\Users\henok\src\AI-PLAYBOOK.md`. Never run git from `C:\Users\henok`
 
 `git pull` with no branch fails because `main` has no upstream. Use `git pull --ff-only origin main`. Fast-forward `feature/qwen-a100-start-hardening` and `feature/qwen3.5-27b-integration` when pushing `main`. Never force-push, reset, clean, or rewrite git config.
 
-This PC pushes. The Cursor on the other laptop does not push. It only helps with that laptop's console. Grok bots are not this chat. They read `AGENT_HANDOFF.md` and `BOT_ROSTER.md`. They cannot hear this conversation. Leave their jobs in those files. Do not download random repair tools.
+This PC pushes. The Cursor on the other laptop does not push. It only helps with that laptop's console. Grok bots are not this chat. They read `docs/coordination/AGENT_HANDOFF.md` (the ASSIGNMENTS section) and `docs/coordination/BOT_ROSTER.md`. They do not follow `docs/AGENT_HANDOFF.md` for live work. That file still describes pod `gom4ualdk47qrj` and a 4/9 board. They cannot hear this conversation. Leave their jobs in the coordination handoff. Do not download random repair tools.
 
 ## Office PC check-in, already done
 

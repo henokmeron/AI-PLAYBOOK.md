@@ -5,6 +5,10 @@ Six bots. A new Cursor chat reads docs/coordination/TRANSFER_TO_NEXT_AGENT.md fi
 Repo: https://github.com/henokmeron/AI-PLAYBOOK.md
 Local path on the owner's Windows PC: C:\Users\henok\src\AI-PLAYBOOK.md
 
+The live job list is the ASSIGNMENTS section of `docs/coordination/AGENT_HANDOFF.md`. `docs/AGENT_HANDOFF.md` is a historical note from 2026-10-22 about pod `gom4ualdk47qrj` and a 4/9 board. Do not follow it. Do not start that pod.
+
+This repo has no bot runner and no API key variable. The six bots run in the Grok Bot desktop app on this PC. They start only when the owner opens that app and tells each bot to read ASSIGNMENTS. They cannot hear the Cursor chat. At the 2026-10-23 22:51 UK handoff, Grok Bot was not running.
+
 Shared rules for every bot:
 - Read AGENT_HANDOFF.md first. If CURRENT is newer than your last read, do not replace it. Append to the log.
 - Do not print or commit passwords, tokens, device secrets, or gateway keys.

@@ -4,6 +4,33 @@ Read this file before starting. Append to the log when you finish. Do not delete
 
 ## CURRENT
 
+Updated: 2026-10-23 22:51 UK
+
+Production stays NO-GO. The acceptance board stays 3/9 live and 3/8 mandatory, from the 2026-10-23 recalculation of `docs/results/acceptance-evidence.json`. Do not mark `second_endpoint_worker_ok`. Do not add `deployed_sha_read`. Do not quote the older 4/9 figure. Qwen pid 6739 stays up. Do not restart it. Gateway pid 6497 was not signalled. Do not copy weights. Do not create a pod.
+
+The six Grok bots now have one job each in ASSIGNMENTS, and each job names the only files that bot may change. Grok Bot was not running on this PC, and this repo has no bot runner and no API key variable. The owner opens the Grok Bot app and points each bot at this file. Bots cannot hear the Cursor chat. Do not follow `docs/AGENT_HANDOFF.md` for live work. That file is the 2026-10-22 record of pod `gom4ualdk47qrj` and a 4/9 board.
+
+Office PC device `bead5785f3674aaeb92c189f8c1b5b8c` stays a stored diagnostic. The owner runs `docs/coordination/office-pc-clone.md` on that laptop. This PC cannot write that disk. Do not enrol again. Microsoft positive match still waits for one harmless phrase from the owner. Do not search for "the". Do not send mail. Power Automate stays NOT TESTED.
+
+Bots follow ASSIGNMENTS below. Do not mark gates passed.
+
+## ASSIGNMENTS
+
+These jobs are mandatory. Each bot edits only the files named on its line. Do not download random computer-repair tools, driver packs, or third-party agents. The existing endpoint worker is the integration. A library may be added only if it is pinned, tested, and safer than the current code. Other branches own `integrations/compatibility/` and endpoint code; leave those trees alone.
+
+- Director: Read `docs/results/acceptance-evidence.json` and keep production NO-GO. The board on 2026-10-23 is 3/9 live and 3/8 mandatory. Do not add `second_endpoint_worker_ok` and do not edit `ops/acceptance_board.py`. You may replace only the CURRENT section of `docs/coordination/AGENT_HANDOFF.md`, and only after copying the old CURRENT into the log.
+- Console: Read `web/static/app.js` `loadDevices` and the live `GET /api/devices` list. Write only `docs/coordination/console-enrolled-devices-2026-10-23.md` with the device ids the API actually returned. Show Office PC `bead5785f3674aaeb92c189f8c1b5b8c` only if that response contains it. Do not invent a device, do not show a repair as completed, and do not edit `web/`.
+- Model: Run `python eval/rag/document_quiz_regression.py` only. It is offline and does not call the gateway. Write output under `eval/rag/results/` only. Do not restart Qwen pid 6739. Do not copy weights. Do not run `eval/rag/run_e2e.py`.
+- Endpoint: Do not enrol Office PC `bead5785f3674aaeb92c189f8c1b5b8c` again. This PC cannot write that disk. The owner must run `docs/coordination/office-pc-clone.md` on that laptop. Until that report exists, write a read-only note in `docs/coordination/endpoint-readonly-2026-10-23.md` only. Do not edit `integrations/` or `windows_repair/`.
+- Mail: Do not send mail, do not search for "the", and do not add scopes. Positive match waits for one harmless phrase from the owner. Power Automate stays NOT TESTED. Write that wait only in `docs/coordination/mail-positive-match-waiting.md`. Do not edit `integrations/`.
+- Liaison: Append the LOG in `docs/coordination/AGENT_HANDOFF.md` after each other bot finishes. Do not edit CURRENT. Do not implement features.
+
+## LOG
+
+- 2026-10-23 22:51 UK Liaison: Grok Bot was not running, and this repo has no runner and no API key variable. Live jobs were easy to miss because `docs/AGENT_HANDOFF.md` still says read-this-first for pod `gom4ualdk47qrj` and a 4/9 board. ASSIGNMENTS now give each bot one file and one job. Production stays NO-GO. Qwen pid 6739 was not restarted. No gate was marked.
+
+### Previous CURRENT (copied 2026-10-23 22:51 UK)
+
 Updated: 2026-10-23 22:50 UK
 
 Pod `1jyrnyxpb0n93s` checkout is the durable-state commit `cb920b3a703196eb86cfceaf6974367af90ee462` unless a later docs commit has been fast-forwarded. The console was reloaded as pid 34991 from that checkout. Qwen pid 6739 and gateway pid 6497 were not signalled. Health was HTTP 200 on `:8002`, `:8010`, and `:8080`. Operator hashes and the device list were mirrored to `/workspace/platform-state/operator-backups/20261023T213720989628Z` and `/workspace/platform-state/endpoint-backups/20261023T213725366204Z`. A restore drill returned 1 administrator and 1 device. Sessions were not restored. The live files were not replaced.
@@ -17,19 +44,6 @@ The second-endpoint gate was re-read and was not marked. The board passes only o
 Weight copy and Blackwell were costed in `docs/results/costed-decisions-2026-10-23.md`. Do not buy either. Do not create a pod. Microsoft positive match still needs a phrase from the owner. Do not search for "the". Do not send mail.
 
 Bots follow ASSIGNMENTS below. Do not mark gates passed.
-
-## ASSIGNMENTS
-
-These jobs are mandatory. Bots must not download random computer-repair tools, driver packs, or third-party agents. The existing endpoint worker is the integration. A library may be added only if it is pinned, tested, and safer than the current code.
-
-- Director: no code. The board is 3/9 and 3/8, NO-GO. Do not mark the second-endpoint gate passed.
-- Console: Office PC should show as enrolled with the eight read-only checks. Do not invent a device. Do not show a repair as completed. Do not restart Qwen to pick up the state mirror.
-- Model: do not restart Qwen pid 6739. Offline eval only. No weight copy.
-- Endpoint: do not enrol this PC. Do not use the parent folder on Office PC. The clone commands are in `docs/coordination/office-pc-clone.md`. Read-only report only, after the owner runs them.
-- Mail: do not send mail or add scopes. Do not search for "the". Positive match still needs a phrase the owner confirms. Power Automate stays NOT TESTED.
-- Liaison: append the log after each bot finishes. Do not implement features.
-
-## LOG
 
 - 2026-10-23 22:50 UK Cursor on this PC: pod checkout fast-forwarded to cb920b3. Console pid 32355 was replaced by pid 34991. Qwen pid 6739 and gateway pid 6497 stayed up. Health 200/200/200. Operator and device-list mirrors were written and a restore drill returned 1 admin and 1 device. Sessions were not restored. Board stays 3/9 and 3/8, NO-GO. No parity or second-endpoint evidence record was added.
 
