@@ -408,6 +408,25 @@ def evidence_for(name: str | None, supplied: dict[str, Any] | None) -> dict[str,
     return {}
 
 
+def workflow_stage(result: dict[str, Any]) -> str:
+    """One of read_only, proposed, approved, completed. A fixture is never completed here."""
+    if result.get("changed_device") is True and result.get("executed") is True:
+        return "completed"
+    status = str(result.get("status") or "")
+    if status in {"approved", "approved_not_run_on_this_host"}:
+        return "approved"
+    approval = result.get("approval_required")
+    if status == "approval_required" or approval is True or (isinstance(approval, list) and approval):
+        return "proposed"
+    return "read_only"
+
+
+def _stage(result: dict[str, Any]) -> dict[str, Any]:
+    result["stage"] = workflow_stage(result)
+    result["counts_as_second_endpoint"] = False
+    return result
+
+
 def plan(symptom: str, *, fixture: str | None = None, evidence: dict[str, Any] | None = None) -> dict[str, Any]:
     """Pick registered procedures from the symptom text. Does not run repairs."""
     text = (symptom or "").casefold()
@@ -420,7 +439,7 @@ def plan(symptom: str, *, fixture: str | None = None, evidence: dict[str, Any] |
     if not chosen:
         chosen = ["win.storage.space"]
     payload = evidence_for(fixture, evidence)
-    return {
+    return _stage({
         "symptom": symptom[:300],
         "procedure_ids": chosen,
         "evidence_source": "fixture:" + fixture if fixture and not evidence else ("caller" if evidence else "none"),
@@ -429,7 +448,7 @@ def plan(symptom: str, *, fixture: str | None = None, evidence: dict[str, Any] |
         "problem_resolved": False,
         "note": "This plan does not mean the fault is fixed.",
         "evidence_keys": sorted(payload.keys()),
-    }
+    })
 
 
 def _invoke_collector(collector: Any, procedure_id: str, timeout: float) -> dict[str, Any]:
@@ -465,7 +484,7 @@ def execute(
     if any(token in str(evidence or "") for token in ("powershell -enc", "cmd /c", "Invoke-Expression")):
         raise RepairDenied("evidence cannot carry a command")
     if proc.risk == "DESTRUCTIVE_OR_HIGH_IMPACT" or proc.runner == "deny_destructive":
-        return {
+        return _stage({
             "procedure_id": proc.procedure_id,
             "executed": False,
             "changed_device": False,
@@ -473,10 +492,10 @@ def execute(
             "status": "denied",
             "operator": operator,
             "detail": "Destructive or security-weakening procedures are denied.",
-        }
+        })
     if proc.runner in {"propose_only", "deny_driver_install"}:
         if proc.requires_approval and not approval_id:
-            return {
+            return _stage({
                 "procedure_id": proc.procedure_id,
                 "executed": False,
                 "changed_device": False,
@@ -484,8 +503,8 @@ def execute(
                 "status": "approval_required",
                 "operator": operator,
                 "detail": "Approval is required and none was supplied.",
-            }
-        return {
+            })
+        return _stage({
             "procedure_id": proc.procedure_id,
             "executed": False,
             "changed_device": False,
@@ -495,7 +514,7 @@ def execute(
             "approval_id": approval_id,
             "detail": "Recorded only. This development host does not apply driver, spooler, SFC, or DISM changes.",
             "mocked": True,
-        }
+        })
     runner = _RUNNERS.get(proc.runner)
     if runner is None:
         raise RepairDenied("procedure has no registered runner")
@@ -508,7 +527,7 @@ def execute(
             live_collected = _invoke_collector(collector, procedure_id, script_timeout)
             if live_collected.get("evidence_source") != "live_windows" or not live_collected.get("ok"):
                 timed_out = bool(live_collected.get("timed_out"))
-                return {
+                return _stage({
                     "procedure_id": proc.procedure_id,
                     "executed": False,
                     "changed_device": False,
@@ -521,7 +540,7 @@ def execute(
                         live_collected.get("detail") or "The live collector did not return evidence. No repair was run.",
                         300,
                     ),
-                }
+                })
             evidence = _adapt_live(procedure_id, live_collected)
     result = runner(evidence_for(fixture, evidence))
     result["status"] = "diagnosed"
@@ -543,4 +562,4 @@ def execute(
         result["mocked"] = True
     else:
         result["evidence_source"] = "none"
-    return result
+    return _stage(result)

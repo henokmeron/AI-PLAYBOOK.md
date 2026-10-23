@@ -1611,6 +1611,27 @@
     });
   }
 
+  function showRepairStage(result) {
+    var stage = result && result.stage ? result.stage : "read_only";
+    var items = document.querySelectorAll("#repair-stages li");
+    items.forEach(function (item) {
+      if (item.getAttribute("data-stage") === stage) item.setAttribute("aria-current", "step");
+      else item.removeAttribute("aria-current");
+    });
+    var note = document.getElementById("repair-stage-note");
+    if (!note) return;
+    if (result && result.counts_as_second_endpoint === true) {
+      note.textContent = "A result tried to count as the second endpoint. That mark is refused.";
+      return;
+    }
+    var label = stage === "read_only" ? "Read-only"
+      : stage === "proposed" ? "Proposed"
+      : stage === "approved" ? "Approved"
+      : stage === "completed" ? "Completed"
+      : "Read-only";
+    note.textContent = label + ". This fixture or this computer is not the second Windows endpoint.";
+  }
+
   function loadRepair() {
     var remote = document.getElementById("repair-remote");
     var errorBox = document.getElementById("repair-error");
@@ -1730,6 +1751,7 @@
     var procedureId = document.getElementById("repair-live-procedure").value || "print.diagnose";
     request("/api/repair/live", { method: "POST", body: { procedure_id: procedureId } }).then(function (result) {
       document.getElementById("repair-result").textContent = JSON.stringify(result, null, 2);
+      showRepairStage(result);
     }).catch(function (error) {
       errorBox.hidden = false;
       errorBox.textContent = errorMessage(error);
@@ -1762,10 +1784,13 @@
             resultBox.textContent = JSON.stringify({
               practice: true,
               fixture: "printer_spooler_stopped",
+              fixture_label: "not-the-second-endpoint",
+              counts_as_second_endpoint: false,
               diagnosis: diagnosis,
               approval: approved,
               execution: executed
             }, null, 2);
+            showRepairStage(executed && executed.stage ? executed : { stage: "approved", counts_as_second_endpoint: false });
           });
         });
       });
@@ -1788,6 +1813,7 @@
       var first = ids[0];
       if (!first) {
         document.getElementById("repair-result").textContent = JSON.stringify(planned, null, 2);
+        showRepairStage(planned);
         return null;
       }
       var executeBody = { procedure_id: first };
@@ -1797,6 +1823,7 @@
           plan: planned,
           first_procedure: result
         }, null, 2);
+        showRepairStage(result && result.stage ? result : planned);
       });
     }).catch(function (error) {
       errorBox.hidden = false;

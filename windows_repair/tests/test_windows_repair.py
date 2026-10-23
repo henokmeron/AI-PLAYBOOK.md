@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import unittest
 
-from windows_repair.engine import RepairDenied, execute, plan
+from windows_repair.engine import RepairDenied, execute, plan, workflow_stage
 from windows_repair.jobs import JobService
 from windows_repair.knowledge import authorises_tool, retrieve
 from windows_repair.remote_support import status_from_env
@@ -63,6 +63,28 @@ class ProcedureTests(unittest.TestCase):
         self.assertNotIn("net.firewall.disable", planned["procedure_ids"])
         self.assertFalse(planned["problem_resolved"])
         self.assertTrue(planned["mocked_fixture"])
+
+    def test_fixture_stages_are_not_the_second_endpoint(self) -> None:
+        planned = plan("The printer queue will not print", fixture="printer_stuck_usb")
+        self.assertEqual(planned["stage"], "read_only")
+        self.assertFalse(planned["counts_as_second_endpoint"])
+        proposed = plan("The spooler stopped", fixture="printer_spooler_stopped")
+        self.assertEqual(proposed["stage"], "proposed")
+        self.assertIn("print.spooler.restart", proposed["approval_required"])
+        blocked = execute("print.spooler.restart", fixture="printer_spooler_stopped")
+        self.assertEqual(blocked["stage"], "proposed")
+        self.assertEqual(blocked["status"], "approval_required")
+        self.assertFalse(blocked["executed"])
+        self.assertFalse(blocked["counts_as_second_endpoint"])
+        approved = execute(
+            "print.spooler.restart",
+            fixture="printer_spooler_stopped",
+            approval_id="apr-fixture",
+        )
+        self.assertEqual(approved["stage"], "approved")
+        self.assertFalse(approved["changed_device"])
+        self.assertFalse(approved["counts_as_second_endpoint"])
+        self.assertEqual(workflow_stage({"executed": True, "changed_device": True}), "completed")
 
 
 class JobTests(unittest.TestCase):

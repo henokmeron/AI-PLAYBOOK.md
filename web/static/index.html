@@ -263,6 +263,13 @@
           <p>This page plans registered diagnostics. A signed read-only job runs on the enrolled computer’s endpoint worker, not in this browser and not inside the console accept route. A stored result is not a repaired computer. “Practise spooler approval” uses a fixture, not this PC’s printer, and it does not restart the spooler. Remote desktop stays unavailable until MeshCentral is configured. This does not manage a Mac, Android phone, or iPhone.</p>
         </header>
         <div id="repair-error" class="banner banner-error" role="alert" hidden></div>
+        <ol id="repair-stages">
+          <li data-stage="read_only">Read-only</li>
+          <li data-stage="proposed">Proposed</li>
+          <li data-stage="approved">Approved</li>
+          <li data-stage="completed">Completed</li>
+        </ol>
+        <p id="repair-stage-note" class="meta">No repair stage has been selected. A result on this computer is not the second Windows endpoint.</p>
         <section class="result" aria-labelledby="repair-remote-title">
           <h2 id="repair-remote-title">Remote support</h2>
           <p id="repair-remote" class="meta">Not checked yet.</p>
