@@ -4,6 +4,13 @@ A device the operator enrolled can submit one fixed diagnostic: operating
 system, disk space, memory, and boot time. This module does not accept a
 command, a path, a screen capture, or a credential. The server stores a hash
 of the device secret and cannot use that hash to drive the computer.
+
+Token rotation and revocation:
+- Revoke: Call DeviceRegistry.revoke() to invalidate the device immediately.
+  The secret_hash is retained but status becomes "revoked". Further reports fail.
+- Rotation: Re-enrol with a new code to get a new device_id and secret. The old
+  device_id stays revoked. There is no in-place secret rotation that preserves
+  the device_id; devices re-enrol for a fresh identity when rotating credentials.
 """
 from __future__ import annotations
 
@@ -81,6 +88,8 @@ _REPORT = {
         "memory_total_bytes": {"type": "integer", "minimum": 1, "maximum": _MAX_BYTES},
         "boot_time_unix": {"type": "integer", "minimum": 0, "maximum": _MAX_BYTES},
         "collected_at_unix": {"type": "integer", "minimum": 0, "maximum": _MAX_BYTES},
+        "schema_version": {"type": "integer", "minimum": 1, "maximum": 100},
+        "agent_version": {"type": "string", "minLength": 1, "maxLength": 40},
     },
 }
 _READ_INPUT = {
@@ -156,7 +165,11 @@ def _check_report_values(report: dict[str, Any]) -> None:
 
 
 def normalise_report(payload: dict[str, Any]) -> dict[str, Any]:
-    """Keep only the fixed diagnostic fields. Anything else is rejected."""
+    """Keep only the fixed diagnostic fields. Anything else is rejected.
+    
+    Optional fields (schema_version, agent_version) are forwarded when present.
+    Old workers that omit these fields are still accepted.
+    """
     if not isinstance(payload, dict):
         raise InvalidRequest("diagnostic must be an object")
     cleaned = {
@@ -171,6 +184,12 @@ def normalise_report(payload: dict[str, Any]) -> dict[str, Any]:
         "boot_time_unix": payload.get("boot_time_unix"),
         "collected_at_unix": payload.get("collected_at_unix"),
     }
+    
+    if "schema_version" in payload:
+        cleaned["schema_version"] = payload["schema_version"]
+    if "agent_version" in payload:
+        cleaned["agent_version"] = _plain(str(payload["agent_version"]), 40)
+    
     allowed = set(_REPORT["properties"])
     checks = payload.get("checks", None)
     extra = set(payload) - allowed - {"status", "checks"}
