@@ -225,6 +225,8 @@ def approve_work_order(store: WorkStore, order_id: str, operator_id: str) -> dic
             raise WorkRefused("only a pending order can be approved")
         if not isinstance(operator_id, str) or not _OPERATOR.fullmatch(operator_id):
             raise WorkRefused("operator id is not acceptable")
+        if operator_id.casefold() == str(order.get("operator_id", "")).casefold():
+            raise WorkRefused("the operator who raised an order cannot approve it")
         now = store.now()
         order["approval"] = {
             "device_id": order["device_id"],
@@ -396,6 +398,9 @@ def execute(
     plan = _plan_for(order, supplied)
     moment = time.time() if now is None else now
     authorized = bool(live) and _execution_authorized(order, moment)
+    if authorized and os.environ.get(LIVE_ENV) != "1":
+        # Live work needs the explicit switch even when a runner is injected.
+        raise WorkRefused("live execution is disabled")
     if action in DELEGATED:
         claimed = order.get("state") == "claimed"
         if not authorized or not claimed or runner is None:
