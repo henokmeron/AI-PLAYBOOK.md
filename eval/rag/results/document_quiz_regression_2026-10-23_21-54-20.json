@@ -1,0 +1,87 @@
+{
+  "test_run": "document_quiz_regression",
+  "timestamp": "2026-10-23T21:54:20Z",
+  "commit_sha": "2e956c45330cd70d7bb56d2c447c582f6aeae417",
+  "exit_code": 0,
+  "status": "PASS",
+  "summary": {
+    "ok": true,
+    "failures": [],
+    "failures_count": 0,
+    "parts": 10,
+    "corpus_files": 9,
+    "corpus_chunks": 18
+  },
+  "details": {
+    "absent_note_count": 1,
+    "absent_part_abstains": true,
+    "absent_terms_in_model_question": false,
+    "after": {
+      "abstain": false,
+      "budget": 18078,
+      "dropped": 1,
+      "evidence_chars": 17367,
+      "groups": 18,
+      "history_dropped": 0,
+      "packed": 17,
+      "packed_files": [
+        "section-01.txt",
+        "section-02.txt",
+        "section-03.txt",
+        "section-04.txt",
+        "section-05.txt",
+        "section-06.txt",
+        "section-07.txt",
+        "section-08.txt",
+        "section-10.txt",
+        "section-01.txt",
+        "section-02.txt",
+        "section-03.txt",
+        "section-04.txt",
+        "section-05.txt",
+        "section-06.txt",
+        "section-07.txt",
+        "section-08.txt"
+      ],
+      "ratio": 4.4,
+      "tail_marker_packed": true
+    },
+    "answerable_parts_abstain": [],
+    "before": {
+      "abstain": false,
+      "budget": 6558,
+      "dropped": 12,
+      "evidence_chars": 6109,
+      "groups": 18,
+      "history_dropped": 0,
+      "packed": 6,
+      "packed_files": [
+        "section-01.txt",
+        "section-02.txt",
+        "section-03.txt",
+        "section-04.txt",
+        "section-05.txt",
+        "section-06.txt"
+      ],
+      "ratio": 2.4,
+      "tail_marker_packed": false
+    },
+    "citations": {
+      "grounded_quote_kept": true,
+      "missing_label_withheld": true,
+      "ungrounded_quote_withheld": true
+    },
+    "current_cap_chars": 8000,
+    "current_cap_keeps_quiz": true,
+    "old_cap_chars": 2000,
+    "old_cap_stored_chars": 2000,
+    "question_chars": 2061,
+    "standalone_absent_abstains": true,
+    "standalone_absent_reason": "low_query_coverage",
+    "standalone_tail_abstains": false,
+    "tail_marker_in_full": true,
+    "tail_marker_in_model_question": true,
+    "tail_marker_in_old_cap": false
+  },
+  "summary_text": "before_packed 6 before_dropped 12 before_ratio 2.4 after_packed 17 after_dropped 1 after_ratio 4.4 failures none"
+}
