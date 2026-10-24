@@ -32,6 +32,8 @@ import hashlib
 import json
 import os
 import re
+import sqlite3
+import stat
 import subprocess
 import threading
 import time
@@ -160,18 +162,344 @@ class WorkRefused(Exception):
 
 
 class WorkStore:
-    """In-memory orders and an append-only audit. Tests inject this store."""
+    """In-memory orders and an append-only audit. Tests inject this store.
+    
+    When constructed with a path, persists to SQLite with WAL mode.
+    """
 
-    def __init__(self, clock: Callable[[], float] | None = None) -> None:
+    def __init__(self, *, path: str | None = None, clock: Callable[[], float] | None = None) -> None:
         self._clock = clock or time.time
         self._lock = threading.Lock()
-        self.orders: dict[str, dict[str, Any]] = {}
-        self.audit: list[dict[str, Any]] = []
-        self.heartbeats: list[dict[str, Any]] = []
-        self.enrolled: set[str] = set()
+        self._path = path
+        self._conn_local = threading.local()
+        
+        if path is None:
+            self.orders: dict[str, dict[str, Any]] = {}
+            self.audit: list[dict[str, Any]] = []
+            self.heartbeats: list[dict[str, Any]] = []
+            self.enrolled: set[str] = set()
+        else:
+            self.orders = {}
+            self.audit = []
+            self.heartbeats = []
+            self.enrolled = set()
+            self._init_db()
+            self._load_from_db()
 
     def now(self) -> float:
         return float(self._clock())
+    
+    def _get_conn(self) -> sqlite3.Connection | None:
+        """Get the SQLite connection for this thread, or None if in-memory."""
+        if self._path is None:
+            return None
+        if not hasattr(self._conn_local, "conn"):
+            conn = sqlite3.connect(self._path, check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            self._conn_local.conn = conn
+        return self._conn_local.conn
+    
+    def _init_db(self) -> None:
+        """Initialize the SQLite database with 0600 permissions."""
+        if self._path is None:
+            return
+        
+        path_obj = Path(self._path)
+        is_new = not path_obj.exists()
+        
+        if is_new:
+            try:
+                fd = os.open(self._path, os.O_CREAT | os.O_RDWR, 0o600)
+                os.close(fd)
+            except (OSError, AttributeError):
+                pass
+        
+        conn = self._get_conn()
+        if conn is None:
+            return
+        
+        if hasattr(os, "chmod"):
+            try:
+                os.chmod(self._path, stat.S_IRUSR | stat.S_IWUSR)
+                wal_path = self._path + "-wal"
+                shm_path = self._path + "-shm"
+                if Path(wal_path).exists():
+                    os.chmod(wal_path, stat.S_IRUSR | stat.S_IWUSR)
+                if Path(shm_path).exists():
+                    os.chmod(shm_path, stat.S_IRUSR | stat.S_IWUSR)
+            except (OSError, AttributeError):
+                pass
+        
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS orders (
+                id TEXT PRIMARY KEY,
+                device_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                target TEXT NOT NULL,
+                params TEXT NOT NULL,
+                params_digest TEXT NOT NULL,
+                state TEXT NOT NULL,
+                operator_id TEXT NOT NULL,
+                error TEXT,
+                created_at REAL NOT NULL,
+                approval_device_id TEXT,
+                approval_action TEXT,
+                approval_target TEXT,
+                approval_params_digest TEXT,
+                approval_operator_id TEXT,
+                approval_approved_at REAL,
+                approval_expires_at REAL,
+                approval_used INTEGER,
+                result TEXT
+            )
+        """)
+        
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                time TEXT NOT NULL,
+                device_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                target TEXT NOT NULL,
+                state TEXT NOT NULL,
+                operator_id TEXT NOT NULL,
+                error TEXT
+            )
+        """)
+        
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS heartbeats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                utc TEXT NOT NULL,
+                worker_version TEXT NOT NULL,
+                recorded_at REAL NOT NULL
+            )
+        """)
+        
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS enrolled (
+                device_id TEXT PRIMARY KEY
+            )
+        """)
+        
+        conn.commit()
+    
+    def _load_from_db(self) -> None:
+        """Load state from SQLite and mark interrupted orders."""
+        conn = self._get_conn()
+        if conn is None:
+            return
+        
+        cursor = conn.execute("SELECT * FROM orders")
+        rows = cursor.fetchall()
+        
+        for row in rows:
+            order = self._order_from_row(row)
+            
+            if order["state"] in {"claimed", "running"}:
+                try:
+                    order["state"] = "failed"
+                    order["error"] = "order was interrupted by restart"
+                    self._persist_order(conn, order)
+                    self._audit_interrupted(conn, order)
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
+            
+            self.orders[order["id"]] = order
+        
+        cursor = conn.execute("SELECT time, device_id, action, target, state, operator_id, error FROM audit ORDER BY id")
+        self.audit = [
+            {
+                "time": row[0],
+                "device_id": row[1],
+                "action": row[2],
+                "target": row[3],
+                "state": row[4],
+                "operator_id": row[5],
+                "error": row[6],
+            }
+            for row in cursor.fetchall()
+        ]
+        
+        cursor = conn.execute("""
+            SELECT device_id, utc, worker_version 
+            FROM heartbeats 
+            ORDER BY id DESC
+        """)
+        all_heartbeats = cursor.fetchall()
+        
+        per_device: dict[str, list[tuple[str, str, str]]] = {}
+        for row in all_heartbeats:
+            device_id = row[0]
+            if device_id not in per_device:
+                per_device[device_id] = []
+            if len(per_device[device_id]) < 1000:
+                per_device[device_id].append(row)
+        
+        self.heartbeats = [
+            {"device_id": row[0], "utc": row[1], "worker_version": row[2]}
+            for beats in per_device.values()
+            for row in beats
+        ]
+        
+        cursor = conn.execute("SELECT device_id FROM enrolled")
+        self.enrolled = {row[0] for row in cursor.fetchall()}
+    
+    def _order_from_row(self, row: tuple[Any, ...]) -> dict[str, Any]:
+        """Convert a database row to an order dict."""
+        order: dict[str, Any] = {
+            "id": row[0],
+            "device_id": row[1],
+            "action": row[2],
+            "target": row[3],
+            "params": json.loads(row[4]),
+            "params_digest": row[5],
+            "state": row[6],
+            "operator_id": row[7],
+            "error": row[8],
+            "created_at": row[9],
+            "approval": None,
+            "result": json.loads(row[18]) if row[18] else None,
+        }
+        
+        if row[10] is not None:
+            order["approval"] = {
+                "device_id": row[10],
+                "action": row[11],
+                "target": row[12],
+                "params_digest": row[13],
+                "operator_id": row[14],
+                "approved_at": row[15],
+                "expires_at": row[16],
+                "used": bool(row[17]),
+            }
+        
+        return order
+    
+    def _audit_interrupted(self, conn: sqlite3.Connection, order: dict[str, Any]) -> None:
+        """Add an audit entry for an interrupted order."""
+        conn.execute(
+            """
+            INSERT INTO audit (time, device_id, action, target, state, operator_id, error)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                _iso(self.now()),
+                order["device_id"],
+                order["action"],
+                order["target"],
+                order["state"],
+                "",
+                order["error"],
+            ),
+        )
+        conn.commit()
+    
+    def _persist_order(self, conn: sqlite3.Connection | None, order: dict[str, Any]) -> None:
+        """Persist an order to the database."""
+        if conn is None:
+            return
+        
+        approval = order.get("approval")
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO orders (
+                id, device_id, action, target, params, params_digest, state, operator_id,
+                error, created_at, approval_device_id, approval_action, approval_target,
+                approval_params_digest, approval_operator_id, approval_approved_at,
+                approval_expires_at, approval_used, result
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                order["id"],
+                order["device_id"],
+                order["action"],
+                order["target"],
+                json.dumps(order["params"]),
+                order["params_digest"],
+                order["state"],
+                order["operator_id"],
+                order["error"],
+                order["created_at"],
+                approval["device_id"] if approval else None,
+                approval["action"] if approval else None,
+                approval["target"] if approval else None,
+                approval["params_digest"] if approval else None,
+                approval["operator_id"] if approval else None,
+                approval["approved_at"] if approval else None,
+                approval["expires_at"] if approval else None,
+                1 if (approval and approval["used"]) else 0 if approval else None,
+                json.dumps(order["result"]) if order.get("result") else None,
+            ),
+        )
+    
+    def _persist_audit(self, conn: sqlite3.Connection | None, entry: dict[str, Any]) -> None:
+        """Persist an audit entry to the database."""
+        if conn is None:
+            return
+        
+        conn.execute(
+            """
+            INSERT INTO audit (time, device_id, action, target, state, operator_id, error)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                entry["time"],
+                entry["device_id"],
+                entry["action"],
+                entry["target"],
+                entry["state"],
+                entry["operator_id"],
+                entry["error"],
+            ),
+        )
+    
+    def _persist_heartbeat(self, conn: sqlite3.Connection | None, heartbeat: dict[str, Any]) -> None:
+        """Persist a heartbeat to the database, maintaining a cap per device."""
+        if conn is None:
+            return
+        
+        device_id = heartbeat["device_id"]
+        
+        conn.execute(
+            """
+            INSERT INTO heartbeats (device_id, utc, worker_version, recorded_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (device_id, heartbeat["utc"], heartbeat["worker_version"], self.now()),
+        )
+        
+        cursor = conn.execute(
+            "SELECT COUNT(*) FROM heartbeats WHERE device_id = ?",
+            (device_id,),
+        )
+        count = cursor.fetchone()[0]
+        
+        if count > 1000:
+            conn.execute(
+                """
+                DELETE FROM heartbeats
+                WHERE device_id = ? AND id NOT IN (
+                    SELECT id FROM heartbeats WHERE device_id = ?
+                    ORDER BY id DESC LIMIT 1000
+                )
+                """,
+                (device_id, device_id),
+            )
+    
+    def _persist_enrolled(self, conn: sqlite3.Connection | None, device_id: str) -> None:
+        """Persist an enrolled device to the database."""
+        if conn is None:
+            return
+        
+        conn.execute(
+            "INSERT OR IGNORE INTO enrolled (device_id) VALUES (?)",
+            (device_id,),
+        )
 
 
 def default_runner_invocations() -> int:
@@ -184,6 +512,14 @@ def register_enrolled_device(store: WorkStore, device_id: str) -> None:
         raise WorkRefused("device id is not valid")
     with store._lock:
         store.enrolled.add(device_id)
+        conn = store._get_conn()
+        if conn is not None:
+            try:
+                store._persist_enrolled(conn, device_id)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
 
 
 def create_work_order(
@@ -240,7 +576,20 @@ def create_work_order(
         _commit(store, order)
         if problem is None:
             order["state"] = "pending_approval"
+            conn = store._get_conn()
+            if conn is not None:
+                try:
+                    store._persist_order(conn, order)
+                except Exception:
+                    conn.rollback()
+                    raise
             _audit(store, order, operator_id=operator_id, error=None)
+            if conn is not None:
+                try:
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
         return _public(order)
 
 
@@ -269,7 +618,20 @@ def approve_work_order(store: WorkStore, order_id: str, operator_id: str) -> dic
         }
         order["state"] = "approved"
         order["error"] = None
+        conn = store._get_conn()
+        if conn is not None:
+            try:
+                store._persist_order(conn, order)
+            except Exception:
+                conn.rollback()
+                raise
         _audit(store, order, operator_id=operator_id, error=None)
+        if conn is not None:
+            try:
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
         return _public(order)
 
 
@@ -307,14 +669,40 @@ def claim_job(store: WorkStore, device_id: str, order_id: str) -> dict[str, Any]
         problem = _binding_error(order, store.now())
         if problem is not None:
             if problem == "approval expired":
+                conn = store._get_conn()
                 order["state"] = "refused"
                 order["error"] = problem
+                if conn is not None:
+                    try:
+                        store._persist_order(conn, order)
+                    except Exception:
+                        conn.rollback()
+                        raise
                 _audit(store, order, operator_id="", error=problem)
+                if conn is not None:
+                    try:
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
+                        raise
             raise WorkRefused(problem)
         order["approval"]["used"] = True
         order["state"] = "claimed"
         order["error"] = None
+        conn = store._get_conn()
+        if conn is not None:
+            try:
+                store._persist_order(conn, order)
+            except Exception:
+                conn.rollback()
+                raise
         _audit(store, order, operator_id=order["approval"]["operator_id"], error=None)
+        if conn is not None:
+            try:
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
         return _public(order)
 
 
@@ -350,7 +738,20 @@ def complete_job(
         order["state"] = outcome
         order["error"] = clean_error
         order["result"] = _scrub(result, redact) if isinstance(result, dict) else None
+        conn = store._get_conn()
+        if conn is not None:
+            try:
+                store._persist_order(conn, order)
+            except Exception:
+                conn.rollback()
+                raise
         _audit(store, order, operator_id=(order.get("approval") or {}).get("operator_id", ""), error=clean_error)
+        if conn is not None:
+            try:
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
         return _public(order)
 
 
@@ -370,6 +771,27 @@ def post_heartbeat(store: WorkStore, payload: dict[str, Any]) -> dict[str, Any]:
     with store._lock:
         _require_device(store, device_id)
         store.heartbeats.append(dict(record))
+        
+        per_device_count: dict[str, int] = {}
+        for beat in store.heartbeats:
+            dev = beat.get("device_id", "")
+            per_device_count[dev] = per_device_count.get(dev, 0) + 1
+        
+        if per_device_count.get(device_id, 0) > 1000:
+            filtered = []
+            device_beats = [beat for beat in store.heartbeats if beat.get("device_id") == device_id]
+            other_beats = [beat for beat in store.heartbeats if beat.get("device_id") != device_id]
+            filtered.extend(other_beats)
+            filtered.extend(device_beats[-1000:])
+            store.heartbeats = filtered
+        
+        conn = store._get_conn()
+        if conn is not None:
+            try:
+                store._persist_heartbeat(conn, record)
+            except Exception:
+                conn.rollback()
+                raise
         _audit(
             store,
             {
@@ -382,6 +804,12 @@ def post_heartbeat(store: WorkStore, payload: dict[str, Any]) -> dict[str, Any]:
             operator_id="",
             error=None,
         )
+        if conn is not None:
+            try:
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
         return record
 
 
@@ -813,12 +1241,25 @@ def _blank_order(
 
 
 def _commit(store: WorkStore, order: dict[str, Any]) -> None:
+    conn = store._get_conn()
     store.orders[order["id"]] = order
+    if conn is not None:
+        try:
+            store._persist_order(conn, order)
+        except Exception:
+            conn.rollback()
+            raise
     _audit(store, order, operator_id=order["operator_id"], error=order["error"])
+    if conn is not None:
+        try:
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
 
 def _audit(store: WorkStore, order: dict[str, Any], *, operator_id: str, error: str | None) -> None:
-    store.audit.append({
+    entry = {
         "time": _iso(store.now()),
         "device_id": order["device_id"],
         "action": order["action"],
@@ -826,7 +1267,11 @@ def _audit(store: WorkStore, order: dict[str, Any], *, operator_id: str, error: 
         "state": order["state"],
         "operator_id": operator_id,
         "error": error,
-    })
+    }
+    store.audit.append(entry)
+    conn = store._get_conn()
+    if conn is not None:
+        store._persist_audit(conn, entry)
 
 
 def _public(order: dict[str, Any]) -> dict[str, Any]:

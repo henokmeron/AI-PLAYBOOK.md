@@ -1,0 +1,110 @@
+{
+  "alerts": [
+    {
+      "ack_note": "should ignore json actor",
+      "alert_id": "alert-actor-test",
+      "confidence": "medium",
+      "created_at": "2026-10-17T00:00:00Z",
+      "event_ids": [],
+      "evidence": [],
+      "fingerprint": "unit-actor",
+      "owner": "admin",
+      "resolution": "",
+      "rule_id": "unit.test",
+      "rule_version": "1",
+      "severity": "low",
+      "status": "acknowledged",
+      "tenant_id": "local-console",
+      "title": "actor check",
+      "updated_at": "2026-10-23T23:57:52Z"
+    },
+    {
+      "ack_note": "",
+      "alert_id": "3da19b4fe561436eaf93b794faf132fe",
+      "confidence": "high",
+      "created_at": "2026-10-23T23:58:03Z",
+      "event_ids": [
+        "ebdc18cc72334c029b76bb86af057912"
+      ],
+      "evidence": [
+        "2026-10-23T23:58:03Z console unavailable: URLError: <urlopen error [Errno 111] Connection refused>"
+      ],
+      "fingerprint": "health.console.unavailable",
+      "owner": null,
+      "resolution": "",
+      "rule_id": "health.console",
+      "rule_version": "1",
+      "severity": "critical",
+      "status": "new",
+      "tenant_id": "local-console",
+      "title": "Service console is unavailable",
+      "updated_at": "2026-10-23T23:58:03Z"
+    },
+    {
+      "ack_note": "",
+      "alert_id": "bd98bd730c724ca9af053c4f0e79f8db",
+      "confidence": "high",
+      "created_at": "2026-10-23T23:58:03Z",
+      "event_ids": [
+        "521cb6e1e06f4a14b64f5314aaf2ed94"
+      ],
+      "evidence": [
+        "2026-10-23T23:58:03Z qwen unavailable: URLError: <urlopen error [Errno 111] Connection refused>"
+      ],
+      "fingerprint": "health.qwen.unavailable",
+      "owner": null,
+      "resolution": "",
+      "rule_id": "health.qwen",
+      "rule_version": "1",
+      "severity": "critical",
+      "status": "new",
+      "tenant_id": "local-console",
+      "title": "Service qwen is unavailable",
+      "updated_at": "2026-10-23T23:58:03Z"
+    },
+    {
+      "ack_note": "",
+      "alert_id": "5647ebcf37f04c899d96f8c7409729f8",
+      "confidence": "high",
+      "created_at": "2026-10-23T23:58:03Z",
+      "event_ids": [
+        "d76df72013b340f4a9554e1a6695481e"
+      ],
+      "evidence": [
+        "2026-10-23T23:58:03Z gateway_ready unavailable: URLError: <urlopen error [Errno 111] Connection refused>"
+      ],
+      "fingerprint": "health.gateway_ready.unavailable",
+      "owner": null,
+      "resolution": "",
+      "rule_id": "health.gateway_ready",
+      "rule_version": "1",
+      "severity": "critical",
+      "status": "new",
+      "tenant_id": "local-console",
+      "title": "Service gateway_ready is unavailable",
+      "updated_at": "2026-10-23T23:58:03Z"
+    },
+    {
+      "ack_note": "",
+      "alert_id": "ad5506fcb8b3468db5cb38e0c561b334",
+      "confidence": "high",
+      "created_at": "2026-10-23T23:58:03Z",
+      "event_ids": [
+        "4d35b363030649c4a9ac525577986568"
+      ],
+      "evidence": [
+        "2026-10-23T23:58:03Z gateway_live unavailable: URLError: <urlopen error [Errno 111] Connection refused>"
+      ],
+      "fingerprint": "health.gateway_live.unavailable",
+      "owner": null,
+      "resolution": "",
+      "rule_id": "health.gateway_live",
+      "rule_version": "1",
+      "severity": "critical",
+      "status": "new",
+      "tenant_id": "local-console",
+      "title": "Service gateway_live is unavailable",
+      "updated_at": "2026-10-23T23:58:03Z"
+    }
+  ]
+}
