@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Device monitor</title>
+  <link rel="stylesheet" href="device-monitor.css">
+</head>
+<body>
+  <header class="page-head">
+    <p class="eyebrow">Stored check-ins</p>
+    <h1>Device monitor</h1>
+    <p class="lede">A read-only view of enrolled computers from the last stored check-in. This page does not enrol a device, open a remote session, or change device or printer settings.</p>
+    <p class="note">The list is filled from <code>/api/devices</code> when the console serves this file. Opened from the worktree as a file, it stays empty. The live console shows this page only after <code>feature/device-monitor-dashboard</code> is merged. This branch is not merged.</p>
+    <ul class="legend">
+      <li><span class="badge badge-healthy">Healthy</span> All nine checks are stored and none have ok set to false.</li>
+      <li><span class="badge badge-degraded">Degraded</span> One of those nine checks failed.</li>
+      <li><span class="badge badge-unknown">Unknown</span> No check-in is stored, or the nine checks are incomplete.</li>
+      <li><span class="badge badge-not_reported">Not reported</span> That category is not in the stored check-in. Missing data is never healthy.</li>
+    </ul>
+  </header>
+  <noscript>
+    <p class="note">This page needs its script to read stored devices. It still will not invent any.</p>
+  </noscript>
+  <main>
+    <p id="monitor-status" class="status-line" role="status">Waiting to read stored devices.</p>
+    <div id="monitor-body" hidden>
+      <div id="fleet-counts" class="counts"></div>
+      <div class="layout">
+        <section aria-labelledby="list-title">
+          <div class="section-head">
+            <h2 id="list-title">Devices</h2>
+            <button type="button" id="refresh-devices">Refresh</button>
+          </div>
+          <div id="device-list" class="device-list"></div>
+        </section>
+        <section aria-labelledby="detail-title">
+          <h2 id="detail-title">Device detail</h2>
+          <div id="device-detail"></div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <script src="device-monitor.js"></script>
+</body>
+</html>
