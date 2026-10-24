@@ -27,3 +27,5 @@ Per Founder's standing rule, the three gates are:
 3. Cursor confirmed via PR/agent path
 
 Integration may land when those three are on the PR.
+
+2026-10-24: This lane can run while other lanes run; it does not send mail, does not search the mailbox, does not add Microsoft scopes, and does not change devices or printers. The positive-match gate is still waiting for one harmless phrase from the owner.
