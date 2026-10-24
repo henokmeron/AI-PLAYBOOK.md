@@ -16,6 +16,7 @@ from integrations.remote_work import (
     CONSOLE_FUNCTIONS,
     WorkRefused,
     WorkStore,
+    apply_approved_repair,
     approve_work_order,
     claim_job,
     complete_job,
@@ -588,10 +589,11 @@ class RemoteWorkTests(unittest.TestCase):
         self.assertFalse(plan["executed"])
         self.assertEqual(runner.calls, [])
         claim_job(self.store, DEVICE, named["id"])
-        ran = execute_work_order(self.store, named["id"], live=True, runner=runner)
-        self.assertTrue(ran["executed"])
-        self.assertEqual(runner.calls[0]["queue"], "HP-Lab")
-        self.assertNotIn(r"C:\Windows\System32\config", json.dumps(runner.calls))
+        with self.assertRaises(WorkRefused) as caught:
+            execute_work_order(self.store, named["id"], live=True, runner=runner)
+        self.assertIn("spool", caught.exception.message.casefold())
+        self.assertEqual(runner.calls, [])
+        self.assertNotEqual(self.store.orders[named["id"]]["state"], "succeeded")
 
     @LIVE_SWITCH_ON
     def test_onboard_password_never_enters_the_audit_or_the_order(self) -> None:
@@ -1001,6 +1003,162 @@ class RemoteWorkTests(unittest.TestCase):
         code = main(["serve"], stdout=usage)
         self.assertEqual(code, 2)
         self.assertIn("token-file", json.loads(usage.getvalue())["error"])
+        self.assertEqual(default_runner_invocations(), 0)
+
+    @LIVE_SWITCH_ON
+    def test_approved_repair_jobs_call_the_safe_fix_gate_through_a_fake_runner(self) -> None:
+        runner = RecordingRunner()
+        missing = self._service()
+        refused = apply_approved_repair(
+            self.store.orders[missing["id"]], runner=runner, now=self.clock.moment,
+        )
+        self.assertEqual(refused["reason"], "approval_missing")
+        self.assertFalse(refused["executed"])
+        self.assertEqual(refused["services_touched"], [])
+
+        expired = self._approve(self._service(target="wuauserv"))
+        self.store.orders[expired["id"]]["approval"]["expires_at"] = self.clock.moment
+        refused = apply_approved_repair(
+            self.store.orders[expired["id"]], runner=runner, now=self.clock.moment,
+        )
+        self.assertEqual(refused["reason"], "approval_expired")
+
+        other_device = self._approve(self._service(target="W32Time"))
+        self.store.orders[other_device["id"]]["approval"]["device_id"] = OTHER
+        refused = apply_approved_repair(
+            self.store.orders[other_device["id"]], runner=runner, now=self.clock.moment,
+        )
+        self.assertEqual(refused["reason"], "approval_device_mismatch")
+
+        other_action = self._approve(self._service(target="BITS"))
+        self.store.orders[other_action["id"]]["approval"]["action"] = "repair.printer.clear_queue"
+        refused = apply_approved_repair(
+            self.store.orders[other_action["id"]], runner=runner, now=self.clock.moment,
+        )
+        self.assertEqual(refused["reason"], "approval_action_mismatch")
+
+        other_target = self._approve(self._service(target="EventLog"))
+        self.store.orders[other_target["id"]]["approval"]["target"] = "Spooler"
+        refused = apply_approved_repair(
+            self.store.orders[other_target["id"]], runner=runner, now=self.clock.moment,
+        )
+        self.assertEqual(refused["reason"], "approval_target_mismatch")
+        self.assertEqual(runner.calls, [])
+
+        held = execute_work_order(self.store, missing["id"], live=True, runner=runner)
+        self.assertFalse(held["executed"])
+        self.assertEqual(runner.calls, [])
+
+        service = self._approve(self._service())
+        claim_job(self.store, DEVICE, service["id"])
+        ran = execute_work_order(self.store, service["id"], live=True, runner=runner)
+        self.assertTrue(ran["executed"])
+        self.assertEqual(ran["safe_fix"]["action_id"], "win.service.restart_failed")
+        self.assertEqual(ran["safe_fix"]["status"], "restarted")
+        self.assertFalse(ran["safe_fix"]["changed_device"])
+        self.assertFalse(ran["changed_device"])
+        self.assertFalse(ran["live"])
+        self.assertEqual(runner.calls[-1]["argv"], ["sc.exe", "start", "Spooler"])
+        self.assertEqual(runner.calls[-1]["target"], "Spooler")
+
+        spool = r"C:\Windows\System32\spool\PRINTERS\HP-Lab\job.spl"
+        printer = self._approve(self._printer(path=spool))
+        claim_job(self.store, DEVICE, printer["id"])
+        cleared = execute_work_order(self.store, printer["id"], live=True, runner=runner)
+        self.assertTrue(cleared["executed"])
+        self.assertEqual(cleared["safe_fix"]["action_id"], "print.queue.clear_spool")
+        self.assertEqual(cleared["safe_fix"]["status"], "cleared")
+        self.assertFalse(cleared["changed_device"])
+        self.assertEqual(runner.calls[-1]["op"], "delete_spool_file")
+        self.assertEqual(runner.calls[-1]["queue"], "HP-Lab")
+        self.assertTrue(str(runner.calls[-1]["path"]).casefold().endswith(r"hp-lab\job.spl"))
+        self.assertEqual(default_runner_invocations(), 0)
+
+    @LIVE_SWITCH_ON
+    def test_approved_install_and_delete_finish_only_through_the_fake_runner(self) -> None:
+        runner = RecordingRunner()
+        missing = self._install()
+        plan = execute_work_order(
+            self.store, missing["id"], live=True, runner=runner, handler_input={"sha256": PIN},
+        )
+        self.assertFalse(plan["executed"])
+        self.assertIsNone(missing["approval"])
+        self.assertEqual(runner.calls, [])
+
+        system = create_work_order(
+            self.store, device_id=DEVICE, action="change.delete",
+            target=r"C:\Windows\System32\cmd.exe", operator_id=OPERATOR,
+        )
+        self.assertEqual(system["state"], "refused")
+        self.assertEqual(system["error"], "path is under a protected directory")
+
+        for source, target in (
+            ("https://downloads.example/a.cab", DEST),
+            ("pnputil", "https://downloads.example/a.cab"),
+            ("www.example.com/a.cab", DEST),
+        ):
+            refused = create_work_order(
+                self.store, device_id=DEVICE, action="change.install",
+                target=target, operator_id=OPERATOR,
+                params={"source": source, "sha256": PIN, "staging_directory": STAGING},
+            )
+            self.assertEqual(refused["state"], "refused", source)
+            self.assertEqual(refused["error"], "an arbitrary URL is refused", source)
+
+        for source, target in (
+            ("microsoft-store", DEST),
+            ("pnputil", "9NBLGGH4NNS1"),
+            ("store", DEST),
+        ):
+            refused = create_work_order(
+                self.store, device_id=DEVICE, action="change.install",
+                target=target, operator_id=OPERATOR,
+                params={"source": source, "sha256": PIN, "staging_directory": STAGING},
+            )
+            self.assertEqual(refused["state"], "refused", source)
+            self.assertEqual(refused["error"], "a Microsoft Store id is refused", source)
+        self.assertEqual(runner.calls, [])
+
+        installed = self._approve(self._install())
+        claim_job(self.store, DEVICE, installed["id"])
+        ran = execute_work_order(
+            self.store, installed["id"], live=True, runner=runner, handler_input={"sha256": PIN},
+        )
+        self.assertTrue(ran["executed"])
+        self.assertEqual(runner.calls[-1]["source"], "pnputil")
+        self.assertEqual(runner.calls[-1]["sha256"], PIN)
+        self.assertFalse(runner.calls[-1]["invoke"])
+
+        deleted = self._approve(create_work_order(
+            self.store, device_id=DEVICE, action="change.delete",
+            target=DELETE_OK, operator_id=OPERATOR,
+        ))
+        claim_job(self.store, DEVICE, deleted["id"])
+        ran = execute_work_order(self.store, deleted["id"], live=True, runner=runner)
+        self.assertTrue(ran["executed"])
+        self.assertEqual(runner.calls[-1]["op"], "delete_file")
+        self.assertEqual(runner.calls[-1]["path"], runner.calls[-1]["target"])
+        self.assertNotIn("System32", runner.calls[-1]["path"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "keep.txt"
+            path.write_text("keep", encoding="utf-8")
+            target = str(path) if os.name == "nt" else DELETE_OK
+            untouched = self._approve(create_work_order(
+                self.store, device_id=DEVICE, action="change.delete",
+                target=target, operator_id=OPERATOR,
+            ))
+            claim_job(self.store, DEVICE, untouched["id"])
+            with mock.patch.object(Path, "unlink", side_effect=AssertionError("unlinked")):
+                quiet = execute_work_order(self.store, untouched["id"], live=True, runner=None)
+            self.assertFalse(quiet["executed"])
+            self.assertTrue(path.is_file())
+            self.assertEqual(path.read_text(encoding="utf-8"), "keep")
+
+        source = Path(remote_work.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("urlopen", source)
+        self.assertNotIn("urlretrieve", source)
+        self.assertNotIn("import socket", source)
         self.assertEqual(default_runner_invocations(), 0)
 
     def test_service_fact_parser_reads_sc_text(self) -> None:
