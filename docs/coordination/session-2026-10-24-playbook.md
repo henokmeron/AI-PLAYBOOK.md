@@ -74,6 +74,7 @@ These commits are on `origin/main`:
 - `BANYA-FAMILY-PL` stays the development PC. The other Windows computer runs the registration script.
 - The owner stated that Qwen and the gateway were left running. The coordination handoff says to leave them running.
 - A push updates GitHub. It does not deploy the pod or reload the console.
+- Owner stated 2026-10-24 that the second Windows PC is ready, so “no second machine available” is no longer a remaining non-M365 blocker. The live second-endpoint gate is still open: that different physical PC still has to enrol, run the worker, and produce a live report the board accepts. This record does not add `second_endpoint_worker_ok`.
 
 ## Discussed next steps
 
@@ -84,3 +85,11 @@ The owner discussed client packaging: the monitoring dashboard, per-device prici
 The caller relayed what another agent said. That other agent's instruction was to open `C:\Users\playbook\device-dashboard\web\statistic\device-dash-manager.html` from the work tree for a local look. After that, because the page stays empty, the other agent said the reason is that it is registered via API device application after this branch is merged, and to look for console service. Those words are the caller's relay, not a claim that that path or filename exists.
 
 Checked read-only in `C:\Users\henok\src\AI-PLAYBOOK-device-dashboard` from this docs job: there is no `web\statistic\` folder and no `device-dash-manager.html`. The page that exists is `C:\Users\henok\src\AI-PLAYBOOK-device-dashboard\web\static\device-monitor.html`. That file, with `web\static\device-monitor.js`, reads enrolled devices from `/api/devices` when the console serves the page. Opening the HTML file alone from the worktree has no console service, so the list stays empty. The live console shows this page only after `feature/device-monitor-dashboard` is merged. That branch is not merged. This record does not claim the dashboard is live on the console.
+
+## 2026-10-24 — Second Windows PC ready (availability only)
+
+Owner stated 2026-10-24 that the second Windows PC is ready. This removes the “no second machine available” blocker from the remaining non-M365 work list.
+
+It does not record `second_endpoint_worker_ok`. The gate still needs that different physical PC to enrol (IT Helpdesk → Create an enrolment code; `scripts/register-device.ps1`; not Windows repair → Enrol an endpoint), run the worker, and produce a live report that the board accepts. `BANYA-FAMILY-PL` cannot enrol itself if that is this Cursor PC.
+
+Office PC `bead5785` remains the only enrolled device until a new enrolment is stored. Production stays NO-GO. Microsoft 365 stays paused.
