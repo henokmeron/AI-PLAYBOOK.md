@@ -4,14 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Device monitor</title>
-  <link rel="stylesheet" href="device-monitor.css">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+  <link rel="stylesheet" href="device-monitor.css?v=console-nav1">
 </head>
 <body>
   <header class="page-head">
     <p class="eyebrow">Stored check-ins</p>
     <h1>Device monitor</h1>
     <p class="lede">A read-only view of enrolled computers from the last stored check-in. This page does not enrol a device, open a remote session, or change device or printer settings.</p>
-    <p class="note">The list is filled from <code>/api/devices</code> when the console serves this file. Opened from the worktree as a file, it stays empty. The live console shows this page only after <code>feature/device-monitor-dashboard</code> is merged. This branch is not merged.</p>
+    <p class="note">The list is filled from <code>/api/devices</code> when the console serves this file. Opened from the worktree as a file, it stays empty. Health tiles below come from the last stored check-in only.</p>
     <ul class="legend">
       <li><span class="badge badge-healthy">Healthy</span> All nine checks are stored and none have ok set to false.</li>
       <li><span class="badge badge-degraded">Degraded</span> One of those nine checks failed.</li>
@@ -41,6 +42,6 @@
       </div>
     </div>
   </main>
-  <script src="device-monitor.js"></script>
+  <script src="device-monitor.js?v=console-nav1"></script>
 </body>
 </html>

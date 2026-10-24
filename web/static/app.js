@@ -1,7 +1,8 @@
 (function () {
   "use strict";
 
-  var views = ["chat", "documents", "agent", "repair", "ops", "status"];
+  var views = ["monitor", "chat", "documents", "agent", "repair", "ops", "status"];
+  var MONITOR_PAGE = "/static/device-monitor.html?v=console-nav1";
   var messages = [];
   var ragTurns = [];
   var busy = false;
@@ -178,7 +179,7 @@
   }
 
   function showView(name) {
-    if (views.indexOf(name) === -1) name = "chat";
+    if (views.indexOf(name) === -1) name = "monitor";
     views.forEach(function (view) {
       var section = document.getElementById(view + "-view");
       var button = document.querySelector('[data-view="' + view + '"]');
@@ -193,12 +194,17 @@
       history.replaceState(null, "", location.pathname + location.search + "#" + name);
     }
     document.title =
-      name === "documents" ? "Document Q&A"
+      name === "monitor" ? "Device monitor"
+        : name === "documents" ? "Document Q&A"
         : name === "agent" ? "IT Helpdesk"
         : name === "repair" ? "Windows repair"
         : name === "ops" ? "Operations Centre"
         : name === "status" ? "System Status"
         : "Chat";
+    if (name === "monitor") {
+      var frame = document.getElementById("monitor-frame");
+      if (frame) frame.src = MONITOR_PAGE + "&t=" + Date.now();
+    }
     if (name === "agent") {
       loadConnectors();
       loadAgentHistory();
@@ -2078,7 +2084,7 @@
     var microsoftResult = new URLSearchParams(location.search).get("microsoft");
     var startView = location.hash.replace("#", "");
     if (microsoftResult) startView = "agent";
-    showView(startView || "chat");
+    showView(startView || "monitor");
     loadDocuments().catch(function () {});
     refreshStatus();
   }

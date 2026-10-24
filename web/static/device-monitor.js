@@ -677,7 +677,7 @@
   function loadDevices() {
     if (root.location && root.location.protocol === "file:") {
       showBody(false);
-      setStatus("This page reads /api/devices from the console. Opened as a file, the list stays empty. The live console shows this page only after feature/device-monitor-dashboard is merged, and this work does not merge it.");
+      setStatus("This page reads /api/devices from the console. Opened as a file, the list stays empty.");
       return;
     }
     var button = root.document.getElementById("refresh-devices");

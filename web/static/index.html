@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Business AI</title>
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css?v=console-nav1">
 </head>
 <body>
   <div id="login-gate" class="login-gate" hidden>
@@ -39,6 +39,7 @@
         </div>
       </div>
       <nav class="nav-list" aria-label="Primary">
+        <button type="button" data-view="monitor" id="nav-monitor" title="Read-only health of enrolled computers from the last stored check-in.">Device monitor</button>
         <button type="button" data-view="chat" id="nav-chat" title="Talk to the model. This does not search your documents.">Chat</button>
         <button type="button" data-view="documents" id="nav-documents" title="Ask a question that must be answered from your uploaded documents, with the source shown.">Document Q&amp;A</button>
         <button type="button" data-view="agent" id="nav-agent" title="Describe an IT problem. The assistant proposes a change and waits for your approval.">IT Helpdesk</button>
@@ -53,7 +54,14 @@
       </div>
     </aside>
     <main>
-      <section id="chat-view" aria-labelledby="chat-title">
+      <section id="monitor-view" aria-labelledby="monitor-title">
+        <header class="view-head">
+          <h1 id="monitor-title">Device monitor</h1>
+          <p>A read-only view of enrolled computers from the last stored check-in. This page does not enrol a device, open a remote session, or change device or printer settings.</p>
+        </header>
+        <iframe id="monitor-frame" title="Device monitor" src="about:blank" data-src="/static/device-monitor.html?v=console-nav1"></iframe>
+      </section>
+      <section id="chat-view" aria-labelledby="chat-title" hidden>
         <header class="view-head">
           <h1 id="chat-title">Chat</h1>
           <p>Messages go to the local web server, which calls the authenticated gateway. This page does not receive the API key.</p>
@@ -379,6 +387,6 @@
       <noscript class="banner banner-error">This console needs JavaScript to reach the local web server.</noscript>
     </main>
   </div>
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=console-nav1"></script>
 </body>
 </html>

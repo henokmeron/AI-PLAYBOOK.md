@@ -85,15 +85,16 @@ CONTENT_TYPES = {
     ".js": "text/javascript; charset=utf-8",
 }
 SECURITY_HEADERS = (
-    ("Cache-Control", "no-store"),
+    ("Cache-Control", "no-store, no-cache, must-revalidate"),
+    ("Pragma", "no-cache"),
     ("X-Content-Type-Options", "nosniff"),
     ("Referrer-Policy", "no-referrer"),
-    ("X-Frame-Options", "DENY"),
+    ("X-Frame-Options", "SAMEORIGIN"),
     (
         "Content-Security-Policy",
         "default-src 'self'; script-src 'self'; style-src 'self'; "
-        "connect-src 'self'; img-src 'self'; frame-ancestors 'none'; "
-        "base-uri 'none'; form-action 'self'",
+        "connect-src 'self'; img-src 'self'; frame-src 'self'; "
+        "frame-ancestors 'self'; base-uri 'none'; form-action 'self'",
     ),
 )
 
