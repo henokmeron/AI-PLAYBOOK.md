@@ -1407,6 +1407,41 @@
         return;
       }
       devices.forEach(function (device) {
+<<<<<<< HEAD
+=======
+        var parts = [device.display_name, device.status];
+        var diagnostic = device.diagnostic_coverage || "none";
+        parts.push("diagnostic " + diagnostic);
+        
+        if (device.evidence_age_seconds != null) {
+          var ageHours = Math.round(device.evidence_age_seconds / 3600);
+          var stale = device.evidence_stale ? " (STALE)" : "";
+          parts.push("evidence " + ageHours + "h old" + stale);
+        } else if (device.report) {
+          parts.push("evidence age unknown");
+        }
+        
+        if (device.report) {
+          var report = device.report;
+          if (report.status === "ok") {
+            var diskGB = Math.round(report.disk_free_bytes / (1024 * 1024 * 1024));
+            parts.push(report.os_family + ", " + diskGB + " GB free");
+          }
+          if (report.schema_version != null) {
+            parts.push("schema v" + report.schema_version);
+          }
+          if (report.agent_version) {
+            parts.push("agent " + report.agent_version);
+          }
+        } else {
+          parts.push("no diagnostic");
+        }
+        
+        parts.push("Remote control off");
+        parts.push("Not the second Windows endpoint");
+        
+        var text = parts.join(" · ");
+>>>>>>> bc019ea (feat(console): Improve device list and Windows repair UI with better diagnostics)
         var item = el("li");
         var fixture = device.fixture_label === "not-the-second-endpoint"
           || String(device.display_name || "").toLowerCase() === "not-the-second-endpoint";
@@ -1446,7 +1481,15 @@
         list.appendChild(item);
       });
     }).catch(function (error) {
-      showError(agentError, errorMessage(error));
+      var message = errorMessage(error);
+      if (error && error.status === 401) {
+        message = "Authentication required. Sign in again.";
+      } else if (error && error.status === 403) {
+        message = "Access denied. Insufficient permissions to view devices.";
+      } else if (error && error.status === 503) {
+        message = "The device service is unavailable. Try again later.";
+      }
+      showError(agentError, message);
     });
   }
 
@@ -1470,6 +1513,7 @@
 
   document.getElementById("device-enrol").addEventListener("click", function () {
     var node = document.getElementById("device-code");
+<<<<<<< HEAD
     showError(agentError, "");
     request("/api/devices/enrolment", { method: "POST", body: {} }).then(function (body) {
       if (!body || !body.enrolment_code) {
@@ -1478,8 +1522,30 @@
         return;
       }
       node.textContent = enrolmentInstructions(body);
+=======
+    var button = document.getElementById("device-enrol");
+    button.disabled = true;
+    showError(agentError, "");
+    request("/api/devices/enrolment", { method: "POST", body: {} }).then(function (body) {
+      node.textContent = "On that computer run python -m integrations.endpoint_worker enrol --code " +
+        body.enrolment_code + " --name \"Office PC\" --console http://127.0.0.1:8080 --token-file <private-file>. " +
+        "The code works once, expires in " + body.expires_in_seconds +
+        " seconds, and cannot control the computer. It is not shown again. Copy this command now; the code will not be displayed again.";
+      setTimeout(function () {
+        button.disabled = false;
+      }, body.expires_in_seconds ? body.expires_in_seconds * 1000 : 300000);
+>>>>>>> bc019ea (feat(console): Improve device list and Windows repair UI with better diagnostics)
     }).catch(function (error) {
-      showError(agentError, errorMessage(error));
+      button.disabled = false;
+      var message = errorMessage(error);
+      if (error && error.status === 401) {
+        message = "Authentication required. Sign in again to create an enrolment code.";
+      } else if (error && error.status === 403) {
+        message = "Access denied. You do not have permission to enrol devices.";
+      } else if (error && error.status === 503) {
+        message = "The device service is unavailable. Try again later.";
+      }
+      showError(agentError, message);
     });
   });
 
@@ -1788,20 +1854,39 @@
 
   document.getElementById("repair-device-enrol").addEventListener("click", function () {
     var errorBox = document.getElementById("repair-error");
+    var button = document.getElementById("repair-device-enrol");
+    button.disabled = true;
     errorBox.hidden = true;
     request("/api/repair/device/enrol", { method: "POST", body: {} }).then(function (body) {
       repairDevice.id = body.device_id || "";
       repairDevice.secret = "";
+      var credential = {
+        device_id: body.device_id,
+        tenant_id: body.tenant_id,
+        device_secret: body.device_secret,
+        mac_key: body.mac_key
+      };
+      var credentialText = JSON.stringify(credential, null, 2);
       document.getElementById("repair-result").textContent =
-        "Save this endpoint credential now. It is not shown again and it is not a console login.\n" +
-        JSON.stringify({
-          device_id: body.device_id,
-          tenant_id: body.tenant_id,
-          device_secret: body.device_secret,
-          mac_key: body.mac_key
-        }, null, 2);
+        "COPY THIS NOW — The credential below is shown once and will not be displayed again. " +
+        "It is not a console login. Save it in a private file on the endpoint device.\n\n" +
+        credentialText +
+        "\n\nAfter copying, this will be cleared from the page to prevent accidental exposure.";
+      
+      setTimeout(function () {
+        var current = document.getElementById("repair-result").textContent;
+        if (current.indexOf(body.device_secret) >= 0) {
+          document.getElementById("repair-result").textContent = 
+            "Credential was displayed and has been cleared from this page. " +
+            "Device ID: " + body.device_id + " (secrets removed). " +
+            "If you did not copy it, revoke and create a new enrolment.";
+        }
+      }, 60000);
+      
+      button.disabled = false;
       loadRepairDevice();
     }).catch(function (error) {
+      button.disabled = false;
       errorBox.hidden = false;
       errorBox.textContent = errorMessage(error);
     });
@@ -1849,14 +1934,29 @@
 
   document.getElementById("repair-live").addEventListener("click", function () {
     var errorBox = document.getElementById("repair-error");
+    var button = document.getElementById("repair-live");
+    button.disabled = true;
     errorBox.hidden = true;
     var procedureId = document.getElementById("repair-live-procedure").value || "print.diagnose";
     request("/api/repair/live", { method: "POST", body: { procedure_id: procedureId } }).then(function (result) {
-      document.getElementById("repair-result").textContent = JSON.stringify(result, null, 2);
+      var resultText = JSON.stringify(result, null, 2);
+      if (result.repair_authority === false || result.remote_control === false) {
+        resultText = "Read-only diagnostic collected on this computer. No repair was executed. " +
+          "Repair authority is OFF and remote control is OFF.\n\n" + resultText;
+      }
+      document.getElementById("repair-result").textContent = resultText;
       showRepairStage(result);
+      button.disabled = false;
     }).catch(function (error) {
+      button.disabled = false;
       errorBox.hidden = false;
-      errorBox.textContent = errorMessage(error);
+      var message = errorMessage(error);
+      if (error && error.status === 400 && message.indexOf("not a read-only") >= 0) {
+        message = "That procedure is not read-only. Silent remote execution is not available. " + message;
+      } else if (error && error.status === 403) {
+        message = "Access denied. You do not have permission to run diagnostics. " + message;
+      }
+      errorBox.textContent = message;
     });
   });
 
@@ -1905,6 +2005,8 @@
   document.getElementById("repair-form").addEventListener("submit", function (event) {
     event.preventDefault();
     var errorBox = document.getElementById("repair-error");
+    var button = document.querySelector("#repair-form button[type='submit']");
+    if (button) button.disabled = true;
     var symptom = document.getElementById("repair-symptom").value.trim();
     var fixture = document.getElementById("repair-fixture").value;
     errorBox.hidden = true;
@@ -1914,22 +2016,39 @@
       var ids = planned.procedure_ids || [];
       var first = ids[0];
       if (!first) {
-        document.getElementById("repair-result").textContent = JSON.stringify(planned, null, 2);
+        var resultText = "No procedures were planned for this symptom.\n\n" + JSON.stringify(planned, null, 2);
+        document.getElementById("repair-result").textContent = resultText;
         showRepairStage(planned);
+        if (button) button.disabled = false;
         return null;
       }
       var executeBody = { procedure_id: first };
       if (fixture) executeBody.fixture = fixture;
       return request("/api/repair/execute", { method: "POST", body: executeBody }).then(function (result) {
-        document.getElementById("repair-result").textContent = JSON.stringify({
+        var resultText = JSON.stringify({
           plan: planned,
           first_procedure: result
         }, null, 2);
+        if (result.status === "denied" || result.executed === false) {
+          resultText = "APPROVAL REQUIRED — This procedure was planned but NOT executed. " +
+            "Approval is required before any repair runs. No change was made to the computer.\n\n" + resultText;
+        } else if (result.repair_authority === false) {
+          resultText = "Repair authority is OFF. No remote execute was performed.\n\n" + resultText;
+        }
+        document.getElementById("repair-result").textContent = resultText;
         showRepairStage(result && result.stage ? result : planned);
+        if (button) button.disabled = false;
       });
     }).catch(function (error) {
+      if (button) button.disabled = false;
       errorBox.hidden = false;
-      errorBox.textContent = errorMessage(error);
+      var message = errorMessage(error);
+      if (error && error.status === 400 && message.indexOf("not configured") >= 0) {
+        message = "Repair execution is not configured. " + message;
+      } else if (error && error.status === 403) {
+        message = "Access denied. You do not have permission to plan or execute repairs. " + message;
+      }
+      errorBox.textContent = message;
     });
   });
 
