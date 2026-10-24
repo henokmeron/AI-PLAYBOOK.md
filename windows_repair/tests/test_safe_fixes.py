@@ -414,6 +414,36 @@ class ClearQueueTests(unittest.TestCase):
                 self.assertEqual(result["files_touched"], [])
         self.assertEqual(fakes.deletes, [])
 
+    def test_one_queue_folder_is_cleared_and_another_queue_folder_is_kept(self) -> None:
+        fakes = FakeExecutors()
+        owned = r"C:\Windows\System32\spool\PRINTERS\HP Laser\00002.SPL"
+        result = clear_stuck_printer_queue(
+            device_id=_DEVICE,
+            queue_name=_QUEUE,
+            approval=_approval(CLEAR_PRINTER_QUEUE, _QUEUE),
+            now=_NOW,
+            queue_state=_stuck_queue(spool_files=({"path": owned, "queue": _QUEUE},)),
+            deleter=fakes.delete,
+        )
+        self.assertEqual(result["status"], "cleared")
+        self.assertEqual(result["files_touched"], [owned])
+        self.assertEqual(fakes.deletes, [(_QUEUE, (owned,))])
+        fakes.deletes.clear()
+        other = clear_stuck_printer_queue(
+            device_id=_DEVICE,
+            queue_name=_QUEUE,
+            approval=_approval(CLEAR_PRINTER_QUEUE, _QUEUE),
+            now=_NOW,
+            queue_state=_stuck_queue(spool_files=({
+                "path": r"C:\Windows\System32\spool\PRINTERS\Front Desk\00002.SPL",
+                "queue": _QUEUE,
+            },)),
+            deleter=fakes.delete,
+        )
+        self.assertEqual(other["reason"], "file_outside_queue")
+        self.assertEqual(other["files_touched"], [])
+        self.assertEqual(fakes.deletes, [])
+
     def test_idle_queue_is_not_cleared(self) -> None:
         fakes = FakeExecutors()
         result = clear_stuck_printer_queue(

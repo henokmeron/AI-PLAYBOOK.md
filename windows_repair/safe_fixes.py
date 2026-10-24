@@ -368,7 +368,7 @@ def _spool_files(queue_name: str, records: object) -> tuple[tuple[str, ...], str
         if not isinstance(record, dict):
             return (), REASON_OUTSIDE_QUEUE
         path = record.get("path")
-        if not _is_one_spool_file(path):
+        if not _is_one_spool_file(path, queue_name):
             return (), REASON_OUTSIDE_QUEUE
         owner = record.get("queue")
         if not isinstance(owner, str) or owner.strip() != queue_name:
@@ -377,7 +377,7 @@ def _spool_files(queue_name: str, records: object) -> tuple[tuple[str, ...], str
     return tuple(paths), None
 
 
-def _is_one_spool_file(path: object) -> bool:
+def _is_one_spool_file(path: object, queue_name: str | None = None) -> bool:
     if not isinstance(path, str):
         return False
     raw = path.strip()
@@ -399,10 +399,9 @@ def _is_one_spool_file(path: object) -> bool:
     for index in range(len(folded_parts) - 2):
         if folded_parts[index] != "spool" or folded_parts[index + 1] != "printers":
             continue
-        tail = parts[index + 2 :]
-        if len(tail) != 1:
+        filename = _spool_filename(parts[index + 2 :], queue_name)
+        if filename is None:
             return False
-        filename = tail[0]
         if filename in {".", ".."} or filename.endswith((" ", ".")):
             return False
         suffix = filename[filename.rfind("."):].casefold() if "." in filename else ""
@@ -412,6 +411,18 @@ def _is_one_spool_file(path: object) -> bool:
             return False
         return bool(drive) or folded.startswith("\\\\")
     return False
+
+
+def _spool_filename(tail: list[str], queue_name: str | None) -> str | None:
+    """One spool file directly in PRINTERS, or in that one queue's folder."""
+    if len(tail) == 1:
+        return tail[0]
+    if len(tail) != 2 or not isinstance(queue_name, str):
+        return None
+    folder = queue_name.strip()
+    if not folder or tail[0].casefold() != folder.casefold() or tail[0] in {".", ".."}:
+        return None
+    return tail[1]
 
 
 def _absolute_windows(path: str) -> bool:

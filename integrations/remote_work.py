@@ -19,10 +19,12 @@ for these calls.
 
 Live OS changes run only when the order is claimed, the caller passes
 ``live=True``, and a runner is injected or, for the actions that have a
-default runner, ``REMOTE_IT_WORK_LIVE=1``. Download, install, and heartbeat
-never use that default runner. They finish only when an injected runner is
-passed, and this module does not open a socket or start pnputil or Windows
-Update. Passwords are a handler input and are not stored.
+default runner, ``REMOTE_IT_WORK_LIVE=1``. Download, install, delete, and
+heartbeat never use that default runner. ``repair.service.restart`` and
+``repair.printer.clear_queue`` call the existing safe-fix functions and
+finish only through an injected runner. This module does not open a socket
+or start pnputil or Windows Update. The default runner does not fetch from
+the network. Passwords are a handler input and are not stored.
 """
 from __future__ import annotations
 
@@ -38,13 +40,40 @@ from pathlib import Path, PureWindowsPath
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
+from windows_repair.approval import (
+    CLEAR_PRINTER_QUEUE,
+    RESTART_FAILED_SERVICE,
+    issue_approval,
+)
+from windows_repair.safe_fixes import (
+    clear_stuck_printer_queue,
+    restart_failed_automatic_service,
+)
+
 APPROVAL_TTL_SECONDS = 15 * 60
 LIVE_ENV = "REMOTE_IT_WORK_LIVE"
 HEARTBEAT = "monitor.heartbeat"
-# Download and install never use the default live runner. An injected runner
-# may finish them after the order is claimed. Heartbeat is the same.
-PLAN_ONLY = frozenset({"change.download", "change.install"})
+# Download, install, delete, and heartbeat never use the default live runner.
+# An injected runner may finish download, install, and heartbeat after the
+# order is claimed. Delete uses that same runner for one exact path.
+PLAN_ONLY = frozenset({"change.download", "change.install", "change.delete"})
 DELEGATED = frozenset({HEARTBEAT, "change.download", "change.install"})
+_REPAIR_TO_SAFE = {
+    "repair.service.restart": RESTART_FAILED_SERVICE,
+    "repair.printer.clear_queue": CLEAR_PRINTER_QUEUE,
+}
+REPAIR_ACTIONS = frozenset(_REPAIR_TO_SAFE)
+# These never fall through to the default live runner.
+INJECTED_ONLY = DELEGATED | REPAIR_ACTIONS | frozenset({"change.delete"})
+_STORE_SOURCES = frozenset({
+    "microsoft-store",
+    "microsoftstore",
+    "ms-store",
+    "msstore",
+    "windows-store",
+    "store",
+})
+_STORE_ID = re.compile(r"9[A-Za-z0-9]{11}\Z")
 
 ACTIONS = frozenset({
     HEARTBEAT,
@@ -367,10 +396,14 @@ def execute(
     """Return a plan unless the order is approved and ``live`` is true.
 
     Download, install, and heartbeat call a runner only when the order is
-    claimed, ``live`` is true, and the caller injected ``runner``. They never
-    use the default live runner, open a socket, or start pnputil or Windows
-    Update. Other actions use the default runner only when ``runner`` is
-    omitted, ``live`` is true, and ``REMOTE_IT_WORK_LIVE`` is ``1``.
+    claimed, ``live`` is true, and the caller injected ``runner``. Delete
+    calls that runner for the one approved path and does not use the default
+    runner. Service restart and printer-queue clear call the existing
+    safe-fix functions, which call the injected runner only after the
+    approval gate matches. Those paths do not use the default live runner,
+    open a socket, or start pnputil or Windows Update. Other actions use
+    the default runner only when ``runner`` is omitted, ``live`` is true,
+    and ``REMOTE_IT_WORK_LIVE`` is ``1``.
     """
     if not isinstance(order, dict):
         raise WorkRefused("work order is not valid")
@@ -409,6 +442,29 @@ def execute(
         runner(_runner_request(order, supplied, plan))
         plan["executed"] = True
         return plan
+    if action == "change.delete" or action in REPAIR_ACTIONS:
+        if not authorized or runner is None:
+            plan["executed"] = False
+            return plan
+        if action in REPAIR_ACTIONS:
+            outcome = apply_approved_repair(order, runner=runner, plan=plan, now=moment)
+            if outcome.get("executed") is not True:
+                raise WorkRefused(str(outcome.get("detail") or "approval is required"))
+            plan["executed"] = True
+            plan["changed_device"] = False
+            plan["problem_resolved"] = False
+            plan["live"] = False
+            plan["safe_fix"] = {
+                "action_id": outcome.get("action_id"),
+                "status": outcome.get("status"),
+                "fake": True,
+                "changed_device": False,
+                "problem_resolved": False,
+            }
+            return plan
+        runner(_runner_request(order, supplied, plan))
+        plan["executed"] = True
+        return plan
     if not authorized:
         plan["executed"] = False
         return plan
@@ -435,6 +491,135 @@ def execute_work_order(
         snapshot = json.loads(json.dumps(order))
         moment = store.now()
     return execute(snapshot, live=live, runner=runner, handler_input=handler_input, now=moment)
+
+
+def apply_approved_repair(
+    order: dict[str, Any],
+    *,
+    runner: Callable[[dict[str, Any]], dict[str, Any]],
+    now: float,
+    plan: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run one repair through the existing safe-fix gate and the injected runner.
+
+    A missing, expired, or mismatched approval is refused by that gate. The
+    runner is not called. This function does not restart a service, clear a
+    queue, or open a shell on this computer.
+    """
+    if not isinstance(order, dict):
+        raise WorkRefused("work order is not valid")
+    action = order.get("action")
+    if not isinstance(action, str) or action not in _REPAIR_TO_SAFE:
+        raise WorkRefused("action is not allowlisted")
+    target = order.get("target") if isinstance(order.get("target"), str) else ""
+    params = order.get("params") if isinstance(order.get("params"), dict) else {}
+    device_id = order.get("device_id") if isinstance(order.get("device_id"), str) else ""
+    if plan is None:
+        plan = _plan_for(order, {})
+    approval = _issued_repair_approval(order.get("approval"))
+    if action == "repair.service.restart":
+        return restart_failed_automatic_service(
+            device_id=device_id,
+            service_name=target,
+            approval=approval,
+            now=now,
+            service_state=_service_state_for_repair(target, params),
+            restarter=_service_restarter(order, plan, runner, target),
+        )
+    return clear_stuck_printer_queue(
+        device_id=device_id,
+        queue_name=target,
+        approval=approval,
+        now=now,
+        queue_state=_queue_state_for_repair(target, params),
+        deleter=_queue_deleter(order, plan, runner, target),
+    )
+
+
+def _issued_repair_approval(approval: object) -> object:
+    """Turn one remote approval into the safe-fix Approval, or leave it missing.
+
+    The safe-fix gate compares this object with the device, action, and target
+    being run. A dict, a different device, or a different action still refuses.
+    """
+    if not isinstance(approval, dict):
+        return None
+    action = approval.get("action")
+    device_id = approval.get("device_id")
+    target = approval.get("target")
+    expires_at = approval.get("expires_at")
+    if not isinstance(action, str) or not isinstance(device_id, str) or not isinstance(target, str):
+        return None
+    if isinstance(expires_at, bool) or not isinstance(expires_at, (int, float)):
+        return None
+    mapped = _REPAIR_TO_SAFE.get(action, action)
+    try:
+        return issue_approval(
+            device_id=device_id,
+            action_id=mapped,
+            target=target,
+            expires_at=float(expires_at),
+        )
+    except (TypeError, ValueError):
+        return None
+
+
+def _service_state_for_repair(target: str, params: dict[str, Any]) -> dict[str, Any]:
+    status = params.get("status")
+    return {
+        "name": target,
+        "status": status,
+        "start_type": params.get("start_type"),
+        "failed": status == "stopped",
+    }
+
+
+def _queue_state_for_repair(target: str, params: dict[str, Any]) -> dict[str, Any]:
+    path = params.get("path")
+    files: tuple[dict[str, str], ...] = ()
+    if isinstance(path, str) and path:
+        files = ({"path": path, "queue": target},)
+    return {"queue": target, "stuck": True, "spool_files": files}
+
+
+def _service_restarter(
+    order: dict[str, Any],
+    plan: dict[str, Any],
+    runner: Callable[[dict[str, Any]], dict[str, Any]],
+    target: str,
+) -> Callable[[str], dict[str, Any]]:
+    def restarter(service_name: str) -> dict[str, Any]:
+        if service_name != target:
+            return {"ok": False}
+        request = _runner_request(order, {}, plan)
+        if request.get("op") != "start_service" or request.get("target") != service_name:
+            return {"ok": False}
+        if request.get("argv") != ["sc.exe", "start", service_name]:
+            return {"ok": False}
+        outcome = runner(request)
+        return outcome if isinstance(outcome, dict) else {"ok": False}
+
+    return restarter
+
+
+def _queue_deleter(
+    order: dict[str, Any],
+    plan: dict[str, Any],
+    runner: Callable[[dict[str, Any]], dict[str, Any]],
+    target: str,
+) -> Callable[[str, tuple[str, ...]], dict[str, Any]]:
+    def deleter(queue_name: str, paths: tuple[str, ...]) -> dict[str, Any]:
+        if queue_name != target or len(paths) != 1:
+            return {"ok": False}
+        request = _runner_request(order, {}, plan)
+        if request.get("op") != "delete_spool_file" or request.get("path") != paths[0]:
+            return {"ok": False}
+        if request.get("queue") != queue_name:
+            return {"ok": False}
+        outcome = runner(request)
+        return outcome if isinstance(outcome, dict) else {"ok": False}
+
+    return deleter
 
 
 def snapshot(store: WorkStore) -> dict[str, Any]:
@@ -467,13 +652,17 @@ def service_facts_from_text(query_text: str, config_text: str) -> dict[str, str]
 
 
 def default_live_runner(request: dict[str, Any]) -> dict[str, Any]:
-    """Perform one allowlisted operation. Tests must not call this."""
+    """Perform one allowlisted operation. Tests must not call this.
+
+    Download, install, delete, and heartbeat stay plan-only here. This
+    function does not fetch from the network.
+    """
     global _DEFAULT_RUNNER_CALLS
     _DEFAULT_RUNNER_CALLS += 1
     if os.environ.get(LIVE_ENV) != "1":
         raise WorkRefused("live execution is disabled")
     op = request.get("op")
-    if op in {"download", "install", "heartbeat"}:
+    if op in {"download", "install", "heartbeat", "delete_file"} or request.get("network") is True:
         raise WorkRefused("this action is plan only")
     if op == "start_service":
         return _live_start_service(request)
@@ -564,8 +753,7 @@ def _live_delete_file(request: dict[str, Any]) -> dict[str, Any]:
         raise WorkRefused("path is under a protected directory")
     if request.get("argv") != ["delete-file", path]:
         raise WorkRefused("path does not match the approved target")
-    Path(path).unlink()
-    return {"ok": True}
+    raise WorkRefused("this action is plan only")
 
 
 def _capture(argv: list[str], *, stdin: bytes | None = None, env: dict[str, str] | None = None) -> str:
@@ -946,8 +1134,30 @@ def _download_error(target: str, params: dict[str, Any]) -> str | None:
     return None
 
 
+def _is_arbitrary_url(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    folded = value.strip().casefold()
+    return "://" in folded or folded.startswith("www.") or folded.startswith("ms-windows-store:")
+
+
+def _is_store_id(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    token = value.strip()
+    folded = token.casefold()
+    if folded in _STORE_SOURCES or folded.startswith("ms-windows-store"):
+        return True
+    return _STORE_ID.fullmatch(token) is not None
+
+
 def _install_error(target: str, params: dict[str, Any]) -> str | None:
-    if params.get("source") not in INSTALL_SOURCES:
+    source = params.get("source")
+    if _is_arbitrary_url(source) or _is_arbitrary_url(target):
+        return "an arbitrary URL is refused"
+    if _is_store_id(source) or _is_store_id(target):
+        return "a Microsoft Store id is refused"
+    if source not in INSTALL_SOURCES:
         return "install source is not allowlisted"
     pin = params.get("sha256")
     if not isinstance(pin, str) or not _SHA256.fullmatch(pin):

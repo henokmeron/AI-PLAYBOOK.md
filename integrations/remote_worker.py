@@ -13,9 +13,11 @@ runs it, and posts the result:
 
 The process does not pass live=True unless the operator adds ``--live``.
 Even then, the default runner stays disabled until REMOTE_IT_WORK_LIVE=1.
-Download, install, and a heartbeat work order still finish only through an
-injected runner. Tests inject a transport and a runner and must not call the
-default. This module does not open a socket itself.
+Download, install, delete, and a heartbeat work order still finish only
+through an injected runner. Service restart and printer-queue clear call
+the existing safe-fix functions through that runner. Tests inject a
+transport and a runner and must not call the default. This module does not
+open a socket itself.
 """
 from __future__ import annotations
 
@@ -27,8 +29,8 @@ from pathlib import Path
 from typing import Any, Callable, TextIO
 
 from integrations.remote_work import (
-    DELEGATED,
     HEARTBEAT,
+    INJECTED_ONLY,
     LIVE_ENV,
     WorkRefused,
     _scrub,
@@ -589,7 +591,7 @@ def _wait_reason(
     if not live or os.environ.get(LIVE_ENV) != "1":
         return "live execution is disabled"
     action = job.get("action")
-    if action in DELEGATED and runner is None:
+    if action in INJECTED_ONLY and runner is None:
         return "this action is plan only"
     if action == "setup.onboard.local_user":
         password = handler_input.get("password") if isinstance(handler_input, dict) else None
