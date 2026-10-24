@@ -25,6 +25,8 @@ The console stores a short summary, the evidence source, and whether the check s
 
 ## Install
 
+Another computer uses `docs/windows-repair/register-device.md` and `scripts/register-device.ps1`. That script mints or accepts a fresh code, enrols once, and starts `remote_worker serve`. Do not run it on the Office PC that is already enrolled, and do not run it on BANYA-FAMILY-PL.
+
 Create an enrolment code in the signed-in console (`POST /api/devices/enrolment`). Then, on the endpoint:
 
 ```powershell
