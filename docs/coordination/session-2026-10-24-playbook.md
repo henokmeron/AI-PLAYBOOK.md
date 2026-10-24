@@ -78,3 +78,9 @@ These commits are on `origin/main`:
 ## Discussed next steps
 
 The owner discussed client packaging: the monitoring dashboard, per-device pricing, and a simple onboarding flow. Those are discussed next steps. They are not built product in this record.
+
+## Relayed session context — local device-dashboard look
+
+The caller relayed what another agent said. That other agent's instruction was to open `C:\Users\playbook\device-dashboard\web\statistic\device-dash-manager.html` from the work tree for a local look. After that, because the page stays empty, the other agent said the reason is that it is registered via API device application after this branch is merged, and to look for console service. Those words are the caller's relay, not a claim that that path or filename exists.
+
+Checked read-only in `C:\Users\henok\src\AI-PLAYBOOK-device-dashboard` from this docs job: there is no `web\statistic\` folder and no `device-dash-manager.html`. The page that exists is `C:\Users\henok\src\AI-PLAYBOOK-device-dashboard\web\static\device-monitor.html`. That file, with `web\static\device-monitor.js`, reads enrolled devices from `/api/devices` when the console serves the page. Opening the HTML file alone from the worktree has no console service, so the list stays empty. The live console shows this page only after `feature/device-monitor-dashboard` is merged. That branch is not merged. This record does not claim the dashboard is live on the console.
