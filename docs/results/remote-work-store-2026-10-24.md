@@ -68,6 +68,8 @@ On platforms that support it (Linux, macOS), the database file is created with `
 
 The SQLite database uses Write-Ahead Logging (WAL) mode for improved concurrency and crash recovery. This ensures that the database can handle multiple threads writing to it without corruption.
 
+**Important:** A state file must have a single owning process. Do not share the same database file between multiple service instances. Each service instance must use its own dedicated database file.
+
 ## Implementation Details
 
 ### In-Memory Mode (Default)
@@ -117,7 +119,7 @@ The test suite in `integrations/tests/test_remote_work_store.py` verifies:
 
 **Windows:** UNVERIFIED
 
-The implementation uses Python's `sqlite3` module and standard library features that are cross-platform. However, file permission enforcement (`0600`) may not be fully supported on all Windows configurations. The core functionality (persistence, restart semantics, secret redaction) should work correctly on Windows, but file permissions may require additional configuration at the filesystem or service level.
+The implementation uses Python's `sqlite3` module and standard library features that are cross-platform. However, file permission enforcement (`0600`) may not be fully supported on all Windows configurations. The core functionality (persistence, restart semantics, secret redaction) should work correctly on Windows, but file permissions and ProgramData ACLs may require additional configuration at the filesystem or service level. **ProgramData ACLs on Windows are UNVERIFIED.**
 
 ## Migration
 

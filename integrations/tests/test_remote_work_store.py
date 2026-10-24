@@ -106,6 +106,50 @@ class TestDurableStore(unittest.TestCase):
             with self.assertRaisesRegex(WorkRefused, "approval expired"):
                 claim_job(store2, DEVICE, order_id)
 
+    def test_approval_expired_before_restart_still_expired_after(self) -> None:
+        """Approval that expired before a restart is still expired afterwards."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = str(Path(tmpdir) / "work.db")
+            
+            clock_value = [1000.0]
+            
+            def fake_clock() -> float:
+                return clock_value[0]
+            
+            store1 = WorkStore(path=db_path, clock=fake_clock)
+            register_enrolled_device(store1, DEVICE)
+            
+            order = create_work_order(
+                store1,
+                device_id=DEVICE,
+                action="repair.service.restart",
+                target="Spooler",
+                operator_id=OPERATOR,
+                params={"start_type": "automatic", "status": "stopped"},
+            )
+            order_id = order["id"]
+            
+            approve_work_order(store1, order_id, APPROVER)
+            
+            approval = store1.orders[order_id]["approval"]
+            self.assertIsNotNone(approval)
+            self.assertFalse(approval["used"])
+            
+            clock_value[0] = 1000.0 + APPROVAL_TTL_SECONDS + 10
+            
+            with self.assertRaisesRegex(WorkRefused, "approval expired"):
+                claim_job(store1, DEVICE, order_id)
+            
+            del store1
+            
+            store2 = WorkStore(path=db_path, clock=fake_clock)
+            
+            self.assertEqual(store2.orders[order_id]["state"], "refused")
+            self.assertEqual(store2.orders[order_id]["error"], "approval expired")
+            
+            with self.assertRaisesRegex(WorkRefused, "refused order is terminal"):
+                claim_job(store2, DEVICE, order_id)
+
     def test_claimed_order_becomes_interrupted_after_reopen(self) -> None:
         """Claimed order becomes failed after reopen and is not re-offered by poll."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -143,6 +187,77 @@ class TestDurableStore(unittest.TestCase):
             
             available = [job for job in store2.orders.values() if job["state"] == "approved"]
             self.assertEqual(len(available), 0)
+
+    def test_interrupted_order_persisted_to_disk_on_first_reopen(self) -> None:
+        """Interrupted order persisted to disk on first reopen, only one audit entry after multiple reopens."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = str(Path(tmpdir) / "work.db")
+            
+            store1 = WorkStore(path=db_path)
+            register_enrolled_device(store1, DEVICE)
+            
+            order = create_work_order(
+                store1,
+                device_id=DEVICE,
+                action="repair.service.restart",
+                target="Spooler",
+                operator_id=OPERATOR,
+                params={"start_type": "automatic", "status": "stopped"},
+            )
+            order_id = order["id"]
+            
+            approve_work_order(store1, order_id, APPROVER)
+            claim_job(store1, DEVICE, order_id)
+            
+            self.assertEqual(store1.orders[order_id]["state"], "claimed")
+            del store1
+            
+            store2 = WorkStore(path=db_path)
+            
+            self.assertEqual(store2.orders[order_id]["state"], "failed")
+            self.assertEqual(store2.orders[order_id]["error"], "order was interrupted by restart")
+            
+            conn = sqlite3.connect(db_path)
+            cursor = conn.execute("SELECT state, error FROM orders WHERE id = ?", (order_id,))
+            row = cursor.fetchone()
+            conn.close()
+            
+            self.assertEqual(row[0], "failed")
+            self.assertEqual(row[1], "order was interrupted by restart")
+            
+            interrupted_audit = [
+                entry for entry in store2.audit
+                if entry["state"] == "failed" and "interrupted" in (entry.get("error") or "")
+            ]
+            self.assertEqual(len(interrupted_audit), 1)
+            
+            del store2
+            
+            store3 = WorkStore(path=db_path)
+            
+            self.assertEqual(store3.orders[order_id]["state"], "failed")
+            
+            interrupted_audit_3 = [
+                entry for entry in store3.audit
+                if entry["state"] == "failed" and "interrupted" in (entry.get("error") or "")
+            ]
+            self.assertEqual(len(interrupted_audit_3), 1, "Should still have exactly ONE interrupted audit entry after third open")
+            
+            del store3
+            
+            store4 = WorkStore(path=db_path)
+            
+            self.assertEqual(store4.orders[order_id]["state"], "failed")
+            
+            interrupted_audit_4 = [
+                entry for entry in store4.audit
+                if entry["state"] == "failed" and "interrupted" in (entry.get("error") or "")
+            ]
+            self.assertEqual(len(interrupted_audit_4), 1, "Should still have exactly ONE interrupted audit entry after fourth open")
+            
+            from integrations.remote_work import poll_jobs
+            available = poll_jobs(store4, DEVICE)
+            self.assertEqual(len(available), 0, "Interrupted order should never be offered by poll")
 
     def test_self_approval_refused_after_reopen(self) -> None:
         """Self-approval still refused after reopen."""

@@ -138,7 +138,7 @@ class WorkStore:
     When constructed with a path, persists to SQLite with WAL mode.
     """
 
-    def __init__(self, path: str | None = None, clock: Callable[[], float] | None = None) -> None:
+    def __init__(self, *, path: str | None = None, clock: Callable[[], float] | None = None) -> None:
         self._clock = clock or time.time
         self._lock = threading.Lock()
         self._path = path
@@ -179,13 +179,26 @@ class WorkStore:
         path_obj = Path(self._path)
         is_new = not path_obj.exists()
         
+        if is_new:
+            try:
+                fd = os.open(self._path, os.O_CREAT | os.O_RDWR, 0o600)
+                os.close(fd)
+            except (OSError, AttributeError):
+                pass
+        
         conn = self._get_conn()
         if conn is None:
             return
         
-        if is_new and hasattr(os, "chmod"):
+        if hasattr(os, "chmod"):
             try:
                 os.chmod(self._path, stat.S_IRUSR | stat.S_IWUSR)
+                wal_path = self._path + "-wal"
+                shm_path = self._path + "-shm"
+                if Path(wal_path).exists():
+                    os.chmod(wal_path, stat.S_IRUSR | stat.S_IWUSR)
+                if Path(shm_path).exists():
+                    os.chmod(shm_path, stat.S_IRUSR | stat.S_IWUSR)
             except (OSError, AttributeError):
                 pass
         
@@ -251,13 +264,21 @@ class WorkStore:
             return
         
         cursor = conn.execute("SELECT * FROM orders")
-        for row in cursor.fetchall():
+        rows = cursor.fetchall()
+        
+        for row in rows:
             order = self._order_from_row(row)
             
             if order["state"] in {"claimed", "running"}:
-                order["state"] = "failed"
-                order["error"] = "order was interrupted by restart"
-                self._audit_interrupted(conn, order)
+                try:
+                    order["state"] = "failed"
+                    order["error"] = "order was interrupted by restart"
+                    self._persist_order(conn, order)
+                    self._audit_interrupted(conn, order)
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
             
             self.orders[order["id"]] = order
         
@@ -464,8 +485,12 @@ def register_enrolled_device(store: WorkStore, device_id: str) -> None:
         store.enrolled.add(device_id)
         conn = store._get_conn()
         if conn is not None:
-            store._persist_enrolled(conn, device_id)
-            conn.commit()
+            try:
+                store._persist_enrolled(conn, device_id)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
 
 
 def create_work_order(
@@ -524,10 +549,18 @@ def create_work_order(
             order["state"] = "pending_approval"
             conn = store._get_conn()
             if conn is not None:
-                store._persist_order(conn, order)
+                try:
+                    store._persist_order(conn, order)
+                except Exception:
+                    conn.rollback()
+                    raise
             _audit(store, order, operator_id=operator_id, error=None)
             if conn is not None:
-                conn.commit()
+                try:
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
         return _public(order)
 
 
@@ -558,10 +591,18 @@ def approve_work_order(store: WorkStore, order_id: str, operator_id: str) -> dic
         order["error"] = None
         conn = store._get_conn()
         if conn is not None:
-            store._persist_order(conn, order)
+            try:
+                store._persist_order(conn, order)
+            except Exception:
+                conn.rollback()
+                raise
         _audit(store, order, operator_id=operator_id, error=None)
         if conn is not None:
-            conn.commit()
+            try:
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
         return _public(order)
 
 
@@ -603,20 +644,36 @@ def claim_job(store: WorkStore, device_id: str, order_id: str) -> dict[str, Any]
                 order["state"] = "refused"
                 order["error"] = problem
                 if conn is not None:
-                    store._persist_order(conn, order)
+                    try:
+                        store._persist_order(conn, order)
+                    except Exception:
+                        conn.rollback()
+                        raise
                 _audit(store, order, operator_id="", error=problem)
                 if conn is not None:
-                    conn.commit()
+                    try:
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
+                        raise
             raise WorkRefused(problem)
         order["approval"]["used"] = True
         order["state"] = "claimed"
         order["error"] = None
         conn = store._get_conn()
         if conn is not None:
-            store._persist_order(conn, order)
+            try:
+                store._persist_order(conn, order)
+            except Exception:
+                conn.rollback()
+                raise
         _audit(store, order, operator_id=order["approval"]["operator_id"], error=None)
         if conn is not None:
-            conn.commit()
+            try:
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
         return _public(order)
 
 
@@ -654,10 +711,18 @@ def complete_job(
         order["result"] = _scrub(result, redact) if isinstance(result, dict) else None
         conn = store._get_conn()
         if conn is not None:
-            store._persist_order(conn, order)
+            try:
+                store._persist_order(conn, order)
+            except Exception:
+                conn.rollback()
+                raise
         _audit(store, order, operator_id=(order.get("approval") or {}).get("operator_id", ""), error=clean_error)
         if conn is not None:
-            conn.commit()
+            try:
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
         return _public(order)
 
 
@@ -677,9 +742,27 @@ def post_heartbeat(store: WorkStore, payload: dict[str, Any]) -> dict[str, Any]:
     with store._lock:
         _require_device(store, device_id)
         store.heartbeats.append(dict(record))
+        
+        per_device_count: dict[str, int] = {}
+        for beat in store.heartbeats:
+            dev = beat.get("device_id", "")
+            per_device_count[dev] = per_device_count.get(dev, 0) + 1
+        
+        if per_device_count.get(device_id, 0) > 1000:
+            filtered = []
+            device_beats = [beat for beat in store.heartbeats if beat.get("device_id") == device_id]
+            other_beats = [beat for beat in store.heartbeats if beat.get("device_id") != device_id]
+            filtered.extend(other_beats)
+            filtered.extend(device_beats[-1000:])
+            store.heartbeats = filtered
+        
         conn = store._get_conn()
         if conn is not None:
-            store._persist_heartbeat(conn, record)
+            try:
+                store._persist_heartbeat(conn, record)
+            except Exception:
+                conn.rollback()
+                raise
         _audit(
             store,
             {
@@ -693,7 +776,11 @@ def post_heartbeat(store: WorkStore, payload: dict[str, Any]) -> dict[str, Any]:
             error=None,
         )
         if conn is not None:
-            conn.commit()
+            try:
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
         return record
 
 
@@ -969,10 +1056,18 @@ def _commit(store: WorkStore, order: dict[str, Any]) -> None:
     conn = store._get_conn()
     store.orders[order["id"]] = order
     if conn is not None:
-        store._persist_order(conn, order)
+        try:
+            store._persist_order(conn, order)
+        except Exception:
+            conn.rollback()
+            raise
     _audit(store, order, operator_id=order["operator_id"], error=order["error"])
     if conn is not None:
-        conn.commit()
+        try:
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
 
 def _audit(store: WorkStore, order: dict[str, Any], *, operator_id: str, error: str | None) -> None:
