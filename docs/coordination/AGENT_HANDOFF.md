@@ -1,8 +1,115 @@
 # Agent handoff
 
-Read this file before starting. Append to the log when you finish. Do not delete log entries. Only the Director moves the old CURRENT block into the log and writes a new CURRENT block.
+Read `docs/coordination/AGENT_HANDOFF.md` and `docs/coordination/TRANSFER_TO_NEXT_AGENT.md` before doing anything. Append to the log when you finish. Do not delete log entries. Only the Director moves the old CURRENT block into the log and writes a new CURRENT block. CURRENT below is the living state. `docs/coordination/TRANSFER_TO_NEXT_AGENT.md` is the 2026-10-23 architecture note; where they differ, follow CURRENT.
 
 ## CURRENT
+
+Updated: 2026-10-24 13:26 UK. Verified in a clean worktree of `origin/main` at `97d6d97c7fa324802d9ea1711998b7400171ae76` ("Show the device monitor from the console sidebar."). This session did not SSH, did not run a worker, did not enrol a device, did not reload the console, did not restart Qwen or the gateway, and did not recalculate the acceptance board.
+
+Read `docs/coordination/AGENT_HANDOFF.md` and `docs/coordination/TRANSFER_TO_NEXT_AGENT.md` before doing anything. This CURRENT is the living state. `docs/coordination/TRANSFER_TO_NEXT_AGENT.md` (updated 2026-10-23 22:40 UK) remains the architecture note for the pod, the volume, and the three machines. Where that note and this CURRENT differ, follow CURRENT. Do not follow `docs/AGENT_HANDOFF.md` for live work. That file is the 2026-10-22 record. ASSIGNMENTS below is the 00:26 UK sole-builder text and is not deleted. Live instruction is this CURRENT.
+
+`docs/coordination/session-2026-10-24-playbook.md` is not on `origin/main`. It is on `feature/session-playbook` at `54e831110cad35d1a455dc863909766d1a868d4f`, worktree `C:\Users\henok\src\AI-PLAYBOOK-session-playbook`. Commits on that branch and not on `origin/main`: `3e6ec6125f033a06a6050394bf2c4487b6eaa0f9`, `3ffa2c2eefc25212db3588cbce527f3537f29db2`, `54e831110cad35d1a455dc863909766d1a868d4f`. Facts from that file are included here only where git or an owner statement still holds. Its lines that the device monitor and approved repair jobs are unmerged are superseded by the `origin/main` commits below.
+
+### Goal
+
+Remote IT control of enrolled Windows laptops: repair, setup, onboarding, offboarding, monitoring, install, download, delete, and print. Microsoft 365 and mail sign-in are out of scope for that control path. Registration is the only control path. Setup must be easy and replicable. Enrolment codes are one-time and must never be committed, printed, or pasted into chat.
+
+### This PC
+
+User `henok`, hostname `BANYA-FAMILY-PL`. It tunnels to the pod console at `http://127.0.0.1:18080/`. It must not enrol itself. `scripts/register-device.ps1` refuses hostname `BANYA-FAMILY-PL`, the display names `Office PC`, `BANYA-FAMILY-PL`, and `not-the-second-endpoint`, and device id `bead5785f3674aaeb92c189f8c1b5b8c`. The main checkout `C:\Users\henok\src\AI-PLAYBOOK.md` had untracked `__pycache__` directories when this handoff was written. Do not edit that checkout while it is dirty. Use a clean worktree. Git on this PC is not PATH git. Python is `C:\Users\henok\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\python.exe`. Pull with `git pull --ff-only origin main`.
+
+### Office PC
+
+Device `bead5785f3674aaeb92c189f8c1b5b8c`, display name Office PC, tenant `local-console`. The owner stated it is the only enrolled device. Do not re-enrol it. Its own tunnel is `http://127.0.0.1:8080/` on that laptop. The owner stated the last stored report was around `2026-10-23T23:10:44Z`, that live serve was polling idle, that download and install on that live worker returned plan-only, that no HP Smart install and no HP driver download succeeded there, and that the printers reported were OneNote (Desktop), Microsoft Print to PDF, and Fax. Those live observations are owner statements. This session did not re-read the device store. Do not clear the queue. HP Smart on `BANYA-FAMILY-PL` is a different machine and must not be launched as a substitute.
+
+The owner stated on 2026-10-24 that another Windows computer is ready. That is availability only. It does not mark a second endpoint. That computer still has to run `scripts/register-device.ps1` against its own tunnel `http://127.0.0.1:8080` after a fresh code is minted. Do not paste any code value. Office PC remains the only enrolled device until a new enrolment is stored.
+
+### Pod
+
+Pod `1jyrnyxpb0n93s`, A100. Do not stop it. Do not start H100 `xx9cjogra5vcwl`. Do not start Blackwell. Do not copy weights. The last handoff record left Qwen pid 6739 and gateway pid 6497 up. This session did not check those processes. Do not restart a healthy Qwen or gateway. A push is not a deploy. Reloading the console needs explicit owner approval because it interrupts the Office PC session. This session did not reload it.
+
+### On origin/main
+
+Registration: `83176c824111ef327dbfeb6fa8c8df7d581367f9` adds `scripts/register-device.ps1` and `docs/windows-repair/register-device.md`. Merge `7d6a3b24ea72dbd74bc773dcb62be7fd11dca754` is on `origin/main`.
+
+Remote channel merges on `origin/main`: `c2ccd5d323710f8c47826a209a6e7683281a7237` (gated remote IT work channel), `c10719c7a7df187de464e62812dccfd5e4554a65` (finished remote IT actions), `b1a4217619842f922e9a596cf45e14150faea5c1` (console session for one approved IT job). Safe fixes: `9c963eb108637eaa8964fc7d263133b07961be82` and merge `b24b02bae8c0eb5097ea7bbe150737de40e8466e` name `win.service.restart_failed` and `print.queue.clear_spool`. Check breadth: `b12967dfaac8aecdba47030b4a92c3c07f408d26` and merge `051242c54997a0e6202b16f104f0a6fa3c6e4788`. Driver health: `3fb3b1f566ab70362bd1a626f8ffae4af17d1d55` and merge `15a79d6eb5b5d020d4d83ec75d7bb0899a698140`.
+
+Nine read-only checks, in `integrations/endpoint.py` and the device monitor: `win.storage.space`, `win.services.inspect`, `win.update.inspect`, `hw.devices.inventory`, `print.diagnose`, `net.diagnose`, `win.events.recurring`, `win.startup.inspect`, `hw.identity.inspect`. Missing data is `unavailable`, `unsupported`, or `permission-denied`. It is never stored as ok. The monitor shows a missing category as not reported, never healthy. Update events are not full patch-compliance proof.
+
+Device monitor code is on `origin/main`: `f2ce181b89de8c7c71af3b20e511ba40da6c7357` (read-only monitor of stored check-ins), merge `7cdea9e68c41e6ba53ef30d82d605c4fcf76f7ff`, and `97d6d97c7fa324802d9ea1711998b7400171ae76` (sidebar item). The page is a device list and per-device detail from stored check-ins. It covers last check-in, the nine checks with failures highlighted, overall health, and these categories when the stored report actually contains them: antivirus, sync, last seen, network quality, downloading, uptime, update events, security posture, disk-space trend, failed logins and security events, backup status, pending reboot, certificate expiry, and thermal or battery health. A missing field stays not reported. The branch `feature/device-monitor-dashboard` tip `f2ce181b89de8c7c71af3b20e511ba40da6c7357` is an ancestor of `origin/main`. The worktree `C:\Users\henok\src\AI-PLAYBOOK-device-dashboard` is still checked out at that tip. The running console does not have this page until it is reloaded. The owner has not asked for that reload.
+
+Approved repair jobs are on `origin/main`: `09d41dbad3cd57edaf1d3251d86e86a1b8757859` and merge `0c728c54d98bbe97e2df1db5f54176dced565d65`. The commit routes service restart and printer-queue clear through the existing safe-fix gate with an injected runner. `change.install` and `change.delete` stay on that injected runner. The default live path still refuses download and install with "this action is plan only". There is no open remote shell: subprocess calls that exist use a fixed argument list and `shell=False`. No live repair is claimed. No live queue clear was done. Do not clear the Office PC queue.
+
+The console sidebar on this commit has no Register item. The items are Device monitor, Chat, Document Q&A, IT Helpdesk, Windows repair, Operations, and System Status. The registration control is IT Helpdesk, then Enrolled computers, then Create an enrolment code. Do not use Windows repair, Enrol an endpoint. That button is a different credential for signed jobs.
+
+### Not on origin/main
+
+`feature/agent-lane-mail` at `42dff505ad1c0b0c5817d61b4f1c807236dd82da` is on origin and in worktree `C:\Users\henok\src\AI-PLAYBOOK-lane-mail`. It is not an ancestor of `origin/main`. Docs only: two lines in `docs/coordination/mail-positive-match-waiting.md`. It does not send mail, search the mailbox, or add scopes. The positive-match gate still waits for one harmless phrase from the owner. Do not search the mailbox for "the". Power Automate stays NOT TESTED.
+
+`feature/parallel-agent-lanes` at `2077d2296a47fd575a231bc530039f111478a6c2` is on origin and in worktree `C:\Users\henok\src\AI-PLAYBOOK-parallel-lanes`. It is not an ancestor of `origin/main`. It adds `docs/coordination/parallel-agent-lanes.md` and `scripts/new-agent-worktree.ps1`. Not merged.
+
+`feature/session-playbook` is not merged, as listed above. The playbook's earlier note that parallel lanes had no commit is stale: `2077d2296a47fd575a231bc530039f111478a6c2` exists and is still not on `origin/main`.
+
+### Still open
+
+Production stays NO-GO until the written acceptance gates pass. The last Director CURRENT recorded the board as 3/9 live and 3/8 mandatory. This handoff does not recalculate it and does not edit `ops/acceptance_board.py`. Do not quote an older board figure. Do not mark `second_endpoint_worker_ok`. Do not add `deployed_sha_read`. Do not mark a second endpoint.
+
+Office PC cannot fetch installers from the web with the current live worker. `BANYA-FAMILY-PL` cannot enrol itself. HP Smart is not installed on the Office PC.
+
+Discussed next steps, not built: client packaging of the monitoring dashboard as a product surface, per-device pricing, and a simple onboarding flow.
+
+`LIVE_REPAIR_ENABLED`, `REMOTE_IT_WORK_LIVE`, and `repair_authority` stay off on real laptops until the owner explicitly asks to turn them on. The commands below are documentation. This session did not run them.
+
+### How to run workers
+
+Document only. Do not run these on a laptop from a handoff read.
+
+Report, on the enrolled computer, tunnel left open:
+
+```powershell
+python -m integrations.endpoint_worker report --console http://127.0.0.1:8080 --token-file "%LOCALAPPDATA%\AI-PLAYBOOK\device-secret"
+```
+
+Serve, only when the owner has asked for live work on that enrolled computer:
+
+```powershell
+set REMOTE_IT_WORK_LIVE=1
+python -m integrations.remote_worker serve --console http://127.0.0.1:8080 --token-file "%LOCALAPPDATA%\AI-PLAYBOOK\device-secret" --live
+```
+
+Register the other Windows computer only. Omit `-Code` so the script prompts. Never commit a code. `scripts/register-device.ps1` itself starts serve without `--live`.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\register-device.ps1 -Name "Family Laptop" -Console "http://127.0.0.1:8080"
+```
+
+### Do not
+
+- Do not SSH. Do not run anything on a laptop. Do not change device or printer settings. Do not send mail. Do not print.
+- Do not commit or paste passwords, tokens, gateway keys, device secrets, mailbox bodies, or enrolment codes.
+- Do not edit `ops/acceptance_board.py`. Do not weaken production NO-GO. Do not mark a second endpoint.
+- Do not stop pod `1jyrnyxpb0n93s`. Do not start H100 `xx9cjogra5vcwl` or Blackwell. Do not copy weights. Do not restart healthy Qwen or the gateway. Do not reload the console unless the owner asks.
+- Do not force-push, hard-reset, or change git config.
+- Do not enrol `BANYA-FAMILY-PL`. Do not re-enrol Office PC. Do not clear the print queue. Do not launch HP Smart on this PC as a substitute for the Office PC.
+- Do not search the mailbox for "the". Do not add mail scopes.
+- Do not claim a live repair happened. Do not treat a push as a deploy. Do not claim `feature/agent-lane-mail`, `feature/parallel-agent-lanes`, or `feature/session-playbook` as merged.
+
+## ASSIGNMENTS
+
+One builder only: Agent 4 (Endpoint). Others stand down from building.
+
+- Director (Agent 1): Update CURRENT and keep production NO-GO. Board is 3/9 live and 3/8 mandatory. You may replace only the CURRENT section of `docs/coordination/AGENT_HANDOFF.md`, and only after copying the old CURRENT into the log.
+- Console (Agent 2): Peer reviewer for any web/ change. Idle unless Endpoint or Cursor asks.
+- Model (Agent 3): Idle unless Endpoint or Cursor asks.
+- Endpoint (Agent 4): Sole builder of Windows remote support network. Build on top of Cursor's commits on main; don't edit files Cursor is actively changing. Ranked backlog, one PR per item: (1) off-box authenticated device check-in (today's routes are loopback-only); (2) persistent WorkStore; (3) separate approver role, distinct from CONNECTORS_MANAGE; (4) driver and repair downloads from an allowlist of sources, with hash and signature verification before install; (5) employee-PC needs (apps, printers, network, accounts, updates); (6) first real Windows run on one laptop using office-pc-clone.md. File scope: integrations/remote_work*, integrations/remote_worker.py, integrations/endpoint*, windows_repair/, their tests, docs/results/, and web/server.py limited to the /api/remote-work/* routes. Widened 00:28 UK by Director for item 1 only: new web/device_gateway.py, a main() hook off unless DEVICE_GATEWAY_ENABLED=1, and the transport check on /api/devices/enroll, /api/devices/report and /api/repair/device/* (loopback or the TLS gateway). Operator routes, approve and the /api/devices list contract stay console-only and unchanged. Console reviews every web/ line.
+- Mail (Agent 5): Idle unless Endpoint or Cursor asks.
+- Integration (Agent 6): Comment on PRs, run the full suite, and land them. Every PR needs Endpoint's self-check with its own test run, one peer review, and Integration's COMMENT, then Integration lands.
+
+## LOG
+
+- 2026-10-24 13:26 UK Director: CURRENT replaced with the verified session state. `origin/main` was `97d6d97c7fa324802d9ea1711998b7400171ae76`. Production stays NO-GO. The board was not recalculated. No second endpoint was marked. No laptop command was run. The console was not reloaded. `feature/session-playbook` is not on `origin/main`. Device-monitor and approved-repair commits that the playbook still calls unmerged are on `origin/main`; mail, parallel lanes, and the session playbook are not.
+
+### Previous CURRENT (copied 2026-10-24 13:26 UK)
 
 Updated: 2026-10-24 00:26 UK
 
@@ -17,19 +124,6 @@ Gates: every PR needs Endpoint's self-check with its own test run, one peer revi
 #14 and #8 are parked. Board unchanged at 3/9 live and 3/8 mandatory. Production NO-GO.
 
 Standing safety lines: Qwen pid 6739 stays up and is not restarted; gateway pid 6497 not signalled; no weight copies, no pod. Do not mark second_endpoint_worker_ok and do not add deployed_sha_read. Office PC bead5785f3674aaeb92c189f8c1b5b8c is not re-enrolled from this PC; the owner runs office-pc-clone.md on that laptop. Mail stays User.Read and Mail.Read only, sends nothing, does not search for 'the' or search live until the Founder gives a distinctive phrase; Power Automate stays NOT TESTED. No random computer-repair tools, driver packs or third-party agents; downloads only from the allowlist with hash and signature checks; a library only if pinned, tested and safer than current code.
-
-## ASSIGNMENTS
-
-One builder only: Agent 4 (Endpoint). Others stand down from building.
-
-- Director (Agent 1): Update CURRENT and keep production NO-GO. Board is 3/9 live and 3/8 mandatory. You may replace only the CURRENT section of `docs/coordination/AGENT_HANDOFF.md`, and only after copying the old CURRENT into the log.
-- Console (Agent 2): Peer reviewer for any web/ change. Idle unless Endpoint or Cursor asks.
-- Model (Agent 3): Idle unless Endpoint or Cursor asks.
-- Endpoint (Agent 4): Sole builder of Windows remote support network. Build on top of Cursor's commits on main; don't edit files Cursor is actively changing. Ranked backlog, one PR per item: (1) off-box authenticated device check-in (today's routes are loopback-only); (2) persistent WorkStore; (3) separate approver role, distinct from CONNECTORS_MANAGE; (4) driver and repair downloads from an allowlist of sources, with hash and signature verification before install; (5) employee-PC needs (apps, printers, network, accounts, updates); (6) first real Windows run on one laptop using office-pc-clone.md. File scope: integrations/remote_work*, integrations/remote_worker.py, integrations/endpoint*, windows_repair/, their tests, docs/results/, and web/server.py limited to the /api/remote-work/* routes. Widened 00:28 UK by Director for item 1 only: new web/device_gateway.py, a main() hook off unless DEVICE_GATEWAY_ENABLED=1, and the transport check on /api/devices/enroll, /api/devices/report and /api/repair/device/* (loopback or the TLS gateway). Operator routes, approve and the /api/devices list contract stay console-only and unchanged. Console reviews every web/ line.
-- Mail (Agent 5): Idle unless Endpoint or Cursor asks.
-- Integration (Agent 6): Comment on PRs, run the full suite, and land them. Every PR needs Endpoint's self-check with its own test run, one peer review, and Integration's COMMENT, then Integration lands.
-
-## LOG
 
 - 2026-10-24 01:04 UK Director/Liaison: #28 (TLS device gateway, backlog item 1) landed as 9419a945, squashed from tip b9ea5685, after all three gates on that tip: Endpoint owner self-check PASS 5635701003 (web 86 OK 0 skipped, integrations 161 OK, windows_repair 127 OK), Console peer ACK 5635701825, Integration COMMENT 5635693845 (full suite 500 OK, 10 skipped). Gateway off unless DEVICE_GATEWAY_ENABLED=1; operator routes, approve and /api/devices unchanged; /api/repair/device/* gated by _device_bearer() (loopback or TLS, then bearer). Windows UNVERIFIED. Follow-ups: RateLimiter stale-IP pruning, plain assert in happy-path test. Director ruling: the 00:28 web/ widening covered item 1 only; #29 may touch web/server.py only at the two WorkStore construction sites (store wiring, Console-approved). Next: #29 persistent WorkStore, blocked on restart fix (interrupted orders must be persisted as failed). Live switches off. Board 3/9 live, 3/8 mandatory. Production NO-GO.
 - 2026-10-24 00:28 UK Director: Endpoint web/ scope widened for item 1 (device gateway), Console peer review required, gateway off by default.
